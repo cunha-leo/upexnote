@@ -198,11 +198,11 @@ O seletor de arquivos deverá aceitar qualquer caminho do Windows. Selecionar um
 - Repositório privado GitHub criado e primeiro commit publicado.
 - Documentos iniciais: `README.md`, `ARCHITECTURE.md`, `PRODUCT.md` e este contexto vivo.
 - Pipelines de transcrição migrados de `C:\Users\cunha\Project\scripts\` para `services/worker/transcription/`, sem alterar a lógica de nenhum motor (ver Registro 2026-07-12 abaixo).
+- Ponto de entrada do worker criado: CLI NDJSON (`transcription.cli`) com comandos `engines`, `transcribe`, `set-key`, `check-key` — pronta para o shell Tauri lançar como sidecar.
 
 ### Próximo trabalho
 
-1. Construir o primeiro ponto de entrada (CLI ou IPC/HTTP local) em `services/worker` que `apps/desktop` possa chamar, usando `transcription.registry.ENGINES`.
-2. Definir a interface local-first e iniciar o shell/worker (Tauri + React).
+1. Ligar o `apps/desktop` (Tauri + React) à CLI do worker: lançar o sidecar, mapear `engines`/`check-key` para o ecrã de definições e `transcribe` (eventos NDJSON) para a barra de progresso + vista de transcript.
 3. Construir o primeiro fluxo: escolher arquivo → selecionar motor → acompanhar progresso → abrir transcript → guardar derivado.
 4. Só depois adicionar contexto estruturado, estudo, chat, síntese de voz e sincronização com Postgres.
 
@@ -246,7 +246,29 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
-### Registro — 2026-07-12
+### Registro — 2026-07-12 (b): CLI NDJSON do worker
+
+### O que mudou
+- Criado o ponto de entrada `services/worker/transcription/cli.py` (+ `__main__.py`): CLI que comunica por NDJSON (um objeto JSON por linha no stdout), pensada para o shell Tauri a lançar como sidecar e ler o progresso em tempo real.
+- Comandos: `engines` (lista motores + se a chave está configurada), `transcribe --engine <id> --file <caminho>` (eventos `start`/`progress`/`result`|`error`), `set-key --name <NOME>` (lê por stdin sem eco, guarda no Credential Manager), `check-key --name <NOME>` (diz se está configurada, sem revelar valor).
+- Protocolo de eventos documentado em `services/worker/README.md`.
+
+### Evidência / teste
+- Testados sem chamar APIs: `engines`, `check-key`, e os caminhos de erro do `transcribe` (motor desconhecido, ficheiro inexistente, chave em falta) — todos emitem NDJSON válido e códigos de saída corretos. `python -m transcription` e `python -m transcription.cli` funcionam.
+- Um `transcribe` real (com API) ainda não foi corrido através da CLI.
+
+### Decisão
+- CLI + NDJSON escolhida em vez de servidor HTTP local para o primeiro entrypoint: sem gestão de portas/servidor/CORS, e encaixa diretamente no callback `log=` que os motores já têm.
+- Chaves nunca passam por argv (visível na lista de processos); `set-key` lê por stdin sem eco e é corrido pelo próprio utilizador.
+
+### Impacto em dados, custo ou privacidade
+- Nenhum dado movido; sem custo (nenhuma API chamada).
+- Reforça a política de chaves: a chave nunca aparece no comando nem no histórico do terminal.
+
+### Próximo passo
+- Ligar o `apps/desktop` (Tauri) a esta CLI.
+
+### Registro — 2026-07-12 (a): migração dos pipelines
 
 ### O que mudou
 - Pipelines de transcrição migrados de `C:\Users\cunha\Project\scripts\` (protótipo Tkinter) para `services/worker/transcription/` neste repositório, como pacote Python (`assemblyai.py`, `whisper_openai.py`, `deepgram.py`, `gpt4o_openai.py`, `audio_chunks.py`, `transcript_utils.py`, `paths.py`, `credentials.py`, `registry.py`).
