@@ -1,0 +1,49 @@
+# Dados privados e gerados pelo utilizador
+storage/*
+!storage/.gitkeep
+
+# Mídia e artefatos de transcrição
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.srt
+*.vtt
+
+# Segredos e configurações locais
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node / Tauri
+node_modules/
+dist/
+build/
+target/
+*.msi
+*.exe
+
+# IDE e sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs e temporários
+*.log
+tmp/
+temp/
