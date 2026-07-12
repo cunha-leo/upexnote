@@ -132,6 +132,14 @@ function App() {
     return () => clearInterval(id);
   }, [running]);
 
+  function reset() {
+    setFile("");
+    setResult(null);
+    setStatus("");
+    setStage(0);
+    setElapsed(0);
+  }
+
   async function startTranscription() {
     if (!file || !selected || running) return;
     setRunning(true);
@@ -219,6 +227,9 @@ function App() {
             <button onClick={startTranscription} disabled={!file || running || !selected}>
               {running ? "A transcrever…" : "Transcrever"}
             </button>
+            {!running && (result || status) && (
+              <button className="secondary" onClick={reset}>Novo</button>
+            )}
             {running && (
               <div className="status">
                 <span className="spinner" />

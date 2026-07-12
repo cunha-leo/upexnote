@@ -54,6 +54,7 @@ def run(audio_path, api_key, log=print, chunk_seconds=300):
     total_covered_compact = 0.0
     warnings = []
     prev_tail_prompt = ""
+    detected_language = None
 
     start_time = time.time()
     chunks, to_original, original_duration = iter_wav_chunks_skip_silence(
@@ -80,6 +81,9 @@ def run(audio_path, api_key, log=print, chunk_seconds=300):
             log(f"  ERRO no bloco {i}: {e}")
             warnings.append(f"bloco {i}: excecao {e}")
             continue
+
+        if detected_language is None:
+            detected_language = getattr(result, "language", None)
 
         segments = list(getattr(result, "segments", None) or [])
         if not segments and (result.text or "").strip():
@@ -157,6 +161,7 @@ def run(audio_path, api_key, log=print, chunk_seconds=300):
         "clean_text": clean_text,
         "cost": cost,
         "duration_s": original_duration,
+        "language": detected_language,
         "problems": problems,
     }
 

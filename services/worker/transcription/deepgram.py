@@ -66,6 +66,7 @@ def run(audio_path, api_key, log=print, chunk_seconds=1800):
     all_segments = []  # (start, end, text)
     total_covered = 0.0
     warnings = []
+    detected_language = None
 
     start_time = time.time()
     for i, (chunk_start, chunk_end, wav_bytes) in enumerate(iter_wav_chunks(audio_path, chunk_seconds=chunk_seconds)):
@@ -74,16 +75,20 @@ def run(audio_path, api_key, log=print, chunk_seconds=1800):
 
         try:
             resp = requests.post(URL, params=BASE_PARAMS, headers=headers, data=wav_bytes, timeout=600)
-            resp.raise_for_status()
-            result = resp.json()
         except Exception as e:
-            log(f"  ERRO no bloco {i}: {e}")
-            warnings.append(f"bloco {i}: excecao {e}")
-            continue
+            raise RuntimeError(f"Deepgram: falha de rede ao contactar a API ({e})")
+        if not resp.ok:
+            # Falha alto (ex.: 401 chave invalida) em vez de produzir output vazio.
+            raise RuntimeError(f"Deepgram: ERRO {resp.status_code} da API - {resp.text[:300]}")
+        result = resp.json()
+
+        channel = result.get("results", {}).get("channels", [{}])[0]
+        if detected_language is None:
+            detected_language = channel.get("detected_language")
 
         utterances = result.get("results", {}).get("utterances", [])
         if not utterances:
-            transcript = result["results"]["channels"][0]["alternatives"][0]["transcript"]
+            transcript = channel.get("alternatives", [{}])[0].get("transcript", "")
             if transcript.strip():
                 utterances = [{"start": 0, "end": duration, "transcript": transcript}]
 
@@ -111,6 +116,14 @@ def run(audio_path, api_key, log=print, chunk_seconds=1800):
         total_covered += last_end
 
     elapsed = time.time() - start_time
+
+    if not all_segments:
+        # Nunca gravar ficheiros/linha vazios: falha alto com mensagem clara.
+        raise RuntimeError(
+            "Deepgram nao devolveu texto (0 segmentos). Verifica a chave DEEPGRAM_API_KEY "
+            "e o ficheiro de audio."
+        )
+
     original_duration = all_segments[-1][1] if all_segments else total_covered
 
     all_segments, monotonic_corrections = enforce_monotonic_segments(all_segments)
@@ -159,6 +172,7 @@ def run(audio_path, api_key, log=print, chunk_seconds=1800):
         "clean_text": clean_text,
         "cost": cost,
         "duration_s": original_duration,
+        "language": detected_language,
         "problems": problems,
     }
 
