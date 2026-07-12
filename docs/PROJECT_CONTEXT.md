@@ -265,6 +265,25 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-12 (g): privacidade resolvida (opção 1) + plano de ligação ao Postgres
+
+### O que mudou
+- Resolvida a questão pendente do Registro (f): **opção 1** — metadados **e texto** do transcript vão para o Postgres na VPS, **em claro** (sem encriptação).
+- Raciocínio: a ameaça que o utilizador quer cobrir é "a máquina morre" (durabilidade), e para essa o texto em claro na própria VPS já resolve. Encriptar só protegeria de invasão da VPS (ameaça baixa, ambiente fechado e menos exposto do que as APIs que já recebem o áudio) e introduziria risco de perder tudo por perder a chave — o que jogaria contra a própria durabilidade. Texto em claro é também totalmente consultável no DBeaver para os dashboards.
+
+### Estado da infraestrutura (confirmado pelo utilizador)
+- Postgres a correr no EasyPanel (serviço `lmsc-db`), superuser `postgres`, base existente `lmsc` (outra app, Prisma — não mexer).
+- Porta **exposta publicamente** (host externo do tipo `vps.upexflow.com`, porta alta). A app liga direto por TCP — sem túnel SSH.
+- Detalhes de ligação (host/porta/base/user) ficam num **config local ignorado pelo Git** (não no repositório). Password no Windows Credential Manager (o utilizador introduz; a IA nunca lhe toca).
+
+### Decisão de setup
+- Nova base `upexnote` + utilizador dedicado `upexnote_app` (dono da base) — NÃO usar o superuser `postgres` na app.
+- Segurança a endurecer depois: restringir a porta pública por firewall ao IP do utilizador, ou fechar e usar túnel SSH.
+- Escrita best-effort a partir do worker: ficheiro local primeiro (nunca se perde), depois linha no Postgres; tolera VPS offline.
+
+### Próximo passo
+- Utilizador cria a base + role no DBeaver. Depois: schema `transcriptions` (metadados + texto clean/raw), config local + password no Credential Manager, e escrita best-effort no worker. Backup/dump do Postgres a planear (a VPS também é ponto único de falha).
+
 ### Registro — 2026-07-12 (f): decisão de armazenamento revista — Postgres na VPS (não SQLite)
 
 ### O que mudou
