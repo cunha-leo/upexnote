@@ -5,8 +5,8 @@
 **Última atualização:** 12 de julho de 2026 (migração dos pipelines para `services/worker`)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
-**Repositório:** `https://github.com/cunha-leo/upexnote` (privado)  
-**Raiz local de desenvolvimento:** `G:\My Drive\Projects\upexflow\upexnote`
+**Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
+**Raiz local de desenvolvimento:** `C:\Users\cunha\Projects\upexflow\upexnote` (disco local; ver Registro 2026-07-12 (c) sobre a saída do Google Drive)
 
 ---
 
@@ -148,12 +148,11 @@ O seletor de arquivos deverá aceitar qualquer caminho do Windows. Selecionar um
 
 ## 8. Infraestrutura existente
 
-### Google Drive
+### Disco local (desenvolvimento)
 
-- Pasta remota principal criada para o produto: `My Drive/Projects/upexflow/upexnote`.
-- Raiz local sincronizada: `G:\My Drive\Projects\upexflow\upexnote`.
-- O Drive é a pasta de desenvolvimento e, opcionalmente, arquivo de derivados (TXT, Markdown, JSON, documentos e exportações).
-- O Drive não é substituto de Git nem destino automático de mídia bruta.
+- Raiz de desenvolvimento: `C:\Users\cunha\Projects\upexflow\upexnote` (disco local, fora de qualquer sincronização em nuvem).
+- **O código NÃO fica no Google Drive.** A partir de 2026-07-12, o desenvolvimento saiu do Drive (ver Registro (c)): o Google Drive File Stream não suporta as escritas do `node_modules`/build e o `git`+GitHub já é a sincronização real.
+- Opcionalmente, derivados finais (TXT, Markdown, JSON, exportações) podem ser copiados para o Drive à parte, mas nunca a pasta de trabalho com toolchain de build.
 
 ### GitHub
 
@@ -199,10 +198,13 @@ O seletor de arquivos deverá aceitar qualquer caminho do Windows. Selecionar um
 - Documentos iniciais: `README.md`, `ARCHITECTURE.md`, `PRODUCT.md` e este contexto vivo.
 - Pipelines de transcrição migrados de `C:\Users\cunha\Project\scripts\` para `services/worker/transcription/`, sem alterar a lógica de nenhum motor (ver Registro 2026-07-12 abaixo).
 - Ponto de entrada do worker criado: CLI NDJSON (`transcription.cli`) com comandos `engines`, `transcribe`, `set-key`, `check-key` — pronta para o shell Tauri lançar como sidecar.
+- Interface iniciada: scaffold Tauri 2 + React/TS em `apps/desktop`. Toolchain (Rust/C++/Node) instalado e validado.
+- Desenvolvimento movido do Google Drive para disco local (`C:\Users\cunha\Projects\upexflow\upexnote`); GitHub é a sincronização.
 
 ### Próximo trabalho
 
-1. Ligar o `apps/desktop` (Tauri + React) à CLI do worker: lançar o sidecar, mapear `engines`/`check-key` para o ecrã de definições e `transcribe` (eventos NDJSON) para a barra de progresso + vista de transcript.
+1. Atualizar Node para 22 LTS e correr o primeiro `tauri dev` (validar a janela nativa a abrir).
+2. Ligar o `apps/desktop` (Tauri + React) à CLI do worker: lançar o sidecar, mapear `engines`/`check-key` para o ecrã de definições e `transcribe` (eventos NDJSON) para a barra de progresso + vista de transcript.
 3. Construir o primeiro fluxo: escolher arquivo → selecionar motor → acompanhar progresso → abrir transcript → guardar derivado.
 4. Só depois adicionar contexto estruturado, estudo, chat, síntese de voz e sincronização com Postgres.
 
@@ -245,6 +247,30 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-12 (c): saída do Google Drive + scaffold da interface
+
+### O que mudou
+- Criado o scaffold da interface em `apps/desktop`: Tauri 2 + React + TypeScript + Vite (nome do pacote/crate `upexnote`, produto `UpexNote`, identificador `com.upexflow.upexnote`).
+- **Desenvolvimento saiu do Google Drive.** A raiz mudou de `G:\My Drive\Projects\upexflow\upexnote` para `C:\Users\cunha\Projects\upexflow\upexnote` (disco local). Motivo: `npm install` falha no Google Drive File Stream com `EBADF`/`TAR_ENTRY_ERROR` — o sistema de ficheiros virtual não aguenta as milhares de escritas do `node_modules`. Isto bloqueia qualquer build de JS no Drive, não só o Tauri.
+- Método da mudança (sem perda): commit + push de tudo para o GitHub, depois `git clone` fresco para o disco local. O GitHub é agora, explicitamente, a fonte de verdade e a sincronização — não o Drive.
+
+### Evidência / teste
+- Pré-requisitos do Tauri confirmados no Windows: Rust 1.97.0 (toolchain msvc), Cargo, compilador C++ (`cl.exe`, VS 2022 Build Tools), WebView2. Um mini-programa Rust compilou+linkou+correu (linker OK).
+- `npm install` no disco local: OK (73 pacotes). `npm run build` (Vite): OK.
+- Aviso pendente: Node instalado é v18.16.1, mas o Vite 7 pede Node 20+/22+ (Node 18 está em fim de vida). Recomendada atualização do Node para 22 LTS antes do primeiro `tauri dev`.
+- Primeiro `tauri dev` (compilação Rust nativa + janela) ainda não foi corrido.
+
+### Decisão
+- Interface confirmada em Tauri 2 + React/TS (segue o plano da arquitetura).
+- Código de projeto vive em disco local; Drive deixa de ser destino de desenvolvimento. A cópia antiga em `G:` fica órfã (a confirmar com o utilizador antes de apagar dados do Drive dele).
+
+### Impacto em dados, custo ou privacidade
+- Nenhum dado sensível movido; só código, via GitHub. Sem custo.
+- Passa a haver menos exposição em nuvem: o código de trabalho já não é sincronizado pelo Drive.
+
+### Próximo passo
+- Atualizar Node para 22 LTS; correr o primeiro `tauri dev` (validar janela nativa); depois ligar a UI à CLI do worker.
 
 ### Registro — 2026-07-12 (b): CLI NDJSON do worker
 
