@@ -215,15 +215,16 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 - Interface iniciada: scaffold Tauri 2 + React/TS em `apps/desktop`. Toolchain (Rust/C++/Node 24) instalado e validado.
 - Desenvolvimento movido do Google Drive para disco local (`C:\Users\cunha\Projects\upexflow\upexnote`); GitHub é a sincronização.
 - **Primeira interface funcional:** transcrição de ponta a ponta feita dentro da app (React↔Rust↔worker), com progresso ao vivo e vista de resultado. Validado com gravação real (ver Registro (d)).
+- Seletor de ficheiro nativo; organização do storage por dia/motor (ver Registro (e)).
+- **Durabilidade/histórico no Postgres da VPS** (serviço dedicado `upexnote-db`), escrita best-effort a cada transcrição (ver Registros (f)/(g)/(h)).
+- **App de produção (`.exe`)** com atalho no ambiente de trabalho; **ecrã de Definições** para gerir as chaves na app (sem terminal); menu lateral; bugs da WebView2 corrigidos (ver Registro (i)).
 
-### Próximo trabalho
+### Próximo trabalho (4 pontos, deixados em aberto a 2026-07-12)
 
-1. Seletor de ficheiro nativo (plugin dialog) em vez de colar o caminho.
-2. Ecrã de Definições para gravar/gerir as chaves API pela própria interface.
-3. Empacotamento: o worker Python passa a sidecar da app (para funcionar fora do modo de desenvolvimento).
-4. Depois: abas de contexto/estudo, e o resto do roteiro.
-3. Construir o primeiro fluxo: escolher arquivo → selecionar motor → acompanhar progresso → abrir transcript → guardar derivado.
-4. Só depois adicionar contexto estruturado, estudo, chat, síntese de voz e sincronização com Postgres.
+1. **Remover o `devtools`** (estava ligado só para diagnóstico) e recompilar limpo.
+2. **Empacotar o worker Python como sidecar** — para a app funcionar noutras máquinas / virar instalador (hoje encontra o worker por um caminho fixo desta máquina).
+3. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
+4. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
 
 ---
 
