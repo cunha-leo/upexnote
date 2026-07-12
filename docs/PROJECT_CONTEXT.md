@@ -265,6 +265,28 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-12 (i): Definições na app, navegação lateral, app de produção (.exe)
+
+### O que mudou
+- **Ecrã de Definições:** gerir as 4 credenciais (AssemblyAI, OpenAI, Deepgram, password do Postgres) pela própria app — Guardar e Remover, sem terminal. O valor é enviado ao worker por **stdin** (nunca em argumentos/linha de comando). Novos comandos CLI `set-key --stdin`, `clear-key`, `list-keys` (estado de todas as chaves numa só chamada) e comandos Rust `save_credential`/`clear_credential`/`list_credentials`.
+- **Navegação:** menu lateral recolhível (Transcrever / Definições + tema + recolher). O estado da transcrição mantém-se ao trocar de vista. Botão "Novo" para limpar a sessão.
+- **Passámos de modo-dev para app de PRODUÇÃO (`.exe`):** o `npm run tauri dev` era instável (o servidor caía → janela preta; exigia um terminal aberto). Agora há um `.exe` real (`tauri build --no-bundle`) com atalho **"UpexNote"** no ambiente de trabalho — abre como app normal, sem terminal nem servidor. Para veres alterações de código é preciso recompilar (~1–1.5 min) e reabrir.
+
+### Bugs corrigidos (WebView2 nesta máquina — Lunar Lake / Arc)
+- **Terminais a piscar:** cada chamada ao Python abria uma consola. Corrigido com `CREATE_NO_WINDOW` em todos os spawns (Rust `with_no_window`).
+- **Ecrã branco/preto ao clicar/colar nos campos das chaves:** (1) eram `type="password"` → a WebView2 abria a UI de guardar-password e crashava ao focar → mudados para texto normal; (2) o "colar nativo" da WebView2 crashava → intercetado no `onPaste` (a app insere o texto ela própria). Confirmado a funcionar **sem** devtools. **NÃO era GPU** (testámos desligar, não resolveu, revertido).
+- Nota: `devtools` ligado no Cargo.toml (feature) — foi para diagnóstico; remover antes de distribuir.
+
+### Evidência / teste
+- As 4 chaves configuradas pela UI (clicar/colar/guardar/remover a funcionar). Transcrição continua a gravar em ficheiro local + Postgres.
+
+### Decisão
+- Chaves geridas na app (fim da dependência do terminal para credenciais).
+- App usada como `.exe` de produção; o worker Python é encontrado pelo caminho fixo desta máquina (baked `CARGO_MANIFEST_DIR`) — funciona aqui, mas para outras máquinas falta empacotar o worker como sidecar.
+
+### Próximo passo
+- Remover devtools; empacotar o worker como sidecar (portabilidade/instalador); endurecimento VPS (firewall + backup do Postgres); aba Biblioteca.
+
 ### Registro — 2026-07-12 (h): Postgres ligado e verificado (serviço dedicado)
 
 ### O que mudou

@@ -55,7 +55,7 @@ import time
 from pathlib import Path
 
 from .registry import ENGINES
-from .credentials import get_key, set_key, KNOWN_KEYS
+from .credentials import get_key, set_key, clear_key, KNOWN_KEYS
 
 
 def _emit(stream, event):
@@ -204,24 +204,41 @@ def cmd_db_check(args):
 
 
 def cmd_set_key(args):
-    import getpass
     if args.name not in KNOWN_KEYS:
         _emit(sys.stdout, {
             "type": "error",
             "message": f"Nome de chave desconhecido: {args.name!r}. Opcoes: {', '.join(KNOWN_KEYS)}",
         })
         return 1
-    try:
-        value = getpass.getpass(f"Cola a {args.name} (nao aparece no ecra) e Enter: ")
-    except (EOFError, KeyboardInterrupt):
-        _emit(sys.stdout, {"type": "error", "message": "Cancelado."})
-        return 1
-    value = value.strip()
+    if getattr(args, "stdin", False):
+        # Valor recebido por stdin (usado pela interface via Rust — a chave
+        # nunca passa por argumentos/linha de comando).
+        value = sys.stdin.readline()
+    else:
+        import getpass
+        try:
+            value = getpass.getpass(f"Cola a {args.name} (nao aparece no ecra) e Enter: ")
+        except (EOFError, KeyboardInterrupt):
+            _emit(sys.stdout, {"type": "error", "message": "Cancelado."})
+            return 1
+    value = (value or "").strip()
     if not value:
         _emit(sys.stdout, {"type": "error", "message": "Nenhum valor introduzido; nada foi guardado."})
         return 1
     set_key(args.name, value)
     _emit(sys.stdout, {"type": "ok", "message": f"{args.name} guardada no Windows Credential Manager."})
+    return 0
+
+
+def cmd_clear_key(args):
+    if args.name not in KNOWN_KEYS:
+        _emit(sys.stdout, {
+            "type": "error",
+            "message": f"Nome de chave desconhecido: {args.name!r}. Opcoes: {', '.join(KNOWN_KEYS)}",
+        })
+        return 1
+    clear_key(args.name)
+    _emit(sys.stdout, {"type": "ok", "message": f"{args.name} removida."})
     return 0
 
 
@@ -236,6 +253,14 @@ def cmd_check_key(args):
     return 0
 
 
+def cmd_list_keys(args):
+    # Estado de TODAS as chaves numa so chamada (o ecra de Definicoes usa isto
+    # em vez de lancar o Python uma vez por chave).
+    keys = [{"name": k, "key_set": bool(get_key(k))} for k in KNOWN_KEYS]
+    _emit(sys.stdout, {"type": "keys", "keys": keys})
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="transcription.cli", description="Worker de transcricao do UpexNote")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -246,11 +271,17 @@ def build_parser():
     p_tr.add_argument("--engine", required=True, help=f"ID do motor: {', '.join(ENGINES)}")
     p_tr.add_argument("--file", required=True, help="Caminho do video/audio a transcrever.")
 
-    p_sk = sub.add_parser("set-key", help="Guarda uma chave API (le por stdin, sem eco).")
+    p_sk = sub.add_parser("set-key", help="Guarda uma chave (getpass no terminal, ou --stdin para a interface).")
     p_sk.add_argument("--name", required=True, help=f"Nome da chave: {', '.join(KNOWN_KEYS)}")
+    p_sk.add_argument("--stdin", action="store_true", help="Le o valor por stdin (uso pela interface).")
+
+    p_clk = sub.add_parser("clear-key", help="Remove uma chave do Windows Credential Manager.")
+    p_clk.add_argument("--name", required=True, help=f"Nome da chave: {', '.join(KNOWN_KEYS)}")
 
     p_ck = sub.add_parser("check-key", help="Diz se uma chave esta configurada (nao revela o valor).")
     p_ck.add_argument("--name", required=True, help=f"Nome da chave: {', '.join(KNOWN_KEYS)}")
+
+    sub.add_parser("list-keys", help="Estado de todas as chaves numa so chamada (JSON).")
 
     sub.add_parser("db-check", help="Testa a ligacao ao Postgres da VPS e garante a tabela.")
 
@@ -264,7 +295,9 @@ def main(argv=None):
         "engines": cmd_engines,
         "transcribe": cmd_transcribe,
         "set-key": cmd_set_key,
+        "clear-key": cmd_clear_key,
         "check-key": cmd_check_key,
+        "list-keys": cmd_list_keys,
         "db-check": cmd_db_check,
     }
     return handlers[args.command](args)

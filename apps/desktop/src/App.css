@@ -60,6 +60,65 @@ body { margin: 0; }
   flex-direction: column;
 }
 
+/* Layout com menu lateral */
+.layout { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: 214px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 10px;
+  gap: 8px;
+  transition: width 0.15s ease;
+}
+.sidebar.collapsed { width: 62px; }
+
+.sidebar-brand { padding: 6px 8px 10px; min-height: 46px; }
+.logo-mini { font-weight: 700; color: var(--accent); font-size: 20px; }
+
+.nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.nav-item:hover { background: var(--panel-2); }
+.nav-item.active {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+.nav-ico { width: 18px; text-align: center; flex-shrink: 0; font-size: 15px; }
+
+.main { flex: 1; overflow-y: auto; max-height: 100vh; }
+
+/* Cartões de credenciais nas Definições */
+.cred-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.field.cred { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px; }
+.field.cred:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.field.cred .row button { flex-shrink: 0; }
+.field.cred .row input { flex: 1; min-width: 0; }
+
 /* Cabeçalho */
 .header {
   display: flex;
