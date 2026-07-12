@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import "./App.css";
 
 type Engine = {
@@ -149,6 +150,19 @@ function App() {
     if (result) navigator.clipboard.writeText(result.clean_text);
   }
 
+  async function chooseFile() {
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      title: "Escolhe o vídeo ou áudio",
+      filters: [
+        { name: "Vídeo / Áudio", extensions: ["mp4", "mov", "mkv", "webm", "avi", "wav", "mp3", "m4a", "aac", "flac", "ogg"] },
+        { name: "Todos os ficheiros", extensions: ["*"] },
+      ],
+    });
+    if (typeof picked === "string") setFile(picked);
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -169,13 +183,18 @@ function App() {
           <h2>Transcrever</h2>
 
           <div className="field">
-            <label>Vídeo ou áudio (caminho do ficheiro)</label>
-            <input
-              type="text"
-              value={file}
-              placeholder="C:\\caminho\\para\\reuniao.mp4"
-              onChange={(e) => setFile(e.currentTarget.value)}
-            />
+            <label>Vídeo ou áudio</label>
+            <div className="row">
+              <input
+                type="text"
+                value={file}
+                placeholder="Escolhe um ficheiro ou cola aqui o caminho…"
+                onChange={(e) => setFile(e.currentTarget.value)}
+              />
+              <button className="secondary" onClick={chooseFile} disabled={running}>
+                Escolher…
+              </button>
+            </div>
           </div>
 
           <div className="field">
