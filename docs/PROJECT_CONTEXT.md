@@ -155,8 +155,8 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 - Pasta por **dia** (topo), depois por **motor** — fácil de encontrar pelo dia; motores nunca se misturam.
 - O **nome do ficheiro** carrega origem + data + motor + tipo (`clean`/`raw`), para se identificar sozinho mesmo fora da pasta.
 - **Sem compressão/zip.** Transcripts são texto (~20 KB cada); 10.000 transcrições ≈ 500 MB. O espaço nunca é o problema — só a organização. Zipar prejudicaria a busca e não pouparia nada relevante.
-- **Espaço:** os vídeos brutos (centenas de MB cada) NUNCA entram no storage; só o texto. Não é preciso banco de dados nem mover ficheiros por causa de espaço.
-- **Futuro (Biblioteca):** um índice local leve (SQLite) listará cada transcrição (data, motor, origem, duração, custo, validação) para pesquisa/histórico — organização, não espaço. O Postgres da VPS fica para sincronização entre dispositivos, mais tarde.
+- **Espaço:** os vídeos brutos (centenas de MB cada) NUNCA entram no storage; só o texto. O espaço não é motivo para banco de dados.
+- **Histórico/dashboards e durabilidade (decisão revista 2026-07-12, ver Registro (f)):** usar o **Postgres já existente na VPS** (Docker), NÃO um SQLite local. Motivos: reutilizar ambiente (evitar segunda tecnologia), durabilidade fora da máquina (se o portátil morre, os dados não morrem — os scripts já estão no GitHub) e análise (custo por motor, motor mais usado, tempo de processamento, atividade). Guardrails: o ficheiro local continua a ser o artefacto primário (gravado primeiro; a escrita no Postgres é best-effort e sincroniza depois se a VPS estiver em baixo); o próprio Postgres precisa de dump/backup (uma VPS também é ponto único de falha). **Pendente de decisão do utilizador:** se o TEXTO do transcript vai para a VPS ou só os metadados (privacidade de conteúdo sensível), e o caminho de rede (túnel SSH vs porta exposta com firewall/TLS). Password do Postgres no Windows Credential Manager, como as chaves API.
 
 ---
 
@@ -264,6 +264,28 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-12 (f): decisão de armazenamento revista — Postgres na VPS (não SQLite)
+
+### O que mudou
+- Revista a decisão do Registro (e). Em vez de um índice SQLite local, o histórico/metadados de transcrições vai para o **Postgres já existente na VPS** (Docker), reutilizando o ambiente.
+
+### Evidência / raciocínio (feedback do utilizador)
+- Criar SQLite seria uma segunda tecnologia + nova instância, quando já há Postgres a correr na VPS (acedido por DBeaver via SSH).
+- Durabilidade: dados só locais morrem com a máquina. (Nota: os *scripts* já estão seguros no GitHub; o que falta proteger fora da máquina são os *dados*.)
+- Um banco serve para histórico, dashboards e cruzar consumo: custo por motor, motor mais usado, tempo de processamento, tipo de atividade mais frequente.
+
+### Decisão
+- Base de metadados/histórico = Postgres na VPS.
+- Guardrails de falha: (1) ficheiro local é o artefacto primário, gravado primeiro; escrita no Postgres é best-effort e reconcilia se a VPS estiver offline (nunca se perde uma transcrição já paga); (2) o Postgres precisa de dump/backup próprio (a VPS é ponto único de falha); (3) o fluxo de transcrever tem de funcionar mesmo com a VPS em baixo.
+
+### Pendente (decisão do utilizador)
+- Texto do transcript vai para a VPS ou só metadados? (privacidade de conteúdo sensível — litígio/confidencial). Hipótese: guardar texto por defeito com marcação "privado/local-only" para os sensíveis.
+- Caminho de rede: túnel SSH a partir da app vs porta Postgres exposta com firewall/TLS.
+- Password do Postgres no Windows Credential Manager (o utilizador introduz; a IA nunca lhe toca).
+
+### Próximo passo
+- Definir os dois pontos pendentes; depois desenhar o schema (tabela de transcrições + eventos) e a escrita best-effort a partir do worker.
 
 ### Registro — 2026-07-12 (e): seletor de ficheiro + organização do storage
 
