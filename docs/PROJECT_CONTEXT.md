@@ -198,13 +198,16 @@ O seletor de arquivos deverá aceitar qualquer caminho do Windows. Selecionar um
 - Documentos iniciais: `README.md`, `ARCHITECTURE.md`, `PRODUCT.md` e este contexto vivo.
 - Pipelines de transcrição migrados de `C:\Users\cunha\Project\scripts\` para `services/worker/transcription/`, sem alterar a lógica de nenhum motor (ver Registro 2026-07-12 abaixo).
 - Ponto de entrada do worker criado: CLI NDJSON (`transcription.cli`) com comandos `engines`, `transcribe`, `set-key`, `check-key` — pronta para o shell Tauri lançar como sidecar.
-- Interface iniciada: scaffold Tauri 2 + React/TS em `apps/desktop`. Toolchain (Rust/C++/Node) instalado e validado.
+- Interface iniciada: scaffold Tauri 2 + React/TS em `apps/desktop`. Toolchain (Rust/C++/Node 24) instalado e validado.
 - Desenvolvimento movido do Google Drive para disco local (`C:\Users\cunha\Projects\upexflow\upexnote`); GitHub é a sincronização.
+- **Primeira interface funcional:** transcrição de ponta a ponta feita dentro da app (React↔Rust↔worker), com progresso ao vivo e vista de resultado. Validado com gravação real (ver Registro (d)).
 
 ### Próximo trabalho
 
-1. Atualizar Node para 22 LTS e correr o primeiro `tauri dev` (validar a janela nativa a abrir).
-2. Ligar o `apps/desktop` (Tauri + React) à CLI do worker: lançar o sidecar, mapear `engines`/`check-key` para o ecrã de definições e `transcribe` (eventos NDJSON) para a barra de progresso + vista de transcript.
+1. Seletor de ficheiro nativo (plugin dialog) em vez de colar o caminho.
+2. Ecrã de Definições para gravar/gerir as chaves API pela própria interface.
+3. Empacotamento: o worker Python passa a sidecar da app (para funcionar fora do modo de desenvolvimento).
+4. Depois: abas de contexto/estudo, e o resto do roteiro.
 3. Construir o primeiro fluxo: escolher arquivo → selecionar motor → acompanhar progresso → abrir transcript → guardar derivado.
 4. Só depois adicionar contexto estruturado, estudo, chat, síntese de voz e sincronização com Postgres.
 
@@ -247,6 +250,28 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-12 (d): primeira interface funcional (transcrição ponta a ponta)
+
+### O que mudou
+- Ponte interface↔worker implementada em Rust (`apps/desktop/src-tauri/src/lib.rs`): comandos `list_engines`, `check_key` e `transcribe`. O `transcribe` corre a CLI Python numa thread e transmite cada linha NDJSON como evento Tauri (`worker://event` / `worker://done`).
+- Primeiro ecrã real do UpexNote (`apps/desktop/src/App.tsx` + `App.css`): wordmark + tagline, tema claro/escuro (persistente), seletor de motor preenchido a partir do worker, campo de caminho do ficheiro, progresso em etapas (Enviar→Submeter→Transcrever→Finalizar) com cronómetro, e vista de resultado com validação/custo/duração/idioma + copiar.
+- Título e dimensões da janela ajustados (`tauri.conf.json`).
+
+### Evidência / teste
+- **Transcrição de ponta a ponta feita inteiramente dentro da app** (não pela CLI): gravação real ~20 min, motor AssemblyAI. Resultado na janela: Validação OK, idioma pt, ~$0.0713, diarização (Speakers A–D), code-switching PT/EN preservado. Guardado em `storage/transcripts/assemblyai/...__clean.txt`.
+- Confirma a cadeia React → comando Rust → worker Python → eventos de volta à UI, com progresso ao vivo.
+
+### Decisão
+- Integração via comandos Rust + eventos (não via shell plugin): mantém o modelo de permissões simples e o streaming NDJSON limpo.
+- Em desenvolvimento, o Rust localiza `services/worker` a partir de `CARGO_MANIFEST_DIR`. Para a app empacotada isto terá de mudar (worker como sidecar) — pendente.
+
+### Impacto em dados, custo ou privacidade
+- Uma chamada real à AssemblyAI (~$0.07). Chave lida do Windows Credential Manager pelo worker; nunca passou pela UI nem por argumentos.
+- Vídeo lido do caminho original; só o transcript foi escrito, em `storage/` (fora do Git).
+
+### Próximo passo
+- Seletor de ficheiro nativo (plugin dialog) em vez de colar o caminho; ecrã de Definições para gravar chaves pela UI; depois empacotamento (worker como sidecar) e as abas de contexto/estudo.
 
 ### Registro — 2026-07-12 (c): saída do Google Drive + scaffold da interface
 
