@@ -1,0 +1,8 @@
+{
+  "host": "vps.exemplo.com",
+  "port": 55433,
+  "dbname": "upexnote",
+  "user": "postgres",
+  "sslmode": "prefer",
+  "connect_timeout": 8
+}

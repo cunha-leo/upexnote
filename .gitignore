@@ -21,6 +21,7 @@ storage/*
 *.key
 *.pem
 credentials.json
+db_config.json
 
 # Python
 __pycache__/

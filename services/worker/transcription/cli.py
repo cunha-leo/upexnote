@@ -51,6 +51,7 @@ Exemplos:
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 from .registry import ENGINES
@@ -110,21 +111,23 @@ def cmd_transcribe(args):
 
     _emit(real_stdout, {"type": "start", "engine": args.engine, "file": file_path})
 
+    def progress(m):
+        _emit(real_stdout, {"type": "progress", "message": str(m)})
+
     # Prints soltos dentro do pipeline (ex.: audio_chunks) vao para stderr,
     # para o stdout ficar so com NDJSON limpo. Os nossos eventos de progresso
     # sao emitidos pela referencia guardada ao stdout real.
     sys.stdout = sys.stderr
+    started = time.time()
     try:
-        result = engine["run"](
-            file_path, api_key,
-            log=lambda m: _emit(real_stdout, {"type": "progress", "message": str(m)}),
-        )
+        result = engine["run"](file_path, api_key, log=progress)
     except Exception as e:  # noqa: BLE001 - queremos reportar qualquer falha como evento
         sys.stdout = real_stdout
         _emit(real_stdout, {"type": "error", "message": str(e)})
         return 1
     finally:
         sys.stdout = real_stdout
+    processing_s = round(time.time() - started, 1)
 
     _emit(real_stdout, {
         "type": "result",
@@ -137,7 +140,51 @@ def cmd_transcribe(args):
         "problems": result.get("problems", []),
         "language": result.get("language"),
     })
+
+    # Escrita best-effort no Postgres da VPS (cópia fora da máquina + histórico).
+    # O ficheiro local já está gravado; se isto falhar, não afeta o resultado.
+    try:
+        from . import db
+        raw_text = None
+        rp = result.get("raw_path")
+        if rp and Path(rp).exists():
+            raw_text = Path(rp).read_text(encoding="utf-8")
+        db.insert_transcription({
+            "engine": args.engine,
+            "source_filename": Path(file_path).name,
+            "source_path": file_path,
+            "language": result.get("language"),
+            "duration_s": result.get("duration_s"),
+            "cost_usd": result.get("cost"),
+            "processing_s": processing_s,
+            "validation_ok": result.get("ok"),
+            "problems": result.get("problems"),
+            "clean_text": result.get("clean_text"),
+            "raw_text": raw_text,
+            "clean_path": _jsonable(result.get("clean_path")),
+        }, log=progress)
+    except Exception as e:  # noqa: BLE001 - best-effort, nunca bloquear
+        progress(f"DB: passo ignorado ({e})")
+
     return 0 if result["ok"] else 2
+
+
+def cmd_db_check(args):
+    from . import db
+    if not db.load_config():
+        _emit(sys.stdout, {"type": "error", "message": "db_config.json não encontrado — copia db_config.example.json para db_config.json."})
+        return 1
+    if not get_key(db.PG_PASSWORD_KEY):
+        _emit(sys.stdout, {"type": "error", "message": f"Password não configurada. Corre: set-key --name {db.PG_PASSWORD_KEY}"})
+        return 1
+    try:
+        res = db.check()
+        _emit(sys.stdout, {"type": "db", "ok": True, "rows": res["rows"],
+                           "message": f"Ligação OK. Tabela 'transcriptions' pronta. Linhas atuais: {res['rows']}."})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha na ligação/tabela: {e}"})
+        return 1
 
 
 def cmd_set_key(args):
@@ -189,6 +236,8 @@ def build_parser():
     p_ck = sub.add_parser("check-key", help="Diz se uma chave esta configurada (nao revela o valor).")
     p_ck.add_argument("--name", required=True, help=f"Nome da chave: {', '.join(KNOWN_KEYS)}")
 
+    sub.add_parser("db-check", help="Testa a ligacao ao Postgres da VPS e garante a tabela.")
+
     return parser
 
 
@@ -200,6 +249,7 @@ def main(argv=None):
         "transcribe": cmd_transcribe,
         "set-key": cmd_set_key,
         "check-key": cmd_check_key,
+        "db-check": cmd_db_check,
     }
     return handlers[args.command](args)
 
