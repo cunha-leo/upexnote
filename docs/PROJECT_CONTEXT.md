@@ -255,7 +255,7 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ### Evidência / teste
 - Testados sem chamar APIs: `engines`, `check-key`, e os caminhos de erro do `transcribe` (motor desconhecido, ficheiro inexistente, chave em falta) — todos emitem NDJSON válido e códigos de saída corretos. `python -m transcription` e `python -m transcription.cli` funcionam.
-- Um `transcribe` real (com API) ainda não foi corrido através da CLI.
+- **Teste real de ponta a ponta (2026-07-12):** `transcribe --engine assemblyai` sobre uma gravação real de ~20,4 min (942 MB, reunião PT com code-switching EN). Resultado: validação OK, zero alucinações, 4 interlocutores diarizados, ~$0,071, 111 s de processamento; code-switching preservado corretamente (frase em inglês manteve-se em inglês). Confirma que a migração não introduziu regressão face ao protótipo. Os transcripts `__raw`/`__clean` foram gravados em `storage/transcripts/assemblyai/` e ficaram fora do Git (gitignored), como esperado. As três chaves (AssemblyAI, OpenAI, Deepgram) foram (re)gravadas pelo utilizador via `set-key` no novo `SERVICE_NAME` "UpexNote".
 
 ### Decisão
 - CLI + NDJSON escolhida em vez de servidor HTTP local para o primeiro entrypoint: sem gestão de portas/servidor/CORS, e encaixa diretamente no callback `log=` que os motores já têm.
