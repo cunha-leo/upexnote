@@ -85,6 +85,13 @@ def run(audio_path, api_key, log=print, chunk_seconds=1800):
         channel = result.get("results", {}).get("channels", [{}])[0]
         if detected_language is None:
             detected_language = channel.get("detected_language")
+            # No modo multilingue nao ha um idioma unico ao nivel do canal;
+            # best-effort: idioma dominante ao nivel da palavra, se existir.
+            if not detected_language:
+                words = (channel.get("alternatives", [{}])[0] or {}).get("words", []) or []
+                langs = [w.get("language") for w in words if w.get("language")]
+                if langs:
+                    detected_language = max(set(langs), key=langs.count)
 
         utterances = result.get("results", {}).get("utterances", [])
         if not utterances:

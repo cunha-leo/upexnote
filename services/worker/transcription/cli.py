@@ -69,6 +69,21 @@ def _jsonable(value):
     return value
 
 
+# Normaliza o idioma para código curto e consistente (para os dashboards):
+# whisper-1 devolve "portuguese", AssemblyAI devolve "pt" — uniformizamos.
+_LANG_MAP = {
+    "portuguese": "pt", "english": "en", "spanish": "es", "french": "fr",
+    "german": "de", "italian": "it", "dutch": "nl", "galician": "gl",
+}
+
+
+def _normalize_lang(lang):
+    if not lang:
+        return None
+    low = str(lang).strip().lower()
+    return _LANG_MAP.get(low, low)
+
+
 def cmd_engines(args):
     out = []
     for engine_id, cfg in ENGINES.items():
@@ -128,6 +143,7 @@ def cmd_transcribe(args):
     finally:
         sys.stdout = real_stdout
     processing_s = round(time.time() - started, 1)
+    language = _normalize_lang(result.get("language"))
 
     _emit(real_stdout, {
         "type": "result",
@@ -138,7 +154,7 @@ def cmd_transcribe(args):
         "cost": result["cost"],
         "duration_s": result["duration_s"],
         "problems": result.get("problems", []),
-        "language": result.get("language"),
+        "language": language,
     })
 
     # Escrita best-effort no Postgres da VPS (cópia fora da máquina + histórico).
@@ -153,7 +169,7 @@ def cmd_transcribe(args):
             "engine": args.engine,
             "source_filename": Path(file_path).name,
             "source_path": file_path,
-            "language": result.get("language"),
+            "language": language,
             "duration_s": result.get("duration_s"),
             "cost_usd": result.get("cost"),
             "processing_s": processing_s,
