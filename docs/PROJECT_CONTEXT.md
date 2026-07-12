@@ -133,9 +133,9 @@ O navegador sozinho pode pedir microfone e compartilhamento de tela/aba, mas nã
 ### Estrutura local atual
 
 ```text
-G:\My Drive\Projects\upexflow\upexnote
-├─ apps/desktop/        interface do UpexNote
-├─ services/worker/     pipelines locais e integração de mídia
+C:\Users\cunha\Projects\upexflow\upexnote
+├─ apps/desktop/        interface do UpexNote (Tauri + React)
+├─ services/worker/     pipelines locais e integração de mídia (Python)
 ├─ docs/                documentação de produto e engenharia
 ├─ storage/             conteúdo gerado pelo utilizador (ignorado pelo Git)
 ├─ README.md
@@ -143,6 +143,20 @@ G:\My Drive\Projects\upexflow\upexnote
 ```
 
 O seletor de arquivos deverá aceitar qualquer caminho do Windows. Selecionar um vídeo de um Drive corporativo/pessoal não significa copiá-lo para a pasta do projeto.
+
+### Organização do storage (transcripts)
+
+Convenção (a partir de 2026-07-12, ver Registro (e)):
+
+```text
+storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>.txt
+```
+
+- Pasta por **dia** (topo), depois por **motor** — fácil de encontrar pelo dia; motores nunca se misturam.
+- O **nome do ficheiro** carrega origem + data + motor + tipo (`clean`/`raw`), para se identificar sozinho mesmo fora da pasta.
+- **Sem compressão/zip.** Transcripts são texto (~20 KB cada); 10.000 transcrições ≈ 500 MB. O espaço nunca é o problema — só a organização. Zipar prejudicaria a busca e não pouparia nada relevante.
+- **Espaço:** os vídeos brutos (centenas de MB cada) NUNCA entram no storage; só o texto. Não é preciso banco de dados nem mover ficheiros por causa de espaço.
+- **Futuro (Biblioteca):** um índice local leve (SQLite) listará cada transcrição (data, motor, origem, duração, custo, validação) para pesquisa/histórico — organização, não espaço. O Postgres da VPS fica para sincronização entre dispositivos, mais tarde.
 
 ---
 
@@ -250,6 +264,26 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-12 (e): seletor de ficheiro + organização do storage
+
+### O que mudou
+- Seletor de ficheiro nativo (plugin dialog do Tauri): botão "Escolher…" abre o explorador do Windows; o campo de texto continua a aceitar um caminho colado.
+- Organização do storage por dia/motor: `storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<data>__<motor>__<kind>.txt` (nova função `transcript_path` em `paths.py`; removida a antiga `output_path`). Os 4 motores foram atualizados. Ficheiros existentes reorganizados para a nova estrutura.
+
+### Evidência / teste
+- Seletor validado a funcionar (escolha de `processos jira.mp4`, transcrição OK).
+- `transcript_path` testada para os 4 motores (caminhos e nomes corretos). Registo importa os 4 motores sem erro.
+
+### Decisão
+- **Não zipar** e **não usar banco por espaço**: transcripts são texto (~20 KB), o espaço nunca é o gargalo. A preocupação real é organização, resolvida por pastas por dia/motor + nome auto-descritivo.
+- Banco de dados fica para a Biblioteca (índice local SQLite para pesquisa) e, mais tarde, Postgres/VPS para sincronização — não para espaço.
+
+### Impacto em dados, custo ou privacidade
+- Nenhum custo. Só reorganização de ficheiros de texto locais (fora do Git).
+
+### Próximo passo
+- Ecrã de Definições (gerir chaves pela UI). Depois: empacotamento (worker como sidecar) e a Biblioteca com índice.
 
 ### Registro — 2026-07-12 (d): primeira interface funcional (transcrição ponta a ponta)
 

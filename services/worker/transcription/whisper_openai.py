@@ -35,7 +35,7 @@ import sys
 import time
 from openai import OpenAI
 from .audio_chunks import iter_wav_chunks_skip_silence
-from .paths import output_path, stem_for
+from .paths import transcript_path
 from .transcript_utils import enforce_monotonic_segments, validate_segments, mark_repetition_loops
 
 PRICE_PER_MINUTE = 0.006  # whisper-1, USD
@@ -114,12 +114,11 @@ def run(audio_path, api_key, log=print, chunk_seconds=300):
     all_segments, monotonic_corrections = enforce_monotonic_segments(all_segments)
     annotated, loop_events = mark_repetition_loops(all_segments)
 
-    stem = stem_for(audio_path)
-    raw_path = output_path("openai_whisper", f"{stem}__whisper1_raw.txt")
+    raw_path = transcript_path("whisper_openai", audio_path, "raw")
     raw_lines = [f"[{s:6.1f}s -> {e:6.1f}s]  {t}" for s, e, t, _ in annotated]
     raw_path.write_text("\n".join(raw_lines), encoding="utf-8")
 
-    clean_path = output_path("openai_whisper", f"{stem}__whisper1_clean.txt")
+    clean_path = transcript_path("whisper_openai", audio_path, "clean")
     clean_lines = []
     seen_loop_ids = set()
     for s, e, t, loop_id in annotated:
