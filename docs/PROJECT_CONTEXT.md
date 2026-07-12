@@ -265,6 +265,27 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-12 (h): Postgres ligado e verificado (serviço dedicado)
+
+### O que mudou
+- Criado um **serviço Postgres dedicado** no EasyPanel (projeto `upexnote`, serviço `upexnote-db`) — isolado do `lmsc`, visível e gerível pelo utilizador (a abordagem de "base dentro do container existente" foi abandonada). Porta pública `55433` em `vps.upexflow.com`, base `upexnote`, user `postgres` (superuser só deste container isolado).
+- App liga-se por TCP direto: `db.py` lê `db_config.json` (gitignored) e a password do Windows Credential Manager (`UPEXNOTE_PG_PASSWORD`). Novo comando `db-check`. Escrita best-effort no `transcribe` após o ficheiro local.
+
+### Evidência / teste
+- `db-check`: "Ligação OK. Tabela 'transcriptions' pronta." A tabela foi criada automaticamente.
+- Escrita verificada: inserção de uma linha de teste (id #1) + apagada; tabela limpa (0 linhas).
+- Utilizador vê a base `upexnote` e a tabela `transcriptions` no DBeaver (ligação `vps.upexflow.com:55433`).
+
+### Decisão
+- Serviço dedicado (container próprio) em vez de partilhar o Postgres do `lmsc`: isolamento real, backups próprios, visível. Como é isolado, a app usa o `postgres` desse container sem risco de tocar noutras apps — sem necessidade de role/schema extra.
+
+### Impacto em dados, custo ou privacidade
+- Metadados + texto (clean/raw) vão para a VPS em claro (opção 1). Transito: `sslmode=prefer` (usa TLS se o servidor tiver; senão, texto simples — endurecer depois).
+- Porta pública: endurecer com firewall/allowlist de IP. Falta configurar dump/backup do Postgres.
+
+### Próximo passo
+- Endurecimento (firewall no IP, backup do Postgres). Produto: ecrã de Definições (gerir chaves/DB pela UI), empacotamento (worker como sidecar), aba Biblioteca (consultar histórico a partir da tabela).
+
 ### Registro — 2026-07-12 (g): privacidade resolvida (opção 1) + plano de ligação ao Postgres
 
 ### O que mudou
