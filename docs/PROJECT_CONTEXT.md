@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 12 de julho de 2026  
+**Última atualização:** 12 de julho de 2026 (migração dos pipelines para `services/worker`)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado)  
@@ -197,11 +197,12 @@ O seletor de arquivos deverá aceitar qualquer caminho do Windows. Selecionar um
 - Git local inicializado na branch `main`.
 - Repositório privado GitHub criado e primeiro commit publicado.
 - Documentos iniciais: `README.md`, `ARCHITECTURE.md`, `PRODUCT.md` e este contexto vivo.
+- Pipelines de transcrição migrados de `C:\Users\cunha\Project\scripts\` para `services/worker/transcription/`, sem alterar a lógica de nenhum motor (ver Registro 2026-07-12 abaixo).
 
 ### Próximo trabalho
 
-1. Migrar os pipelines validados do protótipo anterior para `services/worker` sem regressão de comportamento.
-2. Definir a interface local-first e iniciar o shell/worker.
+1. Construir o primeiro ponto de entrada (CLI ou IPC/HTTP local) em `services/worker` que `apps/desktop` possa chamar, usando `transcription.registry.ENGINES`.
+2. Definir a interface local-first e iniciar o shell/worker (Tauri + React).
 3. Construir o primeiro fluxo: escolher arquivo → selecionar motor → acompanhar progresso → abrir transcript → guardar derivado.
 4. Só depois adicionar contexto estruturado, estudo, chat, síntese de voz e sincronização com Postgres.
 
@@ -240,4 +241,31 @@ Ao trabalhar neste projeto, uma IA deve:
 ### Próximo passo
 - ...
 ```
+
+---
+
+## 12. Registro de atualizações
+
+### Registro — 2026-07-12
+
+### O que mudou
+- Pipelines de transcrição migrados de `C:\Users\cunha\Project\scripts\` (protótipo Tkinter) para `services/worker/transcription/` neste repositório, como pacote Python (`assemblyai.py`, `whisper_openai.py`, `deepgram.py`, `gpt4o_openai.py`, `audio_chunks.py`, `transcript_utils.py`, `paths.py`, `credentials.py`, `registry.py`).
+- Destino dos transcripts gerados mudou de `resultados\<motor>\` (protótipo) para `storage/transcripts/<motor>/` (gitignorado), alinhado com a tabela de dados do `ARCHITECTURE.md`.
+- `credentials.py` passou a usar `SERVICE_NAME = "UpexNote"` no Windows Credential Manager (antes era `"TranscricaoReunioes"`) — chaves guardadas pelo protótipo antigo não são vistas automaticamente pelo novo worker; terão de ser reintroduzidas quando existir UI/CLI para tal.
+- Acoplamento ao Tkinter removido; `registry.py` expõe um `ENGINES` dict framework-agnostic para uma futura CLI/IPC usar.
+
+### Evidência / teste
+- `python -c "from transcription import registry; ..."` a partir de `services/worker/` confirmou os 4 motores registados e `paths.output_path()` a resolver corretamente para `G:\My Drive\Projects\upexflow\upexnote\storage\transcripts\<motor>\`.
+- Não foi feito um teste de transcrição real (ponta-a-ponta com chamada às APIs) nesta migração — só verificação de imports e resolução de caminhos.
+
+### Decisão
+- Nenhuma lógica de motor foi alterada (parâmetros, chunking, deteção de alucinações, validação permanecem exatamente como validados no protótipo).
+- gpt-4o-transcribe foi mantido no código (não descartado do repositório) por já estar documentado como referência, mas continua marcado como não recomendado.
+
+### Impacto em dados, custo ou privacidade
+- Nenhum. Nenhum vídeo, áudio, transcript ou chave foi movido/copiado — só código.
+- Sem custo (nenhuma API foi chamada).
+
+### Próximo passo
+- Construir o ponto de entrada (CLI/IPC) que liga `apps/desktop` a `services/worker`.
 
