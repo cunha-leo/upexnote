@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "desktop",
-        "width": 800,
-        "height": 600
+        "title": "UpexNote",
+        "width": 1040,
+        "height": 720,
+        "minWidth": 760,
+        "minHeight": 560
       }
     ],
     "security": {
