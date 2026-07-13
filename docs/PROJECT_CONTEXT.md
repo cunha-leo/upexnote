@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 12 de julho de 2026 (migração dos pipelines para `services/worker`)  
+**Última atualização:** 13 de julho de 2026 (remoção do `devtools`; build de produção limpo)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -218,13 +218,13 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 - Seletor de ficheiro nativo; organização do storage por dia/motor (ver Registro (e)).
 - **Durabilidade/histórico no Postgres da VPS** (serviço dedicado `upexnote-db`), escrita best-effort a cada transcrição (ver Registros (f)/(g)/(h)).
 - **App de produção (`.exe`)** com atalho no ambiente de trabalho; **ecrã de Definições** para gerir as chaves na app (sem terminal); menu lateral; bugs da WebView2 corrigidos (ver Registro (i)).
+- **`devtools` removido** do `Cargo.toml` e build de produção limpo regerado (ver Registro 2026-07-13).
 
-### Próximo trabalho (4 pontos, deixados em aberto a 2026-07-12)
+### Próximo trabalho (deixados em aberto)
 
-1. **Remover o `devtools`** (estava ligado só para diagnóstico) e recompilar limpo.
-2. **Empacotar o worker Python como sidecar** — para a app funcionar noutras máquinas / virar instalador (hoje encontra o worker por um caminho fixo desta máquina).
-3. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
-4. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
+1. **Empacotar o worker Python como sidecar** — para a app funcionar noutras máquinas / virar instalador (hoje encontra o worker por um caminho fixo desta máquina).
+2. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
+3. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
 
 ---
 
@@ -265,6 +265,25 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-13: remoção do `devtools` + build de produção limpo
+
+### O que mudou
+- Removida a feature `devtools` do `tauri` em `apps/desktop/src-tauri/Cargo.toml` (`features = ["devtools"]` → `features = []`). Estava ligada apenas para diagnosticar os crashes da WebView2 desta máquina (Lunar Lake / Arc), já resolvidos (ver Registro (i)).
+- Recompilada a app de produção (`npm run tauri build -- --no-bundle`); `upexnote.exe` regerado (~9,5 MB) sem `devtools`.
+
+### Evidência / teste
+- Build terminou com exit 0. Único aviso: mensagem benigna do linker (criação da `.dll.lib`), sem relação com a alteração. `tsc && vite build` OK; compilação Rust `Finished release` em ~3m31s.
+- `Cargo.lock` inalterado (o `devtools` era feature do crate `tauri` já presente; não mexeu na árvore de dependências).
+
+### Decisão
+- Distribuir sem `devtools` — a app deixa de expor as ferramentas de desenvolvimento da WebView2 na versão de produção.
+
+### Impacto em dados, custo ou privacidade
+- Nenhum. Só alteração de código; sem chamadas a APIs nem custo. Commit `307c763` publicado no `main`.
+
+### Próximo passo
+- Empacotar o worker Python como sidecar (portabilidade/instalador); endurecimento da VPS; aba Biblioteca.
 
 ### Registro — 2026-07-12 (i): Definições na app, navegação lateral, app de produção (.exe)
 
