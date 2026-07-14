@@ -285,7 +285,7 @@ Ao trabalhar neste projeto, uma IA deve:
 - Sidecar por deteção em runtime (exe ao lado) em vez de configuração de bundle do Tauri: funciona já com o fluxo atual (`build --no-bundle` + atalho); o bundle formal fica para a fase do instalador.
 
 ### Impacto em dados, custo ou privacidade
-- **Os novos transcripts (via app de produção) passam a ir para `Documentos\UpexNote\storage\`** — os antigos ficam em `storage/` do repo. Nenhum dado foi movido.
+- **Os transcripts vivem agora em `Documentos\UpexNote\storage\`** — os novos (via app de produção) são gravados lá, e os 12 ficheiros antigos foram migrados do `storage/` do repo (cópia verificada com `diff -r` antes de apagar a origem). Nota: em modo de desenvolvimento (fallback sem sidecar) o worker ainda escreve no `storage/` do repo.
 - `db_config.json` copiado (não movido) para `%APPDATA%\UpexNote\`. Sem custo; nenhuma API paga chamada.
 
 ### Próximo passo
