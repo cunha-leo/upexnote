@@ -37,9 +37,16 @@ if (Test-Path $cfg) {
 & ".\dist\upexnote-worker\upexnote-worker.exe" engines | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "O worker empacotado nao respondeu a 'engines' (exit $LASTEXITCODE)" }
 
-# Copia para junto do exe da app (a app procura worker\upexnote-worker.exe
-# ao lado do proprio executavel; se nao existir, usa o python do sistema).
-$dest = Join-Path $PSScriptRoot "..\..\apps\desktop\src-tauri\target\release\worker"
-if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
-Copy-Item -Recurse ".\dist\upexnote-worker" $dest
-Write-Host "OK: worker empacotado em $((Resolve-Path $dest).Path)"
+# Copia para dois destinos:
+# 1. target\release\worker — junto do exe "solto" (atalho/zip portatil);
+# 2. src-tauri\worker — fonte dos "resources" do bundler Tauri, que os
+#    poe ao lado do exe INSTALADO (mesma deteccao em runtime nos 2 casos).
+$dests = @(
+    (Join-Path $PSScriptRoot "..\..\apps\desktop\src-tauri\target\release\worker"),
+    (Join-Path $PSScriptRoot "..\..\apps\desktop\src-tauri\worker")
+)
+foreach ($dest in $dests) {
+    if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+    Copy-Item -Recurse ".\dist\upexnote-worker" $dest
+    Write-Host "OK: worker copiado para $((Resolve-Path $dest).Path)"
+}
