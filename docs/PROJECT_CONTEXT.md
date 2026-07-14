@@ -275,7 +275,7 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ### Evidência / teste
 - Lógica de caminhos testada em dev (5 cenários: fábrica, custom+organize off, override pontual, repor, organize on) e no worker congelado (get/set-settings roundtrip OK, padrão congelado = Documentos). `tsc`/`vite` e `cargo check` limpos. Instalador 0.2.0 gerado e no Desktop do utilizador.
-- **Pendente:** validação do utilizador na app real (instalar 0.2.0, escolher pasta própria, transcrever).
+- **VALIDADO pelo utilizador (2026-07-14):** instalou a 0.2.0, desligou a organização por dia/motor, escolheu o Desktop como pasta e fez uma transcrição real (AssemblyAI, ~$0.0713, 20 min, validação OK, linha #10 no Postgres). Ficheiros gravados diretamente na pasta escolhida, como desenhado.
 
 ### Impacto em dados, custo ou privacidade
 - Nenhum dado movido; transcripts existentes ficam onde estão. `settings.json` não contém segredos (só caminhos/booleano). Sem custo.
