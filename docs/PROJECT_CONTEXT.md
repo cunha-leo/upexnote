@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 13 de julho de 2026 (worker Python empacotado como sidecar)  
+**Última atualização:** 13 de julho de 2026 (pacote portátil: zip pronto a usar em qualquer PC)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -266,6 +266,27 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-13 (c): pacote portátil (zip) — app corre em qualquer PC ao descompactar
+
+### O que mudou
+- **`make_portable.ps1`** (raiz do repo): constrói worker + app e gera `dist\UpexNote-portable.zip` (~67 MB) com `UpexNote\upexnote.exe` + `worker\`. Descompactar em qualquer Windows 10/11 → abrir o exe → colar as chaves em Definições (uma vez) → app normal. Zero cópias manuais de ficheiros.
+- **`db_config.json` viaja no pacote:** o `db.py` congelado procura primeiro em `%APPDATA%\UpexNote` (override do utilizador) e depois **ao lado do worker** (versão incluída no zip). O passo manual "copiar config para o AppData" deixou de existir.
+- `build_worker.ps1` inclui o config no pacote se existir; se for removido antes do build (distribuição a terceiros), a app funciona na mesma — só não grava histórico na VPS.
+
+### Evidência / teste
+- Cenário "PC novo" simulado: com o config do `%APPDATA%` escondido, o worker empacotado usou o config de dentro do pacote e ligou à VPS (`db-check` OK). Restaurado no fim.
+- Zip verificado: `UpexNote\upexnote.exe`, `worker\upexnote-worker.exe`, `worker\db_config.json`, `worker\_internal\...` (201 entradas).
+
+### Decisão
+- Sem "ecrã de login": a app não tem contas; o ecrã de Definições já cumpre o papel de configuração única por máquina (chaves ficam no Credential Manager local).
+
+### Impacto em dados, custo ou privacidade
+- O zip leva o endereço da VPS (host/porta/base/user — **sem password**). É para máquinas do próprio; para terceiros, apagar `transcription\db_config.json` antes de correr o `make_portable.ps1`.
+- Sem custo; nenhuma API paga chamada. O zip fica em `dist/` (fora do Git).
+
+### Próximo passo
+- Testar o zip numa segunda máquina real. Depois: endurecimento da VPS e aba Biblioteca.
 
 ### Registro — 2026-07-13 (b): worker Python empacotado como sidecar (PyInstaller onedir)
 
