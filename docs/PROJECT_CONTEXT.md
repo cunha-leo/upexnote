@@ -242,8 +242,8 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 ### Próximo trabalho (deixados em aberto)
 
-1. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
-2. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
+1. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
+2. Menor: reiniciar a VPS numa altura conveniente (o Ubuntu pede restart por updates de segurança pendentes — ver Registro 2026-07-14 (b)); considerar cópia periódica dos dumps para fora da VPS.
 
 ---
 
@@ -284,6 +284,30 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-14 (b): VPS endurecida — firewall na porta do Postgres + backup diário
+
+### O que mudou
+- **Firewall:** a porta pública `55433` (Postgres `upexnote-db`) está agora restrita ao IP do utilizador. Regras na cadeia `DOCKER-USER` (a única que o Docker respeita — o UFW é ignorado pelo Docker, razão pela qual tentativas anteriores falharam), aplicadas por `/usr/local/sbin/upexnote-firewall.sh` e reaplicadas a cada arranque pelo serviço systemd `upexnote-firewall.service`. IPv4 e IPv6 cobertos (a porta estava publicada nos dois).
+- **Backup:** dump diário às 03:30 UTC (`/etc/cron.d/upexnote-backup` → `/usr/local/sbin/upexnote-backup.sh`): `pg_dump` da base `upexnote` para `/root/backups/upexnote/upexnote-<data>.sql.gz`, rotação de 14 dias, log em `/var/log/upexnote-backup.log`.
+- **Acesso SSH por chave** estabelecido para a máquina de desenvolvimento (ver runbook na secção 8): chave adicionada pelo utilizador via painel Hostinger (Chaves SSH), sem password a circular.
+
+### Evidência / teste
+- **Bug encontrado e corrigido durante o teste:** a 1ª versão da regra allow filtrava por `-s <IP>`, o que bloqueava as RESPOSTAS do Postgres (origem = IP do container) — o pedido entrava, a resposta morria, timeout. Corrigido com `--ctorigsrc` (permite ambos os sentidos de ligações INICIADAS pelo IP autorizado). Lição para o futuro: testar sempre o caminho completo, não só a regra.
+- Verificação dupla: `db-check` do IP autorizado → OK (8 linhas); teste externo de 56 localizações (check-host.net) → timeout em todas (o único "Connected" de 3ms era falso positivo de proxy no nó, confirmado por 0 ligações estabelecidas no conntrack do servidor e 158 pacotes no contador DROP).
+- Primeiro dump feito e íntegro (`gunzip -t` OK, ~54 KB). Serviço `enabled`, cron instalado.
+
+### Como mudar o IP autorizado (quando a internet de casa mudar de IP)
+1. Sintoma: a app continua a transcrever normalmente mas aparece "DB: não gravou na VPS (timeout)" — **nenhuma transcrição se perde** (ficheiro local primeiro, por desenho).
+2. Descobrir o IP novo: https://api.ipify.org
+3. Ligar à VPS (`ssh -i ~/.ssh/upexnote_vps root@vps.upexflow.com`), editar `ALLOWED_IP` em `/usr/local/sbin/upexnote-firewall.sh` e correr o script. Pronto.
+
+### Restaurar um backup (se alguma vez for preciso)
+`gunzip -c /root/backups/upexnote/upexnote-<data>.sql.gz | docker exec -i <container upexnote-db> psql -U postgres upexnote`
+
+### Impacto em dados, custo ou privacidade
+- Superfície de exposição da base caiu de "internet inteira" para 1 IP. Sem custo. Reversível: `systemctl disable upexnote-firewall` + remover as 3 regras (ou correr o script com outro IP).
+- Nota vista no servidor: o Ubuntu tem updates de segurança pendentes e pede restart — decisão do utilizador para altura conveniente (reinicia todos os serviços do EasyPanel por ~1-2 min).
 
 ### Registro — 2026-07-14: v0.2.0 — pasta dos transcripts à escolha do utilizador
 
