@@ -20,8 +20,6 @@ fn with_no_window(cmd: &mut Command) -> &mut Command {
 
 /// Caminho absoluto para `services/worker` (onde vive o pacote `transcription`).
 /// Em desenvolvimento, deriva-se da localização do crate (layout fixo do repo).
-/// NOTA: para a app empacotada isto terá de mudar (o worker será um sidecar) —
-/// tratado numa fase posterior.
 fn worker_dir() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR")); // .../apps/desktop/src-tauri
     p.pop(); // .../apps/desktop
@@ -32,9 +30,40 @@ fn worker_dir() -> PathBuf {
     p
 }
 
+/// Worker empacotado (PyInstaller onedir), se existir: `worker\upexnote-worker.exe`
+/// ao lado do executável da app. É este que torna a app portável para máquinas
+/// sem o repositório nem Python instalado.
+fn bundled_worker() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let p = exe.parent()?.join("worker").join("upexnote-worker.exe");
+    p.exists().then_some(p)
+}
+
+/// Constrói o comando do worker com os argumentos da CLI. Preferência:
+/// 1) worker empacotado (sidecar) ao lado do exe — máquinas de utilizadores;
+/// 2) fallback de desenvolvimento — `python -m transcription.cli` no repo.
+/// PYTHONUNBUFFERED garante que os eventos NDJSON chegam linha a linha
+/// (equivalente ao antigo `-u`, mas funciona também no exe congelado).
+fn worker_command(cli_args: &[&str]) -> Command {
+    let mut cmd = match bundled_worker() {
+        Some(exe) => {
+            let dir = exe.parent().expect("exe tem pasta").to_path_buf();
+            let mut c = Command::new(exe);
+            c.current_dir(dir);
+            c
+        }
+        None => {
+            let mut c = Command::new("python");
+            c.arg("-m").arg("transcription.cli").current_dir(worker_dir());
+            c
+        }
+    };
+    cmd.args(cli_args).env("PYTHONUNBUFFERED", "1");
+    cmd
+}
+
 fn run_cli(args: &[&str]) -> Result<String, String> {
-    let mut cmd = Command::new("python");
-    cmd.arg("-m").arg("transcription.cli").args(args).current_dir(worker_dir());
+    let mut cmd = worker_command(args);
     with_no_window(&mut cmd);
     let out = cmd
         .output()
@@ -74,10 +103,8 @@ fn list_credentials() -> Result<String, String> {
 #[tauri::command]
 fn save_credential(name: String, value: String) -> Result<String, String> {
     use std::io::Write;
-    let mut cmd = Command::new("python");
-    cmd.args(["-m", "transcription.cli", "set-key", "--name", &name, "--stdin"])
-        .current_dir(worker_dir())
-        .stdin(Stdio::piped())
+    let mut cmd = worker_command(&["set-key", "--name", &name, "--stdin"]);
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     with_no_window(&mut cmd);
@@ -110,13 +137,9 @@ fn clear_credential(name: String) -> Result<String, String> {
 /// cada linha NDJSON como evento `worker://event`; no fim emite `worker://done`.
 #[tauri::command]
 fn transcribe(app: AppHandle, engine: String, file: String) -> Result<(), String> {
-    let dir = worker_dir();
     std::thread::spawn(move || {
-        let mut cmd = Command::new("python");
-        cmd.args(["-u", "-m", "transcription.cli", "transcribe", "--engine", &engine, "--file", &file])
-            .current_dir(dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+        let mut cmd = worker_command(&["transcribe", "--engine", &engine, "--file", &file]);
+        cmd.stdout(Stdio::piped()).stderr(Stdio::null());
         with_no_window(&mut cmd);
         let child = cmd.spawn();
 

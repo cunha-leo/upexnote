@@ -11,8 +11,11 @@ from datetime import date
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
-    # Executavel empacotado: usa a pasta onde o executavel esta como raiz.
-    PROJECT_DIR = Path(sys.executable).resolve().parent
+    # Executavel empacotado (sidecar): os transcripts vao para uma pasta
+    # estavel e visivel do utilizador — Documentos\UpexNote — que sobrevive
+    # a reinstalacoes/atualizacoes da app (decisao 2026-07-13; a pasta do
+    # exe seria apagada junto com a app e Program Files nem e gravavel).
+    PROJECT_DIR = Path.home() / "Documents" / "UpexNote"
 else:
     # .../services/worker/transcription/paths.py -> raiz do projeto e 3 niveis acima.
     PROJECT_DIR = Path(__file__).resolve().parents[3]

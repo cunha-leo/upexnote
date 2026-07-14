@@ -10,12 +10,22 @@ upexnote-db; ver docs/PROJECT_CONTEXT.md Registros (f)/(g)).
   o fluxo de transcrição continua — nunca se perde uma transcrição já paga.
 """
 import json
+import os
 import socket
+import sys
 from pathlib import Path
 
 from .credentials import get_key
 
-CONFIG_PATH = Path(__file__).resolve().parent / "db_config.json"
+if getattr(sys, "frozen", False):
+    # Executavel empacotado (sidecar): __file__ fica enterrado no _internal/
+    # do PyInstaller e seria substituido a cada atualizacao da app. A config
+    # (host/porta/base/user — SEM password) vive em %APPDATA%\UpexNote,
+    # estavel entre versoes. A password continua no Credential Manager.
+    _appdata = Path(os.environ.get("APPDATA", str(Path.home())))
+    CONFIG_PATH = _appdata / "UpexNote" / "db_config.json"
+else:
+    CONFIG_PATH = Path(__file__).resolve().parent / "db_config.json"
 PG_PASSWORD_KEY = "UPEXNOTE_PG_PASSWORD"
 
 DDL = """
