@@ -153,6 +153,38 @@ fn library_item(id: i64) -> Result<String, String> {
     run_cli(&["library-item", "--id", &id_s])
 }
 
+/// Edita o texto clean de uma transcrição. O texto vai por STDIN (pode ser
+/// grande e ter caracteres especiais), nunca por argumentos. A raw é intacta.
+#[tauri::command]
+fn library_update(id: i64, text: String) -> Result<String, String> {
+    use std::io::Write;
+    let id_s = id.to_string();
+    let mut cmd = worker_command(&["library-update", "--id", &id_s]);
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    with_no_window(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| format!("Falha ao iniciar o worker Python: {e}"))?;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(if err.trim().is_empty() {
+            String::from_utf8_lossy(&out.stdout).to_string()
+        } else {
+            err.to_string()
+        });
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// Apaga uma transcrição (arquivada no histórico pelo worker).
+#[tauri::command]
+fn library_delete(id: i64) -> Result<String, String> {
+    let id_s = id.to_string();
+    run_cli(&["library-delete", "--id", &id_s])
+}
+
 /// Definições de armazenamento em vigor (pasta padrão + organização).
 #[tauri::command]
 fn get_settings() -> Result<String, String> {
@@ -233,7 +265,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
-            get_settings, set_settings, library, library_item, transcribe
+            get_settings, set_settings, library, library_item, library_update, library_delete, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

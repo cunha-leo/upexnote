@@ -310,6 +310,45 @@ def cmd_library_item(args):
         return 1
 
 
+def cmd_library_update(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    # O texto clean editado vem por STDIN (pode ser grande e multi-linha).
+    new_text = sys.stdin.read()
+    try:
+        res = db.update_transcription(args.id, new_text)
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "message": "Transcrição atualizada.",
+                           "file_updated": res.get("file_updated", False)})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao atualizar: {e}"})
+        return 1
+
+
+def cmd_library_delete(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.delete_transcription(args.id)
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "message": "Transcrição apagada (arquivada no histórico)."})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar: {e}"})
+        return 1
+
+
 def cmd_get_settings(args):
     # Definicoes de armazenamento (para o ecra de Definicoes): pasta padrao
     # em vigor, se e personalizada, e a organizacao por dia/motor.
@@ -389,6 +428,12 @@ def build_parser():
     p_libi = sub.add_parser("library-item", help="Uma transcricao completa, com texto (JSON).")
     p_libi.add_argument("--id", type=int, required=True, help="ID da transcricao.")
 
+    p_libu = sub.add_parser("library-update", help="Edita o texto clean (le stdin); a raw fica intacta.")
+    p_libu.add_argument("--id", type=int, required=True, help="ID da transcricao.")
+
+    p_libd = sub.add_parser("library-delete", help="Apaga uma transcricao (arquiva no historico).")
+    p_libd.add_argument("--id", type=int, required=True, help="ID da transcricao.")
+
     return parser
 
 
@@ -407,6 +452,8 @@ def main(argv=None):
         "set-settings": cmd_set_settings,
         "library": cmd_library,
         "library-item": cmd_library_item,
+        "library-update": cmd_library_update,
+        "library-delete": cmd_library_delete,
     }
     return handlers[args.command](args)
 

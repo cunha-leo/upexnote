@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -72,7 +72,7 @@ type LibSummary = {
   last_at: string | null;
   by_engine: LibEngine[];
 };
-type LibDetail = LibItem & { source_path: string | null; problems: string[]; clean_text: string };
+type LibDetail = LibItem & { source_path: string | null; problems: string[]; clean_text: string; edited_at: string | null };
 
 const ENGINE_LABELS: Record<string, string> = {
   assemblyai: "AssemblyAI",
@@ -111,7 +111,13 @@ function LibraryView() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<LibDetail | null>(null);
-  const [detailBusy, setDetailBusy] = useState(false);
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [actionMsg, setActionMsg] = useState("");
+  const [confirmDel, setConfirmDel] = useState(false);
+  const editRef = useRef<HTMLTextAreaElement>(null);
 
   async function load(searchTerm?: string) {
     setLoading(true);
@@ -137,18 +143,91 @@ function LibraryView() {
     load();
   }, []);
 
+  function closeDetail() {
+    setDetail(null);
+    setEditing(false);
+    setConfirmDel(false);
+    setActionMsg("");
+  }
+
   async function openItem(id: number) {
-    setDetailBusy(true);
+    setOpeningId(id);
+    setActionMsg("");
     try {
       const raw = await invoke<string>("library_item", { id });
       const obj = JSON.parse(raw);
-      if (obj.type === "library_item") setDetail(obj.item);
-      else setError(obj.message || "Falha a abrir a transcrição.");
+      if (obj.type === "library_item") {
+        setDetail(obj.item);
+        setEditing(false);
+        setConfirmDel(false);
+        setEditText(obj.item.clean_text);
+      } else {
+        setError(obj.message || "Falha a abrir a transcrição.");
+      }
     } catch (e) {
       setError(String(e));
     } finally {
-      setDetailBusy(false);
+      setOpeningId(null);
     }
+  }
+
+  async function saveEdit() {
+    if (!detail) return;
+    setSaving(true);
+    setActionMsg("");
+    try {
+      const raw = await invoke<string>("library_update", { id: detail.id, text: editText });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        setDetail({ ...detail, clean_text: editText, edited_at: new Date().toISOString() });
+        setEditing(false);
+        setActionMsg("Guardado ✓" + (obj.file_updated ? " (ficheiro também atualizado)" : ""));
+        load(search.trim() || undefined);
+      } else {
+        setActionMsg("Erro: " + (obj.message || "falha ao guardar"));
+      }
+    } catch (e) {
+      setActionMsg("Erro: " + String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteItem() {
+    if (!detail) return;
+    setSaving(true);
+    setActionMsg("");
+    try {
+      const raw = await invoke<string>("library_delete", { id: detail.id });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        closeDetail();
+        load(search.trim() || undefined);
+      } else {
+        setActionMsg("Erro: " + (obj.message || "falha ao apagar"));
+        setConfirmDel(false);
+      }
+    } catch (e) {
+      setActionMsg("Erro: " + String(e));
+      setConfirmDel(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Colar intercetado (a WebView2 desta máquina crasha no colar nativo).
+  function onEditPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    e.preventDefault();
+    const text = e.clipboardData.getData("text");
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? editText.length;
+    const end = el.selectionEnd ?? editText.length;
+    const next = editText.slice(0, start) + text + editText.slice(end);
+    setEditText(next);
+    const pos = start + text.length;
+    requestAnimationFrame(() => {
+      if (editRef.current) editRef.current.selectionStart = editRef.current.selectionEnd = pos;
+    });
   }
 
   // Vista de detalhe (uma transcrição, com texto)
@@ -156,24 +235,61 @@ function LibraryView() {
     return (
       <section className="card">
         <div className="detail-head">
-          <button className="secondary" onClick={() => setDetail(null)}>← Voltar</button>
+          <button className="secondary" onClick={closeDetail} disabled={saving}>← Voltar</button>
           <h2 style={{ margin: 0, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {detail.source_filename || `Transcrição #${detail.id}`}
           </h2>
-          <button className="secondary" onClick={() => navigator.clipboard.writeText(detail.clean_text)}>Copiar tudo</button>
+          {!editing && (
+            <>
+              <button className="secondary" onClick={() => { setEditText(detail.clean_text); setEditing(true); setActionMsg(""); }}>Editar</button>
+              <button className="secondary" onClick={() => navigator.clipboard.writeText(detail.clean_text)}>Copiar</button>
+              {!confirmDel ? (
+                <button className="secondary btn-danger" onClick={() => setConfirmDel(true)} disabled={saving}>Apagar</button>
+              ) : (
+                <>
+                  <span className="muted" style={{ color: "var(--danger)" }}>Apagar mesmo?</span>
+                  <button className="btn-danger-solid" onClick={deleteItem} disabled={saving}>{saving ? "A apagar…" : "Sim, apagar"}</button>
+                  <button className="secondary" onClick={() => setConfirmDel(false)} disabled={saving}>Não</button>
+                </>
+              )}
+            </>
+          )}
+          {editing && (
+            <>
+              <button onClick={saveEdit} disabled={saving}>{saving ? "A guardar…" : "Guardar"}</button>
+              <button className="secondary" onClick={() => { setEditing(false); setActionMsg(""); }} disabled={saving}>Cancelar</button>
+            </>
+          )}
         </div>
         <div className="result-head">
           <span className="badge">{engLabel(detail.engine)}</span>
           <span className={"badge " + (detail.validation_ok ? "ok" : "warn")}>
             {detail.validation_ok ? "✓ Validação OK" : "⚠ Com avisos"}
           </span>
+          {detail.edited_at && <span className="badge">editado</span>}
           {detail.language && <span className="badge">idioma: {detail.language}</span>}
           <span className="badge">{fmtCost(detail.cost_usd)}</span>
           <span className="badge">{fmtDur(detail.duration_s)}</span>
           <span className="badge">{fmtDate(detail.created_at)}</span>
         </div>
-        <pre className="transcript">{detail.clean_text}</pre>
-        {detail.clean_path && <div className="muted" style={{ marginTop: 8 }}>Ficheiro: {detail.clean_path}</div>}
+        {editing ? (
+          <textarea
+            ref={editRef}
+            className="transcript edit-area"
+            value={editText}
+            onChange={(e) => setEditText(e.currentTarget.value)}
+            onPaste={onEditPaste}
+            spellCheck={false}
+          />
+        ) : (
+          <pre className="transcript">{detail.clean_text}</pre>
+        )}
+        {actionMsg && <div className="muted" style={{ marginTop: 8 }}>{actionMsg}</div>}
+        <div className="muted" style={{ marginTop: 8 }}>
+          {editing
+            ? "A editar a versão de leitura (clean). O texto bruto (raw) fica sempre intacto; a versão anterior vai para o histórico ao guardar."
+            : detail.clean_path ? "Ficheiro: " + detail.clean_path : ""}
+        </div>
       </section>
     );
   }
@@ -260,8 +376,6 @@ function LibraryView() {
           )}
         </div>
 
-        {detailBusy && <div className="muted">A abrir transcrição…</div>}
-
         {!loading && !error && items.length === 0 && (
           <div className="lib-empty">
             {search ? "Nenhuma transcrição corresponde à pesquisa." : "Ainda não há transcrições no histórico."}
@@ -270,15 +384,21 @@ function LibraryView() {
 
         <div className="lib-list">
           {items.map((it) => (
-            <button key={it.id} className="lib-row" onClick={() => openItem(it.id)} disabled={detailBusy}>
+            <button key={it.id} className="lib-row" onClick={() => openItem(it.id)}>
               <span className={"lib-dot " + (it.validation_ok ? "ok" : "warn")} title={it.validation_ok ? "Validação OK" : "Com avisos"} />
               <span className="lib-main">
                 <div className="lib-name">{it.source_filename || `Transcrição #${it.id}`}</div>
                 <div className="lib-sub">{engLabel(it.engine)} · {fmtDate(it.created_at)}{it.language ? " · " + it.language : ""}</div>
               </span>
               <span className="lib-meta">
-                <span className="badge">{fmtDur(it.duration_s)}</span>
-                <span className="badge">{fmtCost(it.cost_usd)}</span>
+                {openingId === it.id ? (
+                  <span className="spinner" />
+                ) : (
+                  <>
+                    <span className="badge">{fmtDur(it.duration_s)}</span>
+                    <span className="badge">{fmtCost(it.cost_usd)}</span>
+                  </>
+                )}
               </span>
             </button>
           ))}

@@ -54,6 +54,43 @@ CREATE TABLE IF NOT EXISTS transcriptions (
 )
 """
 
+# Histórico/auditoria: antes de cada edição ou delete, a linha atual é
+# copiada para cá (o clean original nunca se perde; deletes são recuperáveis).
+HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS transcriptions_history (
+    history_id      bigserial PRIMARY KEY,
+    archived_at     timestamptz NOT NULL DEFAULT now(),
+    change_type     text NOT NULL,            -- 'update' | 'delete'
+    original_id     bigint,
+    created_at      timestamptz,
+    engine          text,
+    source_filename text,
+    source_path     text,
+    language        text,
+    duration_s      numeric,
+    cost_usd        numeric,
+    processing_s    numeric,
+    validation_ok   boolean,
+    problems        jsonb,
+    clean_text      text,
+    raw_text        text,
+    clean_path      text,
+    host            text
+)
+"""
+
+# Snapshot da linha atual para o histórico (usa SELECT ... para copiar tudo).
+SNAPSHOT = """
+INSERT INTO transcriptions_history
+(change_type, original_id, created_at, engine, source_filename, source_path,
+ language, duration_s, cost_usd, processing_s, validation_ok, problems,
+ clean_text, raw_text, clean_path, host)
+SELECT %s, id, created_at, engine, source_filename, source_path,
+ language, duration_s, cost_usd, processing_s, validation_ok, problems,
+ clean_text, raw_text, clean_path, host
+FROM transcriptions WHERE id = %s
+"""
+
 INSERT = """
 INSERT INTO transcriptions
 (engine, source_filename, source_path, language, duration_s, cost_usd,
@@ -153,6 +190,9 @@ def close_connection(conn):
 def ensure_table(conn):
     with conn.cursor() as cur:
         cur.execute(DDL)
+        # Migração leve: coluna edited_at + tabela de histórico (idempotente).
+        cur.execute("ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS edited_at timestamptz")
+        cur.execute(HISTORY_DDL)
     conn.commit()
 
 
@@ -266,7 +306,7 @@ def library_item(item_id):
         ensure_table(conn)
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, created_at, engine, source_filename, source_path,
+                SELECT id, created_at, edited_at, engine, source_filename, source_path,
                        language, duration_s, cost_usd, processing_s, validation_ok,
                        problems, clean_text, clean_path
                 FROM transcriptions WHERE id = %s
@@ -276,9 +316,66 @@ def library_item(item_id):
             return None
         it = rows[0]
         it["created_at"] = it["created_at"].isoformat() if it["created_at"] else None
+        it["edited_at"] = it["edited_at"].isoformat() if it["edited_at"] else None
         for k in ("duration_s", "cost_usd", "processing_s"):
             it[k] = float(it[k]) if it[k] is not None else None
         return it
+    finally:
+        close_connection(conn)
+
+
+def update_transcription(item_id, new_clean_text):
+    """
+    Edita a versão CLEAN de uma transcrição. A raw NUNCA é tocada (imutável).
+    Antes de gravar, copia a linha atual para o histórico (reversível). Também
+    reescreve o ficheiro clean no disco (best-effort), para não divergir.
+    Devolve {ok, file_updated} ou {ok: False, error: 'not_found'}.
+    """
+    conn = connect()
+    try:
+        ensure_table(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT clean_path FROM transcriptions WHERE id = %s", (int(item_id),))
+            row = cur.fetchone()
+            if not row:
+                return {"ok": False, "error": "not_found"}
+            clean_path = row[0]
+            cur.execute(SNAPSHOT, ("update", int(item_id)))
+            cur.execute(
+                "UPDATE transcriptions SET clean_text = %s, edited_at = now() WHERE id = %s",
+                (new_clean_text, int(item_id)),
+            )
+        conn.commit()
+        file_updated = False
+        if clean_path:
+            try:
+                p = Path(clean_path)
+                if p.exists():
+                    p.write_text(new_clean_text, encoding="utf-8")
+                    file_updated = True
+            except Exception:
+                pass  # best-effort: o banco é a fonte de verdade da Biblioteca
+        return {"ok": True, "file_updated": file_updated}
+    finally:
+        close_connection(conn)
+
+
+def delete_transcription(item_id):
+    """
+    Apaga uma transcrição da tabela ativa, DEPOIS de a arquivar no histórico
+    (recuperável). Não toca em ficheiros no disco. Devolve {ok} ou not_found.
+    """
+    conn = connect()
+    try:
+        ensure_table(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM transcriptions WHERE id = %s", (int(item_id),))
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(SNAPSHOT, ("delete", int(item_id)))
+            cur.execute("DELETE FROM transcriptions WHERE id = %s", (int(item_id),))
+        conn.commit()
+        return {"ok": True}
     finally:
         close_connection(conn)
 

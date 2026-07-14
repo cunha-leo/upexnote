@@ -391,4 +391,23 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
 .lib-dot.warn { background: var(--danger); }
 
 .lib-empty { color: var(--text-dim); font-size: 13.5px; padding: 18px 4px; text-align: center; }
-.detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.detail-head button { flex-shrink: 0; }
+
+textarea.edit-area {
+  display: block;
+  width: 100%;
+  min-height: 46vh;
+  resize: vertical;
+  color: var(--text);
+  outline: none;
+}
+textarea.edit-area:focus { border-color: var(--accent); }
+
+.btn-danger {
+  color: var(--danger);
+  border-color: var(--border);
+}
+.btn-danger:hover:not(:disabled) { border-color: var(--danger); background: var(--panel-2); }
+.btn-danger-solid { background: var(--danger); color: #fff; border-color: transparent; }
+.btn-danger-solid:hover:not(:disabled) { background: var(--danger); opacity: 0.88; }
