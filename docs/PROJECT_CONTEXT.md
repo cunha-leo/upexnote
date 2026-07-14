@@ -276,7 +276,8 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ### Evidência / teste
 - Build do instalador terminou sem erros; ficheiro em `target/release/bundle/nsis/` e copiado para o Desktop do utilizador.
-- **Pendente:** teste de instalação real (correr o setup, verificar Menu Iniciar, abrir a app instalada e confirmar independência da pasta do projeto via rename temporário).
+- **VALIDADO pelo utilizador (2026-07-13):** instalou pelo setup, renomeou a pasta do projeto para `..._OFF` e fez uma **transcrição real de ponta a ponta pela app instalada** (AssemblyAI). Transcript gravado em `Documentos\UpexNote\storage\transcripts\2026-07-13\assemblyai\` (clean+raw). Prova de independência total da pasta do projeto — o teste que faltava ao sidecar. Pasta renomeada de volta em seguida.
+- Pendência cosmética: o ícone da app é o default do Tauri — logo própria em curso.
 
 ### Decisão
 - NSIS `currentUser` (sem admin) e não MSI: experiência tipo Chrome/Spotify, adequada a uso pessoal.
