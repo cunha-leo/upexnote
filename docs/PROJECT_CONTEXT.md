@@ -251,14 +251,24 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 2. **Mostrar o `#id` na app.** A coluna `id` (PK) JÁ existe — não criar coluna nova. Falta só surface-á-la no detalhe (e talvez na lista) para correlacionar app ↔ DBeaver (filtrar por id). Barato.
 3. **`problems` → `reason_code` + tabela de referência.** Substituir/complementar o texto livre de `problems` por códigos estruturados (ex.: `HALLUCINATION_FOREIGN_LANG`, `COVERAGE_GAP`, `LOOP_REPETITION`) + tabela `problem_reasons` (code, label, descrição, severidade). Torna pesquisável e alimenta dashboards. **Mexe na lógica de validação do worker** (é onde os problemas nascem) — mais substancial. Observação motivadora: numa transcrição real, o aviso foi por `COVERAGE_GAP` (último ts 2915s vs duração 3666s) e a alucinação óbvia em língua estrangeira pode nem ter sido marcada — os reason codes dariam precisão sobre o quê/porquê. **Nota:** este ponto passa a ser implementado dentro do item 4 (o ramo `transcription_problems` + dimensão `problem_reasons`).
 
-4. **Restruturação do schema — core/índice + ramos (o mais estrutural).** Preocupação do utilizador (2026-07-14): a tabela `transcriptions` ficou "mais textual do que de índices", fora dos padrões modernos e pouco reutilizável/evolutiva. Direção acordada: separar índice de conteúdo, com dimensões onde a reutilização é real. **Calibração:** NÃO um star schema completo (exagero para a escala — milhares de linhas, um utilizador); a versão pragmática:
-   - `transcriptions` (CORE/matriz): só metadados+chaves — id, created_at, edited_at, engine_id→engines, language, source_filename, source_path, duration_s, cost_usd, processing_s, validation_ok, host.
-   - `transcript_texts` (ramo 1:1): transcription_id, clean_text, raw_text (o "textual" pesado, só carregado ao abrir).
-   - `engines` (dimensão): id, code, label, is_primary. `problem_reasons` (dimensão) + `transcription_problems` (ramo N:1) — absorve o item 3.
-   - `transcriptions_history`/versions mantém-se (auditoria).
-   - Fases 3-6 (contexto/estudo/chat) entram como NOVOS ramos na mesma chave — é este o motivo forte para fazer JÁ: tudo se pendura no id da transcrição.
-   - **Timing recomendado:** fazer ANTES das fases 3-6 (muito mais barato agora que pouca coisa depende da tabela plana). É migração do core (db.py insert/query/update/delete + CLI), mas segura (8 linhas, backups+histórico). Ganho principal = evolutividade/reutilização, NÃO velocidade (o Postgres já faz TOAST do texto e o `library_list` já só lê metadados).
-   - **Pendente de decisão:** confirmar a versão pragmática vs ir mais para warehouse; e a ordem face às fases de produto.
+4. **Restruturação do schema — modelo hub-and-spoke (o mais estrutural).** Preocupação/visão do utilizador (2026-07-14): a `transcriptions` ficou "mais textual do que de índices", fora dos padrões modernos e pouco reutilizável. O utilizador (experiente em arquitetura de dados) quer um **hub central ("matrix") + satélites especializados** — enquadramento correto: hub-and-spoke / espírito Data Vault. **Foco explícito: arquitetura, gestão, reaproveitamento e consultas isoladas — NÃO performance** (o utilizador já reconhece que o Postgres aguenta; não repetir o argumento TOAST).
+
+   **Esqueleto-alvo (visão do utilizador + refinamentos meus):**
+   - **hub `transcriptions`** (matrix, identidade IMUTÁVEL): id surrogate, código público, ref de origem, `service_type_id`. Nunca se apaga (apagar = flag).
+   - **conteúdo `transcript_texts`** (1:1): clean_text, raw_text, `dt_issue`/`dt_change`/`dt_ret`.
+   - **erros `transcription_problems` + dim `problem_reasons`** (absorve item 3): descrição/código, `corrected_at`, `alerted_at`, `acknowledged_at` (ignore), `deleted_at`.
+   - **métricas `transcription_metrics`** (1:1): motor, processing_s, custo, duração, língua. ("língua mais usada" = query, não coluna.)
+   - **dim `service_types`**: áudio-ficheiro, vídeo, ao-vivo, submódulos futuros.
+   - **`*_history`/versions**: versões anteriores dos satélites mutáveis (já temos).
+   - **proveniência/ator `actors`**: host, input/export path, futuro user_id, e tipo de ação (manual/auto/trigger/batch/IA).
+
+   **3 decisões de design (input meu):**
+   - (a) **Um só modelo temporal:** não ter `dt_ret` (soft-delete) E histórico a competir pela verdade. Rec.: satélites com soft-delete + histórico para versões; hub nunca DELETE; criar view `transcriptions_active` (evitar `WHERE dt_ret IS NULL` espalhado).
+   - (b) **Ator unificado:** um só conceito `actors` referenciado por ciclo-de-vida E histórico (não duplicar "quem mudou").
+   - (c) **YAGNI/camadas:** construir agora hub + conteúdo + erros + métricas (têm dados reais); `service_types` e `actors` como dimensões finas com FKs reservadas; NÃO criar satélites vazios para fases inexistentes — mas deixar as chaves prontas para encaixe não-quebrável.
+
+   **Timing:** antes das fases 3-6 (tudo se pendura no id do hub; mais barato agora). Migração do core (db.py + CLI), segura (poucos dados, backups+histórico).
+   **Pendente de decisão do utilizador:** validar (a)/(b)/(c) e a ordem face às fases de produto. (Discussão em curso — utilizador disse ter mais pontos.)
 
 ---
 
