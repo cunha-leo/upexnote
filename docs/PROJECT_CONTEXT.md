@@ -267,6 +267,18 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-13 (e): logo/ícone da marca
+
+### O que mudou
+- Ícone próprio escolhido pelo utilizador entre 9 propostas: **balão de conversa em contorno com barras de onda sonora** (índigo `#818CF8` + acento verde `#34D399` sobre fundo `#1E1B4B`). Comunica "conversa → transcript".
+- Fonte vetorial em `apps/desktop/src-tauri/icons/icon-source.svg`; raster 1024px e todos os tamanhos gerados com `tauri icon` (janela, barra de tarefas, Menu Iniciar, `icon.ico`). Instalador recompilado com a marca.
+
+### Evidência / teste
+- PNG 1024 verificado visualmente; instalador novo gerado e copiado para o Desktop (substituição por cima da instalação atualiza o ícone).
+
+### Impacto em dados, custo ou privacidade
+- Nenhum. Só assets de imagem no repositório.
+
 ### Registro — 2026-07-13 (d): instalador NSIS — "app de verdade"
 
 ### O que mudou
