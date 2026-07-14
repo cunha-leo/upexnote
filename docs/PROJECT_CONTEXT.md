@@ -270,6 +270,8 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
    **Timing:** antes das fases 3-6 (tudo se pendura no id do hub; mais barato agora). Migração do core (db.py + CLI), segura (poucos dados, backups+histórico).
    **Pendente de decisão do utilizador:** validar (a)/(b)/(c) e a ordem face às fases de produto. (Discussão em curso — utilizador disse ter mais pontos.)
 
+5. **Refresh da linguagem visual (design pass).** Preocupação do utilizador (2026-07-14): o layout atual "parece um CRUD simples com Bootstrap 3/4", arcaico. Quer algo mais moderno/clean, referências VS Code / Claude / apps Electron (só referência, não copiar). Diagnóstico: raios gordos (cards 14px, inputs 9px), azul primário saturado, badges/pílulas chunky, painéis todos iguais (sem hierarquia), layout form-heavy. Direção proposta (mockup mostrado e aprovado como rumo): **bordas hairline** (~1px baixa opacidade), **raios contidos 6–8px**, **paleta dessaturada** com o indigo da marca (#818cf8) usado com parcimónia, **hierarquia tipográfica** (micro-labels de secção, título+subtítulo, divisórias hairline), motor como rádio-cards em vez de dropdown, mais densidade/disciplina de espaçamento. É uma **linguagem** (aplica-se a Transcrever/Biblioteca/Definições). **Custo contido:** quase tudo em `apps/desktop/src/App.css` (tokens de cor/raio/borda + reestilo de componentes), **sem mexer na lógica**. Não agendado; ordem a decidir com os outros itens.
+
 ---
 
 ## 11. Protocolo de atualização para qualquer IA
