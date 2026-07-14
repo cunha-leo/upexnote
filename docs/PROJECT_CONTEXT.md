@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 14 de julho de 2026 (v0.3.0 — aba Biblioteca: histórico e dashboards)  
+**Última atualização:** 14 de julho de 2026 (v0.4.0 — Biblioteca: editar/apagar com histórico)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -284,6 +284,25 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-14 (e): Biblioteca — editar e apagar com histórico/auditoria (v0.4.0)
+
+### O que mudou
+- **Editar** (na vista de detalhe): corrige o texto **clean** onde ficou mal, direto na app. A **raw NUNCA é tocada** (princípio #1). Ao guardar, reescreve também o ficheiro clean no disco (best-effort; raw fica intacto).
+- **Apagar**: remove da lista ativa, com confirmação **inline** (evita o diálogo nativo que crasha a WebView2 desta máquina).
+- **Tabela de histórico `transcriptions_history`** (decisão do utilizador, opção "histórico completo"): antes de cada edição E de cada delete, a linha atual é copiada para lá com `change_type` ('update'/'delete') e `archived_at`. Resultado: edições reversíveis, deletes recuperáveis, auditoria. Nova coluna `edited_at` em `transcriptions`. Migração idempotente no `ensure_table` (ADD COLUMN IF NOT EXISTS + CREATE TABLE IF NOT EXISTS).
+- **Correção do cursor**: as linhas da lista já não ficavam desativadas ao abrir (cursor "proibido" que o utilizador achou ofensivo) — agora mostram um spinner na própria linha.
+- CLI: `library-update` (novo texto por stdin) e `library-delete`. Rust: `library_update` (texto por stdin) e `library_delete`. Versão **0.4.0**.
+
+### Evidência / teste
+- Update e delete testados a fundo pelo túnel em dev E no worker **congelado** (registo descartável): update por stdin com acentos (çãõ) intactos, `edited_at` marcado, delete arquiva-e-remove. Um teste chegou a editar o id 8 real — restaurado a partir do próprio histórico (a rede funcionou) e histórico de teste purgado; dados reais intactos (8 ativos, 0 no histórico). `tsc`/`vite` e `cargo check` limpos.
+- **Pendente:** validação visual do utilizador (editar uma palavra e guardar; apagar um registo de teste).
+
+### Impacto em dados, custo ou privacidade
+- Edições/deletes só na base + ficheiro clean local; a raw (texto e ficheiro) é imutável. Sem custo; nenhuma API paga. O histórico guarda cópias na mesma VPS (mesmo modelo de privacidade do resto).
+
+### Próximo passo
+- Validação do utilizador. Depois: fases 3-6 do roteiro (contexto, estudo, chat). Possível: UI para ver/restaurar o histórico (hoje só via SQL).
 
 ### Registro — 2026-07-14 (d): aba Biblioteca — histórico e dashboards (v0.3.0)
 
