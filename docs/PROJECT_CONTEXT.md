@@ -245,6 +245,12 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 1. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
 2. Menor: reiniciar a VPS numa altura conveniente (o Ubuntu pede restart por updates de segurança pendentes — ver Registro 2026-07-14 (b)); considerar cópia periódica dos dumps para fora da VPS.
 
+### Backlog de melhorias da Biblioteca (levantado 2026-07-14, IDEIAS — não agendado, não implementar sem confirmar)
+
+1. **Aviso ("Com avisos") explorável.** Tornar o badge de validação clicável para mostrar o conteúdo de `problems` (já guardado, hoje invisível na UI), com ações "corrigir" (= editar, já existe) e "ignorar/aceitar" (marcar como revisto — precisa de um estado novo, ex.: coluna `warnings_ack`). UI + pequeno estado.
+2. **Mostrar o `#id` na app.** A coluna `id` (PK) JÁ existe — não criar coluna nova. Falta só surface-á-la no detalhe (e talvez na lista) para correlacionar app ↔ DBeaver (filtrar por id). Barato.
+3. **`problems` → `reason_code` + tabela de referência.** Substituir/complementar o texto livre de `problems` por códigos estruturados (ex.: `HALLUCINATION_FOREIGN_LANG`, `COVERAGE_GAP`, `LOOP_REPETITION`) + tabela `problem_reasons` (code, label, descrição, severidade). Torna pesquisável e alimenta dashboards. **Mexe na lógica de validação do worker** (é onde os problemas nascem) — mais substancial. Observação motivadora: numa transcrição real, o aviso foi por `COVERAGE_GAP` (último ts 2915s vs duração 3666s) e a alucinação óbvia em língua estrangeira pode nem ter sido marcada — os reason codes dariam precisão sobre o quê/porquê.
+
 ---
 
 ## 11. Protocolo de atualização para qualquer IA
