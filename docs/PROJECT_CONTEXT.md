@@ -277,6 +277,14 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
    - **Motivação de produto:** o utilizador vê o UpexNote a crescer muito (edições, formatação, ligação a NotebookLM/APIs de resumo, secção de notas pessoais) — a identidade visual tem de ser dele e mutável, não uma aposta minha. O sistema de temas é o backbone estético, como o hub-and-spoke é o de dados.
    - **Custo:** quase tudo `App.css` + pequeno seletor nas Definições; sem lógica de negócio. Não agendado; ordem a decidir. **Pendente:** confirmar o lote inicial de temas e se compacto é o default.
 
+6. **Zoom da UI + responsividade.** Utilizador (2026-07-14): o layout está fixo, sem zoom; apps modernos fazem Ctrl+scroll / Ctrl +/−. A WebView2 do Tauri **suporta zoom nativo** — ativar via flag de config da webview + API de zoom (confirmar nome exato ao implementar); zooma o layout todo. Baixo esforço. **Consolidação (decisão minha, aceite como racional):** NÃO criar 3 alavancas de tamanho redundantes — zoom nativo (Ctrl) para o momento + o controlo persistente de escala/densidade do item 5 chegam; dropdown separado de "tamanho de fonte" fica de fora por redundância. Também **validar responsividade** em janelas estreitas (hoje não testado; liga-se ao item 5).
+
+7. **Família de fonte nas Definições (≤5).** Estética, separada da escala. Nota técnica: app é offline → fontes têm de ser **empacotadas** (não Google Fonts CDN). Escolher ~5 (ex.: Inter, humanista, mono, neutra); a definição troca `--font-sans`. Contido.
+
+8. **Idioma da UI (PT/EN/ES) — só o chrome, NÃO o conteúdo.** Utilizador consome muito em EN, algum ES, menos PT; quer trocar o idioma dos **labels da interface**. Explícito: transcripts NÃO se traduzem (ficam na língua do áudio — são dados). É o mais trabalhoso do grupo: as strings da UI estão hoje hard-coded em PT por todo o `App.tsx` → externalizar para dicionários por idioma + um `t()` leve (sem biblioteca pesada para 3 idiomas). Tradução profunda de conteúdo = passo futuro separado, fora deste item.
+
+**Nota transversal (itens 5-8):** formam uma superfície coerente de **Preferências/Aparência** nas Definições (tema, densidade, zoom, fonte, idioma) — padrão de app Electron maduro. Motivação do utilizador: vê o UpexNote a crescer muito (edições, formatação, NotebookLM/APIs de resumo, secção de notas pessoais) e quer uma base bonita, moderna e configurável desde já.
+
 ---
 
 ## 11. Protocolo de atualização para qualquer IA
