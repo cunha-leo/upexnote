@@ -54,6 +54,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import paths
 from .registry import ENGINES
 from .credentials import get_key, set_key, clear_key, KNOWN_KEYS
 
@@ -114,6 +115,17 @@ def cmd_transcribe(args):
     if not Path(file_path).exists():
         _emit(real_stdout, {"type": "error", "message": f"Ficheiro nao encontrado: {file_path}"})
         return 1
+
+    # Destino pontual ("guardar em..." so desta vez): os ficheiros vao
+    # DIRETOS para a pasta indicada, ignorando pasta padrao e organizacao.
+    if getattr(args, "dest", None):
+        dest = Path(args.dest)
+        try:
+            dest.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            _emit(real_stdout, {"type": "error", "message": f"Pasta de destino invalida: {args.dest} ({e})"})
+            return 1
+        paths.set_dest_override(dest)
 
     api_key = get_key(engine["key_name"])
     if not api_key:
@@ -253,6 +265,38 @@ def cmd_check_key(args):
     return 0
 
 
+def cmd_get_settings(args):
+    # Definicoes de armazenamento (para o ecra de Definicoes): pasta padrao
+    # em vigor, se e personalizada, e a organizacao por dia/motor.
+    s = paths.load_settings()
+    _emit(sys.stdout, {
+        "type": "settings",
+        "storage_dir": str(paths.effective_storage_dir()),
+        "storage_dir_custom": bool(s.get("storage_dir")),
+        "default_storage_dir": str(paths.TRANSCRIPTS_DIR),
+        "organize_by_day_engine": paths.organize_by_day_engine(),
+    })
+    return 0
+
+
+def cmd_set_settings(args):
+    s = paths.load_settings()
+    if getattr(args, "clear_storage_dir", False):
+        s.pop("storage_dir", None)
+    elif getattr(args, "storage_dir", None):
+        d = Path(args.storage_dir)
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            _emit(sys.stdout, {"type": "error", "message": f"Pasta invalida: {args.storage_dir} ({e})"})
+            return 1
+        s["storage_dir"] = str(d)
+    if getattr(args, "organize", None) in ("on", "off"):
+        s["organize_by_day_engine"] = args.organize == "on"
+    paths.save_settings(s)
+    return cmd_get_settings(args)
+
+
 def cmd_list_keys(args):
     # Estado de TODAS as chaves numa so chamada (o ecra de Definicoes usa isto
     # em vez de lancar o Python uma vez por chave).
@@ -270,6 +314,14 @@ def build_parser():
     p_tr = sub.add_parser("transcribe", help="Transcreve um ficheiro (eventos NDJSON).")
     p_tr.add_argument("--engine", required=True, help=f"ID do motor: {', '.join(ENGINES)}")
     p_tr.add_argument("--file", required=True, help="Caminho do video/audio a transcrever.")
+    p_tr.add_argument("--dest", help="Pasta de destino SO desta transcricao (ficheiros gravados diretamente nela).")
+
+    sub.add_parser("get-settings", help="Definicoes de armazenamento em vigor (JSON).")
+
+    p_ss = sub.add_parser("set-settings", help="Altera as definicoes de armazenamento.")
+    p_ss.add_argument("--storage-dir", help="Pasta padrao dos transcripts.")
+    p_ss.add_argument("--clear-storage-dir", action="store_true", help="Volta a pasta padrao de fabrica.")
+    p_ss.add_argument("--organize", choices=["on", "off"], help="Organizar em subpastas dia/motor.")
 
     p_sk = sub.add_parser("set-key", help="Guarda uma chave (getpass no terminal, ou --stdin para a interface).")
     p_sk.add_argument("--name", required=True, help=f"Nome da chave: {', '.join(KNOWN_KEYS)}")
@@ -299,6 +351,8 @@ def main(argv=None):
         "check-key": cmd_check_key,
         "list-keys": cmd_list_keys,
         "db-check": cmd_db_check,
+        "get-settings": cmd_get_settings,
+        "set-settings": cmd_set_settings,
     }
     return handlers[args.command](args)
 

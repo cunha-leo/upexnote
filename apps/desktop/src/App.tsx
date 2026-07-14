@@ -47,6 +47,102 @@ const CREDENTIALS = [
   { name: "UPEXNOTE_PG_PASSWORD", label: "Password do Postgres (VPS)", hint: "Para gravar o histórico/backup na base de dados" },
 ];
 
+type StorageSettings = {
+  storage_dir: string;
+  storage_dir_custom: boolean;
+  default_storage_dir: string;
+  organize_by_day_engine: boolean;
+};
+
+function StorageSettingsCard() {
+  const [s, setS] = useState<StorageSettings | null>(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    try {
+      const raw = await invoke<string>("get_settings");
+      setS(JSON.parse(raw));
+    } catch (e) {
+      setMsg("Erro a carregar: " + String(e));
+    }
+  }
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function apply(args: Record<string, unknown>, okMsg: string) {
+    setBusy(true);
+    setMsg("");
+    try {
+      const raw = await invoke<string>("set_settings", args);
+      setS(JSON.parse(raw));
+      setMsg(okMsg);
+    } catch (e) {
+      setMsg("Erro: " + String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function chooseFolder() {
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      title: "Escolhe a pasta padrão dos transcripts",
+    });
+    if (typeof picked === "string") {
+      await apply({ storageDir: picked }, "Pasta padrão atualizada ✓");
+    }
+  }
+
+  return (
+    <section className="card">
+      <h2>Transcrições — Onde guardar</h2>
+      <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
+        Os transcripts são gravados na pasta que escolheres — a tua estrutura manda. Podes ainda trocar
+        pontualmente no ecrã Transcrever ("Guardar em…").
+      </p>
+      <div className="field">
+        <label>Pasta padrão</label>
+        <div className="row">
+          <input type="text" readOnly value={s ? s.storage_dir : "a carregar…"} />
+          <button className="secondary" onClick={chooseFolder} disabled={busy || !s}>Escolher…</button>
+          {s?.storage_dir_custom && (
+            <button
+              className="secondary"
+              onClick={() => apply({ clearStorageDir: true }, "Reposta a pasta padrão de fábrica.")}
+              disabled={busy}
+            >
+              Repor padrão
+            </button>
+          )}
+        </div>
+        {s && !s.storage_dir_custom && (
+          <div className="engine-info">Padrão de fábrica: {s.default_storage_dir}</div>
+        )}
+      </div>
+      <div className="field">
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={s ? s.organize_by_day_engine : true}
+            disabled={busy || !s}
+            onChange={(e) => apply({ organize: e.currentTarget.checked }, "Organização atualizada ✓")}
+            style={{ width: "auto" }}
+          />
+          <span>Organizar em subpastas por dia e motor (ex.: 2026-07-14\assemblyai\)</span>
+        </label>
+        <div className="engine-info">
+          Desligado: os ficheiros ficam diretamente na pasta padrão. O nome já inclui origem, data,
+          motor e tipo, por isso identificam-se sozinhos.
+          {msg ? " — " + msg : ""}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SettingsView({ onChanged }: { onChanged: () => void }) {
   const [status, setStatus] = useState<Record<string, boolean>>({});
   const [loaded, setLoaded] = useState(false);
@@ -172,6 +268,7 @@ function App() {
   const [engines, setEngines] = useState<Engine[]>([]);
   const [engineId, setEngineId] = useState<string>("");
   const [file, setFile] = useState<string>("");
+  const [dest, setDest] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [stage, setStage] = useState<number>(0);
@@ -259,6 +356,7 @@ function App() {
 
   function reset() {
     setFile("");
+    setDest("");
     setResult(null);
     setStatus("");
     setStage(0);
@@ -272,7 +370,7 @@ function App() {
     setStage(1);
     setStatus("A iniciar…");
     try {
-      await invoke("transcribe", { engine: selected.id, file });
+      await invoke("transcribe", { engine: selected.id, file, dest: dest.trim() || null });
     } catch (e) {
       setStatus("Erro: " + String(e));
       setRunning(false);
@@ -281,6 +379,15 @@ function App() {
 
   function copyTranscript() {
     if (result) navigator.clipboard.writeText(result.clean_text);
+  }
+
+  async function chooseDest() {
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      title: "Guardar o transcript em…",
+    });
+    if (typeof picked === "string") setDest(picked);
   }
 
   async function chooseFile() {
@@ -362,6 +469,25 @@ function App() {
                 </div>
 
                 <div className="field">
+                  <label>Guardar em (opcional — só desta vez)</label>
+                  <div className="row">
+                    <input
+                      type="text"
+                      value={dest}
+                      placeholder="Vazio = pasta padrão das Definições"
+                      onChange={(e) => setDest(e.currentTarget.value)}
+                    />
+                    <button className="secondary" onClick={chooseDest} disabled={running}>Escolher…</button>
+                    {dest && (
+                      <button className="secondary" onClick={() => setDest("")} disabled={running}>Limpar</button>
+                    )}
+                  </div>
+                  {dest && (
+                    <div className="engine-info">Os ficheiros desta transcrição vão diretos para: {dest}</div>
+                  )}
+                </div>
+
+                <div className="field">
                   <label>Motor de transcrição</label>
                   <select value={engineId} onChange={(e) => setEngineId(e.currentTarget.value)}>
                     {engines.map((e) => (
@@ -433,7 +559,12 @@ function App() {
             </>
           )}
 
-          {view === "settings" && <SettingsView onChanged={loadEngines} />}
+          {view === "settings" && (
+            <>
+              <SettingsView onChanged={loadEngines} />
+              <StorageSettingsCard />
+            </>
+          )}
         </div>
       </main>
     </div>

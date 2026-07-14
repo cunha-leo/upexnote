@@ -1,20 +1,32 @@
 r"""
-Caminhos partilhados - garante que todos os motores escrevem os resultados
-sempre no mesmo sitio (storage\transcripts\<motor>\), independentemente de
-onde o worker for invocado.
+Caminhos partilhados - decide ONDE os transcripts sao gravados.
 
 O video/audio de origem NUNCA e copiado para dentro do projeto - o
 utilizador escolhe um caminho qualquer do Windows e so esse caminho e lido.
+
+Resolucao da pasta de destino (decisao 2026-07-13, ver PROJECT_CONTEXT):
+  1. Override pontual "--dest" da CLI (o utilizador escolheu "guardar em..."
+     so para esta transcricao) - os ficheiros vao DIRETOS para essa pasta.
+  2. Pasta padrao definida pelo utilizador em settings.json
+     (%APPDATA%\UpexNote\settings.json, campo "storage_dir").
+  3. Padrao de fabrica: Documentos\UpexNote\storage\transcripts (app
+     empacotada) ou storage\transcripts do repo (desenvolvimento).
+
+A organizacao em subpastas <AAAA-MM-DD>\<motor>\ e OPCIONAL
+("organize_by_day_engine" em settings.json, ligada por defeito) - o
+utilizador pode preferir a estrutura de pastas dele, sem imposicoes.
+O nome do ficheiro carrega sempre origem+data+motor+tipo, por isso
+identifica-se sozinho mesmo numa pasta plana.
 """
+import json
+import os
 import sys
 from datetime import date
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
-    # Executavel empacotado (sidecar): os transcripts vao para uma pasta
-    # estavel e visivel do utilizador — Documentos\UpexNote — que sobrevive
-    # a reinstalacoes/atualizacoes da app (decisao 2026-07-13; a pasta do
-    # exe seria apagada junto com a app e Program Files nem e gravavel).
+    # Executavel empacotado (sidecar): padrao de fabrica numa pasta estavel
+    # e visivel do utilizador, que sobrevive a atualizacoes da app.
     PROJECT_DIR = Path.home() / "Documents" / "UpexNote"
 else:
     # .../services/worker/transcription/paths.py -> raiz do projeto e 3 niveis acima.
@@ -22,6 +34,44 @@ else:
 
 STORAGE_DIR = PROJECT_DIR / "storage"
 TRANSCRIPTS_DIR = STORAGE_DIR / "transcripts"
+
+SETTINGS_PATH = Path(os.environ.get("APPDATA", str(Path.home()))) / "UpexNote" / "settings.json"
+
+# Override pontual (comando `transcribe --dest`): vale so para este processo.
+_dest_override = None
+
+
+def set_dest_override(path):
+    """Ativa o destino pontual desta execucao (ou desativa com None)."""
+    global _dest_override
+    _dest_override = Path(path) if path else None
+
+
+def load_settings():
+    """Le settings.json; devolve {} se nao existir ou estiver invalido."""
+    try:
+        return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_settings(settings):
+    """Grava settings.json (cria a pasta se preciso)."""
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_PATH.write_text(
+        json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def effective_storage_dir():
+    """Pasta padrao em vigor (a do utilizador, ou a de fabrica)."""
+    custom = load_settings().get("storage_dir")
+    return Path(custom) if custom else TRANSCRIPTS_DIR
+
+
+def organize_by_day_engine():
+    """True (defeito) = subpastas <dia>\\<motor> dentro da pasta padrao."""
+    return bool(load_settings().get("organize_by_day_engine", True))
 
 
 def stem_for(source_path):
@@ -32,19 +82,21 @@ def stem_for(source_path):
 
 def transcript_path(engine, source_path, kind):
     r"""
-    Caminho de um transcript, arrumado por DIA e depois por MOTOR:
-        storage\transcripts\<AAAA-MM-DD>\<motor>\<origem>__<data>__<motor>__<kind>.txt
+    Caminho de um transcript.
 
-    - Pasta por dia (topo) e por motor (dentro) - facil de encontrar pelo dia,
-      motores nunca se misturam.
-    - O nome do ficheiro carrega origem + data + motor + tipo, para se
-      identificar sozinho mesmo fora da pasta.
+    - Com override pontual (--dest): direto na pasta escolhida, sem subpastas
+      ("guardar em..." significa exatamente ali).
+    - Sem override: pasta padrao em vigor; subpastas <dia>\<motor> apenas se
+      a opcao "organizar por dia/motor" estiver ligada.
     - kind: "clean" (vista de leitura) ou "raw" (referencia imutavel).
-    O texto e minusculo (~20 KB/transcript), por isso isto e so organizacao,
-    nao ha preocupacao de espaco.
     """
     today = date.today().isoformat()  # AAAA-MM-DD
-    d = TRANSCRIPTS_DIR / today / engine
+    if _dest_override is not None:
+        d = _dest_override
+    elif organize_by_day_engine():
+        d = effective_storage_dir() / today / engine
+    else:
+        d = effective_storage_dir()
     d.mkdir(parents=True, exist_ok=True)
     stem = stem_for(source_path)
     return d / f"{stem}__{today}__{engine}__{kind}.txt"

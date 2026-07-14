@@ -133,12 +133,49 @@ fn clear_credential(name: String) -> Result<String, String> {
     run_cli(&["clear-key", "--name", &name])
 }
 
+/// Definições de armazenamento em vigor (pasta padrão + organização).
+#[tauri::command]
+fn get_settings() -> Result<String, String> {
+    run_cli(&["get-settings"])
+}
+
+/// Altera as definições de armazenamento (pasta padrão dos transcripts e/ou
+/// organização por dia/motor). `storage_dir=None` + `clear=true` repõe a
+/// pasta de fábrica. Devolve as definições resultantes.
+#[tauri::command]
+fn set_settings(
+    storage_dir: Option<String>,
+    clear_storage_dir: Option<bool>,
+    organize: Option<bool>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["set-settings".into()];
+    if clear_storage_dir.unwrap_or(false) {
+        args.push("--clear-storage-dir".into());
+    } else if let Some(dir) = storage_dir {
+        args.push("--storage-dir".into());
+        args.push(dir);
+    }
+    if let Some(org) = organize {
+        args.push("--organize".into());
+        args.push(if org { "on".into() } else { "off".into() });
+    }
+    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    run_cli(&refs)
+}
+
 /// Inicia uma transcrição. Não bloqueia: corre o worker numa thread e emite
 /// cada linha NDJSON como evento `worker://event`; no fim emite `worker://done`.
 #[tauri::command]
-fn transcribe(app: AppHandle, engine: String, file: String) -> Result<(), String> {
+fn transcribe(app: AppHandle, engine: String, file: String, dest: Option<String>) -> Result<(), String> {
     std::thread::spawn(move || {
-        let mut cmd = worker_command(&["transcribe", "--engine", &engine, "--file", &file]);
+        let mut args: Vec<&str> = vec!["transcribe", "--engine", &engine, "--file", &file];
+        if let Some(d) = dest.as_deref() {
+            if !d.trim().is_empty() {
+                args.push("--dest");
+                args.push(d);
+            }
+        }
+        let mut cmd = worker_command(&args);
         cmd.stdout(Stdio::piped()).stderr(Stdio::null());
         with_no_window(&mut cmd);
         let child = cmd.spawn();
@@ -175,7 +212,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            list_engines, check_key, list_credentials, save_credential, clear_credential, transcribe
+            list_engines, check_key, list_credentials, save_credential, clear_credential,
+            get_settings, set_settings, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
