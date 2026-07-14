@@ -185,6 +185,25 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 - Não usar para guardar biblioteca crescente de vídeo nem para transcrição pesada.
 - Quando UpexNote usar Postgres, criar banco/schema próprio e proteger a exposição externa com firewall/TLS/túnel/acesso restrito.
 
+### Acesso SSH à VPS — runbook para qualquer IA (escrito 2026-07-14)
+
+O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbook permite a qualquer IA diagnosticar e restabelecer o acesso à VPS **sem conhecimento prévio**. Regra de ouro: **nunca pedir, usar ou manusear a password da VPS** — o acesso é sempre por chave SSH instalada pelo próprio utilizador.
+
+**Estado normal (máquina já autorizada):**
+- Chave privada em `~/.ssh/upexnote_vps` (Windows: `C:\Users\<user>\.ssh\upexnote_vps`). NUNCA vai para Git, Drive, chat ou logs.
+- Ligar: `ssh -i ~/.ssh/upexnote_vps root@vps.upexflow.com`
+- Teste rápido: `ssh -i ~/.ssh/upexnote_vps -o BatchMode=yes root@vps.upexflow.com "echo ok"` → deve responder `ok`.
+
+**Se der `Permission denied (publickey,password)` — a máquina NÃO tem privilégios. Recuperar assim:**
+1. Verificar se a chave existe (`~/.ssh/upexnote_vps`). Se não existir, gerar (sem passphrase, nome neutro da máquina):
+   `ssh-keygen -t ed25519 -f ~/.ssh/upexnote_vps -N '' -C "upexnote-dev-<maquina>-<AAAAMMDD>"`
+2. Mostrar ao utilizador o conteúdo da chave PÚBLICA (`~/.ssh/upexnote_vps.pub`) e dar-lhe esta instrução, simples e completa:
+   > Abre o painel da **Hostinger** → a tua VPS → **Browser terminal** (funciona mesmo sem SSH) e cola:
+   > `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '<CONTEÚDO DO .pub>' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo INSTALADA`
+3. Quando o utilizador confirmar, repetir o teste do passo "Estado normal". Só avançar com trabalho na VPS depois do `ok`.
+
+**Se a máquina de desenvolvimento morrer (plano B):** nada essencial vive só nela — código no GitHub (`cunha-leo/upexnote`), dados no Postgres da VPS + dumps diários, chaves API recuperáveis nos dashboards dos fornecedores, transcripts na pasta escolhida pelo utilizador. Numa máquina nova: clonar o repo, ler este documento, e usar o procedimento acima para autorizar a máquina nova na VPS (o painel Hostinger é a porta de entrada que nunca morre). Chaves antigas de máquinas perdidas devem ser removidas do `~/.ssh/authorized_keys` da VPS.
+
 ---
 
 ## 9. Requisitos de experiência e acessibilidade
