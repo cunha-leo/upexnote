@@ -223,9 +223,12 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 
 ### Próximo trabalho (deixados em aberto)
 
-1. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
-2. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
-3. **Instalador** (mais tarde): o sidecar já resolve a portabilidade; falta o empacotamento formal (bundle/instalador Tauri com o worker incluído como recurso).
+1. **Pasta de destino dos transcripts à escolha do utilizador** (decidido a 2026-07-13, fazer a seguir). O utilizador não quer estrutura imposta (`Documentos\UpexNote` passa a ser só o padrão de fábrica). Design decidido com o utilizador:
+   - **"Os dois":** pasta padrão configurável nas Definições (seletor de pasta nativo) **+** override pontual no ecrã Transcrever ("guardar em…" desta vez).
+   - **Organização como opção nas Definições:** interruptor "organizar por dia/motor" — ligado cria `<AAAA-MM-DD>\<motor>\` dentro da pasta escolhida; desligado grava os ficheiros diretamente na pasta (o nome do ficheiro já carrega origem+data+motor+tipo, identifica-se sozinho).
+   - Implementação prevista: `%APPDATA%\UpexNote\settings.json` (`storage_dir`, `organize_by_day_engine`) escrito pelo Rust/UI e lido pelo `paths.py` do worker; ordem de resolução: settings → padrão congelado (Documentos) → dev (repo). Princípio intocável: par raw/clean continua sempre a ser gravado.
+2. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
+3. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
 
 ---
 
