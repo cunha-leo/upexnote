@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 13 de julho de 2026 (instalador NSIS de ficheiro único)  
+**Última atualização:** 14 de julho de 2026 (v0.2.0 — pasta de transcripts à escolha do utilizador)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -223,12 +223,8 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 
 ### Próximo trabalho (deixados em aberto)
 
-1. **Pasta de destino dos transcripts à escolha do utilizador** (decidido a 2026-07-13, fazer a seguir). O utilizador não quer estrutura imposta (`Documentos\UpexNote` passa a ser só o padrão de fábrica). Design decidido com o utilizador:
-   - **"Os dois":** pasta padrão configurável nas Definições (seletor de pasta nativo) **+** override pontual no ecrã Transcrever ("guardar em…" desta vez).
-   - **Organização como opção nas Definições:** interruptor "organizar por dia/motor" — ligado cria `<AAAA-MM-DD>\<motor>\` dentro da pasta escolhida; desligado grava os ficheiros diretamente na pasta (o nome do ficheiro já carrega origem+data+motor+tipo, identifica-se sozinho).
-   - Implementação prevista: `%APPDATA%\UpexNote\settings.json` (`storage_dir`, `organize_by_day_engine`) escrito pelo Rust/UI e lido pelo `paths.py` do worker; ordem de resolução: settings → padrão congelado (Documentos) → dev (repo). Princípio intocável: par raw/clean continua sempre a ser gravado.
-2. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
-3. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
+1. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
+2. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
 
 ---
 
@@ -269,6 +265,23 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-14: v0.2.0 — pasta dos transcripts à escolha do utilizador
+
+### O que mudou
+- **Fim da estrutura imposta:** `Documentos\UpexNote` é agora só o padrão de fábrica. Nas **Definições** há "Pasta padrão" (seletor nativo + "Repor padrão") e o interruptor **"organizar por dia/motor"** (desligado = ficheiros diretos na pasta escolhida; o nome já carrega origem+data+motor+tipo). No ecrã **Transcrever** há "Guardar em (opcional — só desta vez)": os ficheiros dessa transcrição vão DIRETOS para a pasta indicada, ignorando padrão e organização.
+- Implementação: `%APPDATA%\UpexNote\settings.json` (`storage_dir`, `organize_by_day_engine`); `paths.py` resolve override → settings → fábrica; CLI ganhou `get-settings`/`set-settings` e `transcribe --dest`; Rust ganhou `get_settings`/`set_settings` e `dest` opcional. O par raw/clean continua sempre a ser gravado (princípio intocável).
+- Versão da app: **0.2.0** (`UpexNote_0.2.0_x64-setup.exe`).
+
+### Evidência / teste
+- Lógica de caminhos testada em dev (5 cenários: fábrica, custom+organize off, override pontual, repor, organize on) e no worker congelado (get/set-settings roundtrip OK, padrão congelado = Documentos). `tsc`/`vite` e `cargo check` limpos. Instalador 0.2.0 gerado e no Desktop do utilizador.
+- **Pendente:** validação do utilizador na app real (instalar 0.2.0, escolher pasta própria, transcrever).
+
+### Impacto em dados, custo ou privacidade
+- Nenhum dado movido; transcripts existentes ficam onde estão. `settings.json` não contém segredos (só caminhos/booleano). Sem custo.
+
+### Próximo passo
+- Utilizador valida a 0.2.0. Depois: endurecimento da VPS e aba Biblioteca.
 
 ### Registro — 2026-07-13 (e): logo/ícone da marca
 
