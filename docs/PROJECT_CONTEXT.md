@@ -274,7 +274,11 @@ Ao trabalhar neste projeto, uma IA deve:
 - Fonte vetorial em `apps/desktop/src-tauri/icons/icon-source.svg`; raster 1024px e todos os tamanhos gerados com `tauri icon` (janela, barra de tarefas, Menu Iniciar, `icon.ico`). Instalador recompilado com a marca.
 
 ### Evidência / teste
-- PNG 1024 verificado visualmente; instalador novo gerado e copiado para o Desktop (substituição por cima da instalação atualiza o ícone).
+- PNG 1024 verificado visualmente; instalador novo gerado e copiado para o Desktop (substituição por cima da instalação atualiza o ícone). Validado pelo utilizador: ícone correto no Menu Iniciar, barra de tarefas e Desktop.
+
+### Armadilhas encontradas (para builds futuros de ícone)
+- **O cargo não re-embute o ícone sozinho:** trocar os ficheiros em `icons/` não faz o build script correr de novo — o exe sai com o ícone ANTIGO embutido. Forçar com `touch tauri.conf.json build.rs` antes do `tauri build`. Verificar extraindo o ícone do exe (`[System.Drawing.Icon]::ExtractAssociatedIcon`), não confiando no build.
+- **Caches de ícone do Windows:** mesmo com o exe certo, o Desktop (OneDrive-sincronizado) mostra o ícone velho. Foi preciso limpar `iconcache_*.db` E `thumbcache_*.db` (este último é o do Desktop OneDrive) + reiniciar o Explorer, e recriar o atalho com `IconLocation` explícito.
 
 ### Impacto em dados, custo ou privacidade
 - Nenhum. Só assets de imagem no repositório.
