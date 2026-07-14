@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 13 de julho de 2026 (remoção do `devtools`; build de produção limpo)  
+**Última atualização:** 13 de julho de 2026 (worker Python empacotado como sidecar)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -218,13 +218,14 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 - Seletor de ficheiro nativo; organização do storage por dia/motor (ver Registro (e)).
 - **Durabilidade/histórico no Postgres da VPS** (serviço dedicado `upexnote-db`), escrita best-effort a cada transcrição (ver Registros (f)/(g)/(h)).
 - **App de produção (`.exe`)** com atalho no ambiente de trabalho; **ecrã de Definições** para gerir as chaves na app (sem terminal); menu lateral; bugs da WebView2 corrigidos (ver Registro (i)).
-- **`devtools` removido** do `Cargo.toml` e build de produção limpo regerado (ver Registro 2026-07-13).
+- **`devtools` removido** do `Cargo.toml` e build de produção limpo regerado (ver Registro 2026-07-13 (a)).
+- **Worker Python empacotado como sidecar** (PyInstaller onedir): a app usa `worker\upexnote-worker.exe` ao lado do próprio `.exe`, com fallback de dev para o repo. Deixou de depender do caminho fixo desta máquina e do Python do sistema (ver Registro 2026-07-13 (b)).
 
 ### Próximo trabalho (deixados em aberto)
 
-1. **Empacotar o worker Python como sidecar** — para a app funcionar noutras máquinas / virar instalador (hoje encontra o worker por um caminho fixo desta máquina).
-2. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
-3. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
+1. **Endurecer a VPS** — firewall a restringir a porta 55433 ao IP do utilizador + backup/dump do Postgres.
+2. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
+3. **Instalador** (mais tarde): o sidecar já resolve a portabilidade; falta o empacotamento formal (bundle/instalador Tauri com o worker incluído como recurso).
 
 ---
 
@@ -266,7 +267,31 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
-### Registro — 2026-07-13: remoção do `devtools` + build de produção limpo
+### Registro — 2026-07-13 (b): worker Python empacotado como sidecar (PyInstaller onedir)
+
+### O que mudou
+- **Worker empacotado:** `services/worker/build_worker.ps1` gera, com PyInstaller (**onedir**), a pasta `upexnote-worker.exe` + `_internal/` (~146 MB, PyAV traz o ffmpeg) e copia-a para `apps/desktop/src-tauri/target/release/worker/`. Novo ponto de entrada `worker_entry.py` (o PyInstaller precisa de um script, não de `-m`).
+- **Resolução no Rust (`lib.rs`):** novo `worker_command()` usado pelos 3 pontos de spawn — prefere `worker\upexnote-worker.exe` ao lado do exe da app; se não existir, fallback de desenvolvimento (`python -m transcription.cli` no layout do repo). O comentário "caminho fixo desta máquina" deixou de ser verdade.
+- **Caminhos em modo congelado:** transcripts → `Documentos\UpexNote\storage\...` (pasta estável e visível; sobrevive a atualizações); `db_config.json` → `%APPDATA%\UpexNote\` (antes ficaria enterrado no `_internal/`). Em dev nada muda.
+- `-u` substituído por `PYTHONUNBUFFERED=1` (o exe congelado não aceita flags do interpretador; o efeito é o mesmo — NDJSON linha a linha).
+- **Onedir e não onefile (decisão):** a app lança o worker em muitas chamadas curtas; o onefile descomprime para o temp a cada chamada (lento + falsos positivos de antivírus).
+
+### Evidência / teste
+- Worker congelado testado diretamente: `engines` (4 motores, chaves detetadas — keyring funciona congelado com `--hidden-import keyring.backends.Windows`), `list-keys` (4 credenciais OK) e `db-check` (leu config do `%APPDATA%\UpexNote`, ligou à VPS, tabela OK, 5 linhas). Sem chamadas a APIs pagas.
+- `cargo check` limpo; app de produção recompilada com sucesso.
+- **Pendente de validação:** uma transcrição real de ponta a ponta pela app usando o sidecar (custa ~$0.07; fazer no próximo uso normal).
+
+### Decisão
+- Sidecar por deteção em runtime (exe ao lado) em vez de configuração de bundle do Tauri: funciona já com o fluxo atual (`build --no-bundle` + atalho); o bundle formal fica para a fase do instalador.
+
+### Impacto em dados, custo ou privacidade
+- **Os novos transcripts (via app de produção) passam a ir para `Documentos\UpexNote\storage\`** — os antigos ficam em `storage/` do repo. Nenhum dado foi movido.
+- `db_config.json` copiado (não movido) para `%APPDATA%\UpexNote\`. Sem custo; nenhuma API paga chamada.
+
+### Próximo passo
+- Validar uma transcrição real pela app (sidecar). Depois: endurecimento da VPS (firewall + backup do Postgres) e aba Biblioteca.
+
+### Registro — 2026-07-13 (a): remoção do `devtools` + build de produção limpo
 
 ### O que mudou
 - Removida a feature `devtools` do `tauri` em `apps/desktop/src-tauri/Cargo.toml` (`features = ["devtools"]` → `features = []`). Estava ligada apenas para diagnosticar os crashes da WebView2 desta máquina (Lunar Lake / Arc), já resolvidos (ver Registro (i)).
