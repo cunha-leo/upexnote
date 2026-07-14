@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 13 de julho de 2026 (pacote portátil: zip pronto a usar em qualquer PC)  
+**Última atualização:** 13 de julho de 2026 (instalador NSIS de ficheiro único)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -266,6 +266,28 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-13 (d): instalador NSIS — "app de verdade"
+
+### O que mudou
+- **Instalador de um único ficheiro:** `UpexNote_0.1.0_x64-setup.exe` (~49 MB), gerado pelo bundler do Tauri (`npm run tauri build`, alvo `nsis`). Instala por utilizador (sem admin) em `AppData\Local\Programs`, cria entrada no Menu Iniciar e desinstalador nas Definições do Windows. Instalador em PT/EN.
+- **Worker vai dentro do instalador:** `tauri.conf.json` inclui a pasta `worker` como *resource* — no PC de destino fica ao lado do exe instalado, exatamente onde o `worker_command()` do Rust já procura. Nenhuma alteração de código foi precisa.
+- `build_worker.ps1` passa a copiar o worker também para `apps/desktop/src-tauri/worker/` (fonte do bundler; gitignorado).
+
+### Evidência / teste
+- Build do instalador terminou sem erros; ficheiro em `target/release/bundle/nsis/` e copiado para o Desktop do utilizador.
+- **Pendente:** teste de instalação real (correr o setup, verificar Menu Iniciar, abrir a app instalada e confirmar independência da pasta do projeto via rename temporário).
+
+### Decisão
+- NSIS `currentUser` (sem admin) e não MSI: experiência tipo Chrome/Spotify, adequada a uso pessoal.
+- Instalador **não assinado**: SmartScreen avisa na primeira execução noutras máquinas ("Mais informações → Executar mesmo assim"). Assinatura digital (certificado pago) só se justifica com distribuição pública — fica para depois.
+
+### Impacto em dados, custo ou privacidade
+- O instalador leva o `db_config.json` (endereço da VPS, sem password) — mesmo racional do zip portátil: para máquinas do próprio. Sem custo; nenhuma API chamada.
+- Instalar não toca nos dados: transcripts continuam em `Documentos\UpexNote`, chaves no Credential Manager.
+
+### Próximo passo
+- Utilizador corre o setup e valida (incluindo uma transcrição real pelo sidecar). Depois: endurecimento da VPS e aba Biblioteca.
 
 ### Registro — 2026-07-13 (c): pacote portátil (zip) — app corre em qualquer PC ao descompactar
 
