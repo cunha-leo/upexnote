@@ -23,7 +23,7 @@ type ResultData = {
   language: string | null;
 };
 
-type View = "transcribe" | "settings";
+type View = "transcribe" | "library" | "settings";
 
 function useTheme() {
   const [theme, setTheme] = useState<"light" | "dark">(
@@ -46,6 +46,247 @@ const CREDENTIALS = [
   { name: "DEEPGRAM_API_KEY", label: "Deepgram API Key", hint: "Obtém em console.deepgram.com" },
   { name: "UPEXNOTE_PG_PASSWORD", label: "Password do Postgres (VPS)", hint: "Para gravar o histórico/backup na base de dados" },
 ];
+
+// ---------------------------------------------------------------------------
+// Biblioteca — histórico e dashboards a partir da tabela `transcriptions`
+// ---------------------------------------------------------------------------
+type LibItem = {
+  id: number;
+  created_at: string | null;
+  engine: string;
+  source_filename: string | null;
+  language: string | null;
+  duration_s: number | null;
+  cost_usd: number | null;
+  processing_s: number | null;
+  validation_ok: boolean | null;
+  clean_path: string | null;
+};
+type LibEngine = { engine: string; count: number; cost: number; duration: number; proc_avg: number };
+type LibSummary = {
+  total: number;
+  cost_total: number;
+  duration_total: number;
+  proc_avg: number;
+  first_at: string | null;
+  last_at: string | null;
+  by_engine: LibEngine[];
+};
+type LibDetail = LibItem & { source_path: string | null; problems: string[]; clean_text: string };
+
+const ENGINE_LABELS: Record<string, string> = {
+  assemblyai: "AssemblyAI",
+  whisper_openai: "whisper-1",
+  deepgram: "Deepgram",
+  gpt4o_openai: "gpt-4o",
+};
+const engLabel = (id: string) => ENGINE_LABELS[id] || id;
+
+function fmtCost(v: number | null): string {
+  if (v == null) return "—";
+  return "$" + v.toFixed(v < 1 ? 4 : 2);
+}
+function fmtDur(sec: number | null): string {
+  if (sec == null) return "—";
+  const m = Math.round(sec / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}min`;
+}
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function LibraryView() {
+  const [summary, setSummary] = useState<LibSummary | null>(null);
+  const [items, setItems] = useState<LibItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [detail, setDetail] = useState<LibDetail | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+
+  async function load(searchTerm?: string) {
+    setLoading(true);
+    setError("");
+    try {
+      const raw = await invoke<string>("library", { search: searchTerm ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "error") {
+        setError(obj.message);
+        setSummary(null);
+        setItems([]);
+      } else {
+        setSummary(obj.summary);
+        setItems(obj.items || []);
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function openItem(id: number) {
+    setDetailBusy(true);
+    try {
+      const raw = await invoke<string>("library_item", { id });
+      const obj = JSON.parse(raw);
+      if (obj.type === "library_item") setDetail(obj.item);
+      else setError(obj.message || "Falha a abrir a transcrição.");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
+  // Vista de detalhe (uma transcrição, com texto)
+  if (detail) {
+    return (
+      <section className="card">
+        <div className="detail-head">
+          <button className="secondary" onClick={() => setDetail(null)}>← Voltar</button>
+          <h2 style={{ margin: 0, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {detail.source_filename || `Transcrição #${detail.id}`}
+          </h2>
+          <button className="secondary" onClick={() => navigator.clipboard.writeText(detail.clean_text)}>Copiar tudo</button>
+        </div>
+        <div className="result-head">
+          <span className="badge">{engLabel(detail.engine)}</span>
+          <span className={"badge " + (detail.validation_ok ? "ok" : "warn")}>
+            {detail.validation_ok ? "✓ Validação OK" : "⚠ Com avisos"}
+          </span>
+          {detail.language && <span className="badge">idioma: {detail.language}</span>}
+          <span className="badge">{fmtCost(detail.cost_usd)}</span>
+          <span className="badge">{fmtDur(detail.duration_s)}</span>
+          <span className="badge">{fmtDate(detail.created_at)}</span>
+        </div>
+        <pre className="transcript">{detail.clean_text}</pre>
+        {detail.clean_path && <div className="muted" style={{ marginTop: 8 }}>Ficheiro: {detail.clean_path}</div>}
+      </section>
+    );
+  }
+
+  return (
+    <>
+      <section className="card">
+        <div className="result-head">
+          <h2 style={{ margin: 0, flex: 1 }}>Biblioteca</h2>
+          <button className="secondary" onClick={() => load(search.trim() || undefined)} disabled={loading}>
+            {loading ? "A carregar…" : "Atualizar"}
+          </button>
+        </div>
+
+        {error && (
+          <div className="key-warn">
+            {error.includes("db_config") || error.includes("Password")
+              ? "A base de dados não está configurada — abre Definições para ligar ao Postgres."
+              : "Não consegui ler a Biblioteca: " + error}
+          </div>
+        )}
+
+        {summary && (
+          <>
+            <div className="stat-grid">
+              <div className="stat">
+                <div className="stat-val">{summary.total}</div>
+                <div className="stat-lbl">transcrições</div>
+              </div>
+              <div className="stat">
+                <div className="stat-val">{fmtCost(summary.cost_total)}</div>
+                <div className="stat-lbl">custo total</div>
+              </div>
+              <div className="stat">
+                <div className="stat-val">{fmtDur(summary.duration_total)}</div>
+                <div className="stat-lbl">áudio processado</div>
+              </div>
+              <div className="stat">
+                <div className="stat-val">{Math.round(summary.proc_avg)}s</div>
+                <div className="stat-lbl">tempo médio</div>
+              </div>
+            </div>
+
+            {summary.by_engine.length > 0 && (
+              <table className="eng-table" style={{ marginTop: 16 }}>
+                <thead>
+                  <tr>
+                    <th>Motor</th>
+                    <th>Transcrições</th>
+                    <th>Custo</th>
+                    <th>Áudio</th>
+                    <th>Tempo médio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.by_engine.map((e) => (
+                    <tr key={e.engine}>
+                      <td>{engLabel(e.engine)}</td>
+                      <td>{e.count}</td>
+                      <td>{fmtCost(e.cost)}</td>
+                      <td>{fmtDur(e.duration)}</td>
+                      <td>{Math.round(e.proc_avg)}s</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="lib-toolbar">
+          <input
+            type="text"
+            placeholder="Pesquisar por nome do ficheiro…"
+            value={search}
+            onChange={(e) => setSearch(e.currentTarget.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") load(search.trim() || undefined); }}
+          />
+          <button className="secondary" onClick={() => load(search.trim() || undefined)} disabled={loading}>Pesquisar</button>
+          {search && (
+            <button className="secondary" onClick={() => { setSearch(""); load(); }} disabled={loading}>Limpar</button>
+          )}
+        </div>
+
+        {detailBusy && <div className="muted">A abrir transcrição…</div>}
+
+        {!loading && !error && items.length === 0 && (
+          <div className="lib-empty">
+            {search ? "Nenhuma transcrição corresponde à pesquisa." : "Ainda não há transcrições no histórico."}
+          </div>
+        )}
+
+        <div className="lib-list">
+          {items.map((it) => (
+            <button key={it.id} className="lib-row" onClick={() => openItem(it.id)} disabled={detailBusy}>
+              <span className={"lib-dot " + (it.validation_ok ? "ok" : "warn")} title={it.validation_ok ? "Validação OK" : "Com avisos"} />
+              <span className="lib-main">
+                <div className="lib-name">{it.source_filename || `Transcrição #${it.id}`}</div>
+                <div className="lib-sub">{engLabel(it.engine)} · {fmtDate(it.created_at)}{it.language ? " · " + it.language : ""}</div>
+              </span>
+              <span className="lib-meta">
+                <span className="badge">{fmtDur(it.duration_s)}</span>
+                <span className="badge">{fmtCost(it.cost_usd)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
 
 type StorageSettings = {
   storage_dir: string;
@@ -405,6 +646,7 @@ function App() {
 
   const navItems: { id: View; icon: string; label: string }[] = [
     { id: "transcribe", icon: "🎙", label: "Transcrever" },
+    { id: "library", icon: "📚", label: "Biblioteca" },
     { id: "settings", icon: "⚙", label: "Definições" },
   ];
 
@@ -558,6 +800,8 @@ function App() {
               )}
             </>
           )}
+
+          {view === "library" && <LibraryView />}
 
           {view === "settings" && (
             <>

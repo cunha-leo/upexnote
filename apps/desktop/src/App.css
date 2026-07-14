@@ -318,3 +318,77 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
   margin: 0;
 }
 .muted { color: var(--text-dim); font-size: 13px; }
+
+/* ---- Biblioteca ---- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.stat {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 12px 14px;
+}
+.stat .stat-val {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.stat .stat-lbl { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+.eng-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.eng-table th, .eng-table td {
+  text-align: right;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.eng-table th { color: var(--text-dim); font-weight: 500; font-size: 12px; }
+.eng-table th:first-child, .eng-table td:first-child { text-align: left; }
+.eng-table tr:last-child td { border-bottom: none; }
+.eng-table td { font-variant-numeric: tabular-nums; }
+
+.lib-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
+.lib-toolbar input { flex: 1; }
+
+.lib-list { display: flex; flex-direction: column; }
+.lib-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 8px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border-radius: 0;
+  color: var(--text);
+  font-weight: 400;
+  width: 100%;
+}
+.lib-row:hover { background: var(--panel-2); }
+.lib-row:last-child { border-bottom: none; }
+.lib-row .lib-main { flex: 1; min-width: 0; }
+.lib-row .lib-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-row .lib-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.lib-row .lib-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.lib-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.lib-dot.ok { background: var(--ok); }
+.lib-dot.warn { background: var(--danger); }
+
+.lib-empty { color: var(--text-dim); font-size: 13.5px; padding: 18px 4px; text-align: center; }
+.detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }

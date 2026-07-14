@@ -133,6 +133,26 @@ fn clear_credential(name: String) -> Result<String, String> {
     run_cli(&["clear-key", "--name", &name])
 }
 
+/// Histórico + agregados da Biblioteca (JSON). `search` filtra por nome.
+#[tauri::command]
+fn library(search: Option<String>) -> Result<String, String> {
+    let mut args: Vec<&str> = vec!["library"];
+    if let Some(s) = search.as_deref() {
+        if !s.trim().is_empty() {
+            args.push("--search");
+            args.push(s);
+        }
+    }
+    run_cli(&args)
+}
+
+/// Uma transcrição completa (com texto) para a vista de detalhe.
+#[tauri::command]
+fn library_item(id: i64) -> Result<String, String> {
+    let id_s = id.to_string();
+    run_cli(&["library-item", "--id", &id_s])
+}
+
 /// Definições de armazenamento em vigor (pasta padrão + organização).
 #[tauri::command]
 fn get_settings() -> Result<String, String> {
@@ -213,7 +233,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
-            get_settings, set_settings, transcribe
+            get_settings, set_settings, library, library_item, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

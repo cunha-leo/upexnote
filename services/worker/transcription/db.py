@@ -169,6 +169,120 @@ def check():
         close_connection(conn)
 
 
+def _rows_to_dicts(cur):
+    cols = [c[0] for c in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def library_summary():
+    """
+    Agregados para os dashboards da Biblioteca: totais e repartição por motor.
+    Numeros devolvidos como float (JSON-friendly); datas como ISO string.
+    """
+    conn = connect()
+    try:
+        ensure_table(conn)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT count(*)                         AS total,
+                       COALESCE(sum(cost_usd), 0)       AS cost_total,
+                       COALESCE(sum(duration_s), 0)     AS duration_total,
+                       COALESCE(avg(processing_s), 0)   AS proc_avg,
+                       min(created_at)                  AS first_at,
+                       max(created_at)                  AS last_at
+                FROM transcriptions
+            """)
+            t = _rows_to_dicts(cur)[0]
+            cur.execute("""
+                SELECT engine,
+                       count(*)                       AS count,
+                       COALESCE(sum(cost_usd), 0)     AS cost,
+                       COALESCE(sum(duration_s), 0)   AS duration,
+                       COALESCE(avg(processing_s), 0) AS proc_avg
+                FROM transcriptions
+                GROUP BY engine
+                ORDER BY count DESC
+            """)
+            by_engine = _rows_to_dicts(cur)
+        return {
+            "total": int(t["total"]),
+            "cost_total": float(t["cost_total"]),
+            "duration_total": float(t["duration_total"]),
+            "proc_avg": float(t["proc_avg"]),
+            "first_at": t["first_at"].isoformat() if t["first_at"] else None,
+            "last_at": t["last_at"].isoformat() if t["last_at"] else None,
+            "by_engine": [
+                {
+                    "engine": r["engine"],
+                    "count": int(r["count"]),
+                    "cost": float(r["cost"]),
+                    "duration": float(r["duration"]),
+                    "proc_avg": float(r["proc_avg"]),
+                }
+                for r in by_engine
+            ],
+        }
+    finally:
+        close_connection(conn)
+
+
+def library_list(limit=200, search=None):
+    """
+    Lista de transcricoes (METADADOS, sem os textos — payload leve), mais
+    recentes primeiro. `search` filtra por nome do ficheiro (case-insensitive).
+    """
+    conn = connect()
+    try:
+        ensure_table(conn)
+        params = []
+        where = ""
+        if search:
+            where = "WHERE source_filename ILIKE %s"
+            params.append(f"%{search}%")
+        params.append(int(limit))
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT id, created_at, engine, source_filename, language,
+                       duration_s, cost_usd, processing_s, validation_ok, clean_path
+                FROM transcriptions
+                {where}
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s
+            """, params)
+            items = _rows_to_dicts(cur)
+        for it in items:
+            it["created_at"] = it["created_at"].isoformat() if it["created_at"] else None
+            for k in ("duration_s", "cost_usd", "processing_s"):
+                it[k] = float(it[k]) if it[k] is not None else None
+        return items
+    finally:
+        close_connection(conn)
+
+
+def library_item(item_id):
+    """Um registo completo INCLUINDO o texto (para a vista de detalhe)."""
+    conn = connect()
+    try:
+        ensure_table(conn)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, created_at, engine, source_filename, source_path,
+                       language, duration_s, cost_usd, processing_s, validation_ok,
+                       problems, clean_text, clean_path
+                FROM transcriptions WHERE id = %s
+            """, (int(item_id),))
+            rows = _rows_to_dicts(cur)
+        if not rows:
+            return None
+        it = rows[0]
+        it["created_at"] = it["created_at"].isoformat() if it["created_at"] else None
+        for k in ("duration_s", "cost_usd", "processing_s"):
+            it[k] = float(it[k]) if it[k] is not None else None
+        return it
+    finally:
+        close_connection(conn)
+
+
 def insert_transcription(record, log=print):
     """best-effort: devolve o id inserido ou None; nunca levanta excecao."""
     if not load_config():

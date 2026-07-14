@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 14 de julho de 2026 (v0.2.0 — pasta de transcripts à escolha do utilizador)  
+**Última atualização:** 14 de julho de 2026 (v0.3.0 — aba Biblioteca: histórico e dashboards)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -242,7 +242,7 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 ### Próximo trabalho (deixados em aberto)
 
-1. **Aba Biblioteca** — dashboards/histórico a partir da tabela `transcriptions` (custo por motor, tempo de processamento, etc.), e o resto do roteiro (contexto, estudo, chat).
+1. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
 2. Menor: reiniciar a VPS numa altura conveniente (o Ubuntu pede restart por updates de segurança pendentes — ver Registro 2026-07-14 (b)); considerar cópia periódica dos dumps para fora da VPS.
 
 ---
@@ -284,6 +284,23 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-14 (d): aba Biblioteca — histórico e dashboards (v0.3.0)
+
+### O que mudou
+- **Nova aba Biblioteca** (menu lateral) que lê a tabela `transcriptions` do Postgres (pelo túnel SSH): cartões de topo (total de transcrições, custo total, áudio processado, tempo médio), tabela de repartição **por motor** (contagem, custo, áudio, tempo médio), e lista pesquisável (por nome de ficheiro) com estado de validação, motor, data, duração e custo. Clicar numa linha abre a **vista de detalhe** com o texto completo (clean) + copiar.
+- **Worker (`db.py`):** `library_summary()` (agregados SQL), `library_list(limit, search)` (metadados, sem texto — payload leve), `library_item(id)` (registo completo com texto). CLI: comandos `library` e `library-item`. Rust: comandos `library`/`library_item`.
+- Versão da app: **0.3.0**.
+
+### Evidência / teste
+- Comandos testados pelo túnel em dev e no **worker congelado**: `library` devolve total=8, custo≈$0.885, 3 motores; `library-item --id 10` traz o texto (~19,7 mil chars). `tsc`/`vite` e `cargo check` limpos.
+- **Pendente:** validação visual do utilizador na app instalada (abrir a aba, confirmar cartões/lista/detalhe).
+
+### Impacto em dados, custo ou privacidade
+- Só leitura da base (nenhuma escrita nova). Sem custo; nenhuma API paga chamada. O texto só sai da base quando o utilizador abre uma transcrição específica.
+
+### Próximo passo
+- Validação do utilizador. Depois: fases 3-6 do roteiro (contexto, estudo, chat).
 
 ### Registro — 2026-07-14 (c): acesso ao Postgres migrado para túnel SSH; porta fechada a 100% da internet
 

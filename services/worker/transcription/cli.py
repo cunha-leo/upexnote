@@ -265,6 +265,51 @@ def cmd_check_key(args):
     return 0
 
 
+def _require_db():
+    """Valida config+password da DB; devolve mensagem de erro ou None."""
+    from . import db
+    if not db.load_config():
+        return "db_config.json não encontrado — copia db_config.example.json para db_config.json."
+    if not get_key(db.PG_PASSWORD_KEY):
+        return f"Password do Postgres não configurada. Corre: set-key --name {db.PG_PASSWORD_KEY}"
+    return None
+
+
+def cmd_library(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        summary = db.library_summary()
+        items = db.library_list(limit=getattr(args, "limit", 200) or 200,
+                                search=getattr(args, "search", None))
+        _emit(sys.stdout, {"type": "library", "summary": summary, "items": items})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a consultar a Biblioteca: {e}"})
+        return 1
+
+
+def cmd_library_item(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        item = db.library_item(args.id)
+        if item is None:
+            _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "library_item", "item": item})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter a transcrição: {e}"})
+        return 1
+
+
 def cmd_get_settings(args):
     # Definicoes de armazenamento (para o ecra de Definicoes): pasta padrao
     # em vigor, se e personalizada, e a organizacao por dia/motor.
@@ -337,6 +382,13 @@ def build_parser():
 
     sub.add_parser("db-check", help="Testa a ligacao ao Postgres da VPS e garante a tabela.")
 
+    p_lib = sub.add_parser("library", help="Historico + agregados da Biblioteca (JSON).")
+    p_lib.add_argument("--limit", type=int, default=200, help="Maximo de itens na lista.")
+    p_lib.add_argument("--search", help="Filtra por nome do ficheiro (case-insensitive).")
+
+    p_libi = sub.add_parser("library-item", help="Uma transcricao completa, com texto (JSON).")
+    p_libi.add_argument("--id", type=int, required=True, help="ID da transcricao.")
+
     return parser
 
 
@@ -353,6 +405,8 @@ def main(argv=None):
         "db-check": cmd_db_check,
         "get-settings": cmd_get_settings,
         "set-settings": cmd_set_settings,
+        "library": cmd_library,
+        "library-item": cmd_library_item,
     }
     return handlers[args.command](args)
 
