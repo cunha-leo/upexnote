@@ -295,6 +295,7 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ### Evidência / teste
 - Dev e worker congelado: `db-check` OK pelo túnel (8 linhas). Ligação direta à porta: `TcpTestSucceeded: False` até do IP do utilizador. A porta está fechada para o planeta; o único caminho é ter a chave SSH.
+- **DBeaver validado pelo utilizador (2026-07-14):** ligação `upexnote` reconfigurada com túnel SSH embutido (aba SSH: `vps.upexflow.com:22`, user `root`, chave `C:\Users\cunha\.ssh\upexnote_vps`; aba Principal: host `localhost:55433`, user `postgres`). "Testar conexão" → Conectado (PostgreSQL 17.10). Cadeado SSH visível no painel.
 - Nota de dev descoberta no processo: o Python da MS Store **virtualiza** `%APPDATA%` (lê/escreve em `...\PythonSoftwareFoundation...\LocalCache\Roaming` em vez da pasta real) — em modo dev, o settings/config do worker pode divergir do que o worker congelado vê. Em produção (exe congelado) está tudo na pasta real.
 
 ### Impacto em dados, custo ou privacidade
