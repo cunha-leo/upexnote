@@ -4,5 +4,13 @@
   "dbname": "upexnote",
   "user": "postgres",
   "sslmode": "prefer",
-  "connect_timeout": 8
+  "connect_timeout": 8,
+  "ssh": {
+    "host": "vps.exemplo.com",
+    "port": 22,
+    "user": "root",
+    "key": "~/.ssh/upexnote_vps",
+    "remote_host": "127.0.0.1",
+    "remote_port": 55433
+  }
 }

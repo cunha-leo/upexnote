@@ -285,6 +285,25 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-14 (c): acesso ao Postgres migrado para túnel SSH; porta fechada a 100% da internet
+
+### O que mudou
+- **A allowlist de IP do Registro (b) durou horas e foi substituída de propósito:** o utilizador viaja constantemente, usa VPN e vai mudar-se para Portugal — amarrar o acesso a um IP era o modelo errado ("segurança e liberdade de acesso aonde eu for"). O modelo certo: **túnel SSH com chave**, que funciona de qualquer rede/IP/VPN.
+- **Worker:** `db.py` abre túnel SSH (lib `sshtunnel`; `paramiko` fixado em `>=3,<4` — o 5.x removeu `DSSKey` e quebra o sshtunnel 0.4) quando o `db_config.json` tem a secção `"ssh"` (host/port/user/key — a chave é o caminho para `~/.ssh/upexnote_vps`, NÃO um segredo no ficheiro). Fecho da ligação via `close_connection()` (fecha ligação E túnel). Sem secção `ssh`, liga direto como antes.
+- **Firewall da VPS:** o script `/usr/local/sbin/upexnote-firewall.sh` agora faz DROP total na 55433 (IPv4+IPv6) — **sem exceções, sem allowlist para gerir**. A secção "Como mudar o IP autorizado" do Registro (b) está OBSOLETA.
+- **DBeaver:** passa a usar o túnel embutido (aba SSH: `root@vps.upexflow.com:22`, chave `upexnote_vps`; aba Main: host `127.0.0.1:55433`).
+
+### Evidência / teste
+- Dev e worker congelado: `db-check` OK pelo túnel (8 linhas). Ligação direta à porta: `TcpTestSucceeded: False` até do IP do utilizador. A porta está fechada para o planeta; o único caminho é ter a chave SSH.
+- Nota de dev descoberta no processo: o Python da MS Store **virtualiza** `%APPDATA%` (lê/escreve em `...\PythonSoftwareFoundation...\LocalCache\Roaming` em vez da pasta real) — em modo dev, o settings/config do worker pode divergir do que o worker congelado vê. Em produção (exe congelado) está tudo na pasta real.
+
+### Impacto em dados, custo ou privacidade
+- Exposição da base: 0 portas públicas (antes: 1 porta com allowlist). Credencial = chave SSH por máquina (runbook §8). Máquinas novas precisam da própria chave registada na Hostinger.
+- Sem custo. Reversível: repor secção allowlist no script de firewall + remover `"ssh"` do config.
+
+### Próximo passo
+- Aba Biblioteca. Menor: reboot pendente da VPS; cópia off-VPS dos dumps.
+
 ### Registro — 2026-07-14 (b): VPS endurecida — firewall na porta do Postgres + backup diário
 
 ### O que mudou
@@ -297,10 +316,8 @@ Ao trabalhar neste projeto, uma IA deve:
 - Verificação dupla: `db-check` do IP autorizado → OK (8 linhas); teste externo de 56 localizações (check-host.net) → timeout em todas (o único "Connected" de 3ms era falso positivo de proxy no nó, confirmado por 0 ligações estabelecidas no conntrack do servidor e 158 pacotes no contador DROP).
 - Primeiro dump feito e íntegro (`gunzip -t` OK, ~54 KB). Serviço `enabled`, cron instalado.
 
-### Como mudar o IP autorizado (quando a internet de casa mudar de IP)
-1. Sintoma: a app continua a transcrever normalmente mas aparece "DB: não gravou na VPS (timeout)" — **nenhuma transcrição se perde** (ficheiro local primeiro, por desenho).
-2. Descobrir o IP novo: https://api.ipify.org
-3. Ligar à VPS (`ssh -i ~/.ssh/upexnote_vps root@vps.upexflow.com`), editar `ALLOWED_IP` em `/usr/local/sbin/upexnote-firewall.sh` e correr o script. Pronto.
+### Como mudar o IP autorizado — OBSOLETO (ver Registro (c))
+No mesmo dia, a allowlist de IP foi substituída por túnel SSH e a porta fechada por completo — deixou de existir IP autorizado para gerir. Mantido só como histórico.
 
 ### Restaurar um backup (se alguma vez for preciso)
 `gunzip -c /root/backups/upexnote/upexnote-<data>.sql.gz | docker exec -i <container upexnote-db> psql -U postgres upexnote`
