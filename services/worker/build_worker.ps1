@@ -21,6 +21,18 @@ python -m PyInstaller --noconfirm --clean --onedir --console `
     worker_entry.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller falhou (exit $LASTEXITCODE)" }
 
+# Inclui a config da base de dados (host/porta/base/user — SEM password)
+# no pacote, para o zip portatil funcionar sem copiar nada para o AppData.
+# Se o ficheiro nao existir (ex.: build para distribuir a terceiros), segue
+# sem ele — a app funciona na mesma, so nao grava historico na VPS.
+$cfg = Join-Path $PSScriptRoot "transcription\db_config.json"
+if (Test-Path $cfg) {
+    Copy-Item $cfg ".\dist\upexnote-worker\db_config.json" -Force
+    Write-Host "db_config.json incluido no pacote."
+} else {
+    Write-Host "db_config.json ausente — pacote sem ligacao a VPS (so ficheiro local)."
+}
+
 # Sanity check: o exe responde ao comando mais barato (sem tocar em APIs).
 & ".\dist\upexnote-worker\upexnote-worker.exe" engines | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "O worker empacotado nao respondeu a 'engines' (exit $LASTEXITCODE)" }

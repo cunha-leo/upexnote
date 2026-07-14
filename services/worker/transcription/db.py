@@ -18,12 +18,18 @@ from pathlib import Path
 from .credentials import get_key
 
 if getattr(sys, "frozen", False):
-    # Executavel empacotado (sidecar): __file__ fica enterrado no _internal/
-    # do PyInstaller e seria substituido a cada atualizacao da app. A config
-    # (host/porta/base/user — SEM password) vive em %APPDATA%\UpexNote,
-    # estavel entre versoes. A password continua no Credential Manager.
+    # Executavel empacotado (sidecar). A config (host/porta/base/user —
+    # SEM password; essa fica no Credential Manager) e procurada por ordem:
+    #   1. %APPDATA%\UpexNote\db_config.json — override do utilizador,
+    #      sobrevive a atualizacoes da app;
+    #   2. ao lado do proprio worker — versao incluida no zip portatil,
+    #      para a app funcionar logo ao descompactar, sem passos manuais.
     _appdata = Path(os.environ.get("APPDATA", str(Path.home())))
-    CONFIG_PATH = _appdata / "UpexNote" / "db_config.json"
+    _candidates = [
+        _appdata / "UpexNote" / "db_config.json",
+        Path(sys.executable).resolve().parent / "db_config.json",
+    ]
+    CONFIG_PATH = next((p for p in _candidates if p.exists()), _candidates[0])
 else:
     CONFIG_PATH = Path(__file__).resolve().parent / "db_config.json"
 PG_PASSWORD_KEY = "UPEXNOTE_PG_PASSWORD"
