@@ -58,7 +58,9 @@ const THEMES: { id: string; label: string }[] = [
   { id: "dark", label: "Upex Escuro" },
   { id: "github-dark", label: "GitHub Dark" },
   { id: "one-dark", label: "One Dark" },
-  { id: "dracula", label: "Dracula" },
+  { id: "tokyo-night", label: "Tokyo Night" },
+  { id: "catppuccin", label: "Catppuccin Mocha" },
+  { id: "rose-pine", label: "Rosé Pine" },
   { id: "monokai-pro", label: "Monokai Pro" },
   { id: "nord", label: "Nord" },
   { id: "grafite", label: "Grafite" },
@@ -73,8 +75,9 @@ function useAppearance() {
     if (saved && THEMES.some((t) => t.id === saved)) return saved;
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
+  // Compacto é o default (preferência do utilizador, 2026-07-15); Confortável é opt-in
   const [density, setDensity] = useState<Density>(
-    () => (localStorage.getItem("upexnote-density") === "compact" ? "compact" : "comfortable")
+    () => (localStorage.getItem("upexnote-density") === "comfortable" ? "comfortable" : "compact")
   );
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -469,7 +472,18 @@ function LibraryView({ active }: { active: boolean }) {
   }
 
   return (
-    <>
+    <div className="lib-pane">
+      {/* Primeira carga: o túnel SSH demora uns segundos — sem isto o ecrã
+          fica mudo e parece travado. O overlay conduz o utilizador. */}
+      {loading && !summary && (
+        <div className="load-overlay">
+          <span className="spinner big" />
+          <div className="load-title">A carregar a Biblioteca…</div>
+          <div className="muted">
+            A primeira ligação abre um túnel seguro até à tua base de dados — pode demorar alguns segundos.
+          </div>
+        </div>
+      )}
       <section className="card">
         <div className="result-head">
           <h2 style={{ margin: 0, flex: 1 }}>Biblioteca</h2>
@@ -586,7 +600,7 @@ function LibraryView({ active }: { active: boolean }) {
           ))}
         </div>
       </section>
-    </>
+    </div>
   );
 }
 

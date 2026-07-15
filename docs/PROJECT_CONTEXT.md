@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 15 de julho de 2026 (v0.7.0 — titlebar custom, ícones Lucide, +5 temas escuros, métricas sem caixas)  
+**Última atualização:** 15 de julho de 2026 (v0.8.0 — temas pesquisados no GitHub, Dracula removido, Compacto default, overlay de carga na Biblioteca)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -337,6 +337,29 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-15: reação à v0.7.0 (positiva) + 3ª leva — v0.8.0
+
+### Feedback do utilizador à v0.7.0
+- **Aprovação geral:** "agora sim… está mais clean, está mais moderno, está bem melhor" — a direção (titlebar custom, Lucide, hairlines) está certa; continuar a refinar.
+- **Temas:** gostou de Upex Escuro (favorito), Nord, Preto OLED, GitHub Dark. **Rejeitou o Dracula** ("lilás índigo… padrão de tudo quanto é sistema, bem copia e cola") → REMOVIDO. Pediu pesquisa REAL no GitHub por temas dark modernos em vez de eu ir de memória.
+- **Densidade:** Confortável deve existir, mas **Compacto passa a default**.
+- **UX crítica (nova):** a primeira carga da Biblioteca (túnel SSH) deixa o ecrã vazio e mudo — parece travado. "A aplicação tem que conduzir a pessoa" → precisa de indicação visível de carregamento.
+
+### O que mudou (v0.8.0)
+- **Pesquisa feita** (web, 2026-07): Catppuccin e Tokyo Night são os temas em maior crescimento na comunidade; One Dark Pro/GitHub/Dracula lideram por instalações acumuladas. Adicionados com paletas OFICIAIS (hexes confirmados nos repos): **Tokyo Night** (tokyo-night-vscode-theme), **Catppuccin Mocha** (catppuccin.com — acento *peach*, deliberadamente NÃO o lavender lilás), **Rosé Pine** (rose-pine/palette, variante main). Dracula removido. Galeria: 12 temas.
+- **Compacto é o default** de densidade (quem já escolheu Confortável mantém).
+- **Overlay de carga na Biblioteca:** na primeira carga (loading sem dados), overlay semi-transparente com blur + spinner + "A carregar a Biblioteca… A primeira ligação abre um túnel seguro — pode demorar alguns segundos." Só na primeira; refresh posterior continua no botão.
+- Versão: **0.8.0**.
+
+### Evidência / teste
+- `tsc`/`vite` limpos; instalador no Desktop. Pendente: reação do utilizador (temas novos + overlay).
+
+### Impacto em dados, custo ou privacidade
+- Zero: só frontend. A pesquisa web não expôs nada do projeto.
+
+### Próximo passo
+- Reação do utilizador; possível poda da galeria (12 temas é muito se metade não for usada). Item 10 do backlog (túnel persistente) é o fix REAL da lentidão que o overlay só amortece. Depois: itens 7 (fonte) e 8 (idioma).
 
 ### Registro — 2026-07-15: reação do utilizador à v0.6.0 + 2ª leva do item 5 — v0.7.0
 

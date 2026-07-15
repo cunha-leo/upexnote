@@ -113,20 +113,55 @@
   --shadow: 0 1px 2px rgba(31, 35, 40, 0.04);
 }
 
-/* Dracula */
-:root[data-theme="dracula"], [data-theme="dracula"] {
-  --bg: #1e1f29;
-  --panel: #282a36;
-  --panel-2: #343746;
-  --border: #3b3d4d;
-  --text: #f8f8f2;
-  --text-dim: #9ba0c4;
-  --accent: #bd93f9;
-  --accent-strong: #d6acff;
-  --accent-soft: rgba(189, 147, 249, 0.14);
-  --on-accent: #1e1f29;
-  --danger: #ff5555;
-  --ok: #50fa7b;
+/* Tokyo Night — paleta oficial tokyo-night/tokyo-night-vscode-theme */
+:root[data-theme="tokyo-night"], [data-theme="tokyo-night"] {
+  --bg: #16161e;
+  --panel: #1a1b26;
+  --panel-2: #1f2335;
+  --border: #292e42;
+  --text: #c0caf5;
+  --text-dim: #787c99;
+  --accent: #7aa2f7;
+  --accent-strong: #94b5ff;
+  --accent-soft: rgba(122, 162, 247, 0.14);
+  --on-accent: #16161e;
+  --danger: #f7768e;
+  --ok: #9ece6a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Catppuccin Mocha — paleta oficial catppuccin.com; acento peach
+   (deliberadamente NÃO o lavender — o utilizador rejeita o cliché lilás) */
+:root[data-theme="catppuccin"], [data-theme="catppuccin"] {
+  --bg: #181825;
+  --panel: #1e1e2e;
+  --panel-2: #313244;
+  --border: #363852;
+  --text: #cdd6f4;
+  --text-dim: #a6adc8;
+  --accent: #fab387;
+  --accent-strong: #fcc4a0;
+  --accent-soft: rgba(250, 179, 135, 0.13);
+  --on-accent: #1e1e2e;
+  --danger: #f38ba8;
+  --ok: #a6e3a1;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Rosé Pine — paleta oficial rose-pine/palette (variante main) */
+:root[data-theme="rose-pine"], [data-theme="rose-pine"] {
+  --bg: #191724;
+  --panel: #1f1d2e;
+  --panel-2: #26233a;
+  --border: #403d52;
+  --text: #e0def4;
+  --text-dim: #908caa;
+  --accent: #ebbcba;
+  --accent-strong: #f4d2d0;
+  --accent-soft: rgba(235, 188, 186, 0.13);
+  --on-accent: #191724;
+  --danger: #eb6f92;
+  --ok: #9ccfd8;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
@@ -574,6 +609,35 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
 .muted { color: var(--text-dim); font-size: var(--fs-ui); }
 
 /* ---- Biblioteca ---- */
+.lib-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--view-gap);
+  min-height: 340px;
+}
+
+/* Overlay da primeira carga (o túnel SSH demora) — conduz o utilizador
+   em vez de deixar um ecrã vazio que parece travado */
+.load-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 24px;
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter: blur(3px);
+}
+.load-overlay .load-title { font-size: var(--fs-base); font-weight: 600; }
+.load-overlay .muted { max-width: 380px; }
+.spinner.big { width: 26px; height: 26px; border-width: 3px; }
+
 /* Métricas sem caixas: números grandes separados por hairlines verticais */
 .stat-grid {
   display: grid;
