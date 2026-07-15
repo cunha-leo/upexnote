@@ -881,8 +881,11 @@ function App() {
 
       <main className="main">
         <div className="body">
-          {view === "transcribe" && (
-            <>
+          {/* As três vistas ficam sempre montadas (só escondidas via CSS) para
+              não perderem o estado ao trocar de aba — antes, o React destruía
+              e recriava cada vista do zero, obrigando a Biblioteca a recarregar
+              tudo pelo túnel SSH sempre que voltavas a ela. */}
+          <div className={"view-pane" + (view === "transcribe" ? "" : " hidden")}>
               <section className="card">
                 <h2>Transcrever</h2>
 
@@ -987,17 +990,16 @@ function App() {
                   )}
                 </section>
               )}
-            </>
-          )}
+          </div>
 
-          {view === "library" && <LibraryView />}
+          <div className={"view-pane" + (view === "library" ? "" : " hidden")}>
+            <LibraryView />
+          </div>
 
-          {view === "settings" && (
-            <>
-              <SettingsView onChanged={loadEngines} />
-              <StorageSettingsCard />
-            </>
-          )}
+          <div className={"view-pane" + (view === "settings" ? "" : " hidden")}>
+            <SettingsView onChanged={loadEngines} />
+            <StorageSettingsCard />
+          </div>
         </div>
       </main>
     </div>

@@ -162,6 +162,13 @@ body { margin: 0; }
   gap: 18px;
 }
 
+.view-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.view-pane.hidden { display: none; }
+
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
