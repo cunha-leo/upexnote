@@ -576,6 +576,9 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
   flex-wrap: wrap;
 }
 .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: var(--fs-sm);
   padding: 2px 8px;
   border-radius: 999px;
@@ -583,6 +586,7 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
   border: 1px solid var(--border);
   color: var(--text-dim);
 }
+.badge .spinner { width: 10px; height: 10px; border-width: 2px; }
 .badge.ok { color: var(--ok); border-color: var(--ok); }
 .badge.warn { color: var(--danger); border-color: var(--danger); }
 .badge-id {

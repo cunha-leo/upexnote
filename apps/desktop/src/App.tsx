@@ -209,6 +209,23 @@ function fmtDate(iso: string | null): string {
   }
 }
 
+// Cache local da Biblioteca (lista + resumo, SEM textos) para a app abrir já
+// com os últimos dados em vez de "resetar" a cada arranque — padrão
+// stale-while-revalidate: mostra o guardado, atualiza em fundo pelo túnel.
+const LIB_CACHE_KEY = "upexnote-lib-cache";
+type LibCache = { ts: string; summary: LibSummary; items: LibItem[] };
+
+function readLibCache(): LibCache | null {
+  try {
+    const raw = localStorage.getItem(LIB_CACHE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw) as LibCache;
+    return c && c.summary ? c : null;
+  } catch {
+    return null;
+  }
+}
+
 function LibraryView({ active }: { active: boolean }) {
   const [summary, setSummary] = useState<LibSummary | null>(null);
   const [items, setItems] = useState<LibItem[]>([]);
@@ -225,6 +242,9 @@ function LibraryView({ active }: { active: boolean }) {
   const [showWarnings, setShowWarnings] = useState(false);
   const [ackBusy, setAckBusy] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
+  // Quando != null, o que está no ecrã veio da cache local (desta data);
+  // limpa-se assim que uma atualização fresca chega do túnel.
+  const [cacheTs, setCacheTs] = useState<string | null>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
   async function load(searchTerm?: string) {
@@ -235,11 +255,24 @@ function LibraryView({ active }: { active: boolean }) {
       const obj = JSON.parse(raw);
       if (obj.type === "error") {
         setError(obj.message);
-        setSummary(null);
-        setItems([]);
+        // Com cache no ecrã, um refresh falhado não apaga o que o utilizador vê
+        if (!cacheTs) {
+          setSummary(null);
+          setItems([]);
+        }
       } else {
         setSummary(obj.summary);
         setItems(obj.items || []);
+        setCacheTs(null);
+        // Só a lista completa vai para a cache (não resultados de pesquisa)
+        if (!searchTerm) {
+          try {
+            localStorage.setItem(
+              LIB_CACHE_KEY,
+              JSON.stringify({ ts: new Date().toISOString(), summary: obj.summary, items: obj.items || [] })
+            );
+          } catch { /* cache é best-effort */ }
+        }
       }
     } catch (e) {
       setError(String(e));
@@ -249,12 +282,17 @@ function LibraryView({ active }: { active: boolean }) {
   }
   useEffect(() => {
     // Só carrega quando a aba é aberta pela primeira vez — não no arranque
-    // da app. O primeiro invoke abre um túnel SSH (handshake pesado); disparar
-    // isso em paralelo com a inicialização da janela deixava-a sem resposta
-    // por alguns segundos. Depois de carregada uma vez, fica em memória (a
-    // vista nunca desmonta ao trocar de aba) e não volta a recarregar sozinha.
+    // da app (o primeiro invoke abre um túnel SSH pesado; em paralelo com a
+    // inicialização da janela deixava-a sem resposta). Se houver cache da
+    // última sessão, mostra-a IMEDIATAMENTE e o load() vira refresh em fundo.
     if (active && !loadedOnce) {
       setLoadedOnce(true);
+      const cached = readLibCache();
+      if (cached) {
+        setSummary(cached.summary);
+        setItems(cached.items);
+        setCacheTs(cached.ts);
+      }
       load();
     }
   }, [active, loadedOnce]);
@@ -487,6 +525,11 @@ function LibraryView({ active }: { active: boolean }) {
       <section className="card">
         <div className="result-head">
           <h2 style={{ margin: 0, flex: 1 }}>Biblioteca</h2>
+          {cacheTs && (
+            <span className="badge" title="A mostrar a última sessão guardada nesta máquina enquanto a versão atual chega da base de dados">
+              {loading ? <><span className="spinner" /> dados de {fmtDate(cacheTs)} · a atualizar…</> : <>dados de {fmtDate(cacheTs)}</>}
+            </span>
+          )}
           <button className="secondary" onClick={() => load(search.trim() || undefined)} disabled={loading}>
             {loading ? "A carregar…" : "Atualizar"}
           </button>

@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 15 de julho de 2026 (v0.8.0 — temas pesquisados no GitHub, Dracula removido, Compacto default, overlay de carga na Biblioteca)  
+**Última atualização:** 15 de julho de 2026 (v0.8.1 — Biblioteca abre com a última sessão em cache, atualiza em fundo)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -337,6 +337,23 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-15: Biblioteca deixa de "resetar" a cada arranque — v0.8.1
+
+### O que mudou
+- **Feedback do utilizador (v0.8.0):** fechar e reabrir a app "resetava" a Biblioteca — cada arranque voltava ao ecrã de carga do túnel SSH. Sugestão do próprio: guardar a última sessão localmente (JSON no AppData) e mostrá-la ao abrir, atualizando depois. É exatamente o padrão **stale-while-revalidate**.
+- **Implementado (frontend only):** a cada carga completa da lista (sem filtro de pesquisa), `summary`+`items` (metadados, SEM textos de transcrições) são guardados em `localStorage` (`upexnote-lib-cache`, com timestamp). Ao abrir a aba pela primeira vez numa sessão nova: se há cache, aparece INSTANTANEAMENTE com um badge "dados de \<data\> · a atualizar…" e o `load()` corre como refresh em fundo; quando chega, o badge desaparece. Se o refresh falhar (VPS offline), os dados em cache FICAM no ecrã com o erro por cima. O overlay de carga da v0.8.0 só aparece quando não há cache nenhuma (primeira execução de sempre).
+- Nota de privacidade: a cache guarda metadados (nomes de ficheiro, custos, datas) no `localStorage` do WebView2 da própria máquina — mesmo perfil de privacidade dos transcripts locais.
+- Versão: **0.8.1**.
+
+### Evidência / teste
+- `tsc`/`vite` limpos; instalador no Desktop. Pendente: validação do utilizador (fechar/reabrir a app → Biblioteca aparece de imediato com selo de data + refresh em fundo).
+
+### Impacto em dados, custo ou privacidade
+- Sem custo; metadados em cache local apenas. O item 10 do backlog (túnel persistente) continua a ser o fix estrutural da latência por chamada.
+
+### Próximo passo
+- Validação do utilizador. Possível extensão futura: cache também dos textos de detalhe já abertos.
 
 ### Registro — 2026-07-15: reação à v0.7.0 (positiva) + 3ª leva — v0.8.0
 
