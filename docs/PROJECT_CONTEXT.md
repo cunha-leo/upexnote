@@ -285,6 +285,8 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 **Nota transversal (itens 5-8):** formam uma superfície coerente de **Preferências/Aparência** nas Definições (tema, densidade, zoom, fonte, idioma) — padrão de app Electron maduro. Motivação do utilizador: vê o UpexNote a crescer muito (edições, formatação, NotebookLM/APIs de resumo, secção de notas pessoais) e quer uma base bonita, moderna e configurável desde já.
 
+9. **Opção estratégica: n8n como camada de orquestração de funcionalidades futuras (na manga).** Ideia do utilizador (2026-07-15): funcionalidades futuras — **interação de chat, formatação de documentos, envio/exportação, e outras automações** — poderiam ser feitas via **n8n** em vez de tudo nativo na app. Racional de custo: o n8n **já corre self-hosted na VPS do próprio utilizador** (projeto `upexflow`, agora na v2.31.1) → **custo incremental zero pelo n8n** em si; o único custo é o das **IAs** que se ligam (chaves/créditos dos providers). Ponto de ligação possível: a app UpexNote chamar workflows n8n (webhooks) ou vice-versa. NÃO é um compromisso — é uma opção a pesar (n8n vs implementação nativa) quando cada funcionalidade surgir. Vale a pena manter presente porque baixa muito o custo de acrescentar automações.
+
 ---
 
 ## 11. Protocolo de atualização para qualquer IA
