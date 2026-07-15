@@ -283,6 +283,11 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 8. **Idioma da UI (PT/EN/ES) — só o chrome, NÃO o conteúdo.** Utilizador consome muito em EN, algum ES, menos PT; quer trocar o idioma dos **labels da interface**. Explícito: transcripts NÃO se traduzem (ficam na língua do áudio — são dados). É o mais trabalhoso do grupo: as strings da UI estão hoje hard-coded em PT por todo o `App.tsx` → externalizar para dicionários por idioma + um `t()` leve (sem biblioteca pesada para 3 idiomas). Tradução profunda de conteúdo = passo futuro separado, fora deste item.
 
+### Correção 2026-07-15 (v0.5.1) — UI congelava nas ações da Biblioteca
+Os comandos Tauri `library*` eram síncronos com IO bloqueante (spawn do worker + handshake do túnel SSH + query, ~2-5s). Comandos síncronos correm na thread principal → a janela **inteira** congelava durante esse tempo a cada ação. Corrigido: passaram a `async` via `tauri::async_runtime::spawn_blocking`, a UI fica responsiva (spinner, janela mexível) enquanto o worker corre. NÃO remove a latência do túnel por chamada (item 10) — só impede que ela congele a UI.
+
+### Backlog (continuação)
+
 10. **Túnel SSH reaberto a cada chamada (bug encontrado, não a implementação em si).** Cada `invoke` que toca no Postgres (`library`, `db-check`, etc.) abre um `SSHTunnelForwarder` novo e fecha-o no fim (`db.connect()`/`close_connection()` em `db.py`) — handshake SSH completo por comando. É a causa raiz de a Biblioteca (e qualquer chamada à DB) parecer lenta, especialmente na primeira vez. Distinto do bug do item 11 (que já foi corrigido): aquele era o React a re-montar a vista; este é o próprio custo de rede por chamada. Possível solução futura: túnel persistente reutilizado entre chamadas (processo do worker teria de ficar vivo entre invokes, ou um pool de ligação) — mudança de arquitetura mais pesada, não trivial. Não agendado.
 
 11. ~~Trocar de aba reiniciava a Biblioteca do zero.~~ **FEITO em v0.4.4 (2026-07-15).** As 3 vistas (Transcrever/Biblioteca/Definições) ficavam montadas/desmontadas condicionalmente — o React destruía o estado da Biblioteca (lista, resumo, detalhe aberto) sempre que trocavas de aba, obrigando a recarregar tudo pelo túnel SSH outra vez. Corrigido: as 3 vistas ficam sempre montadas, só escondidas via CSS (`.view-pane.hidden`).
