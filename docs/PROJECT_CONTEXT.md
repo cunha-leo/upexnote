@@ -251,7 +251,7 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 2. ~~Mostrar o `#id` na app.~~ **FEITO em v0.4.1 (2026-07-15).** Badge `#id` clicável (copia) no cabeçalho do detalhe e prefixo `#id ·` na lista. Sem alterações no worker/schema — só `App.tsx`/`App.css`.
 3. **`problems` → `reason_code` + tabela de referência.** Substituir/complementar o texto livre de `problems` por códigos estruturados (ex.: `HALLUCINATION_FOREIGN_LANG`, `COVERAGE_GAP`, `LOOP_REPETITION`) + tabela `problem_reasons` (code, label, descrição, severidade). Torna pesquisável e alimenta dashboards. **Mexe na lógica de validação do worker** (é onde os problemas nascem) — mais substancial. Observação motivadora: numa transcrição real, o aviso foi por `COVERAGE_GAP` (último ts 2915s vs duração 3666s) e a alucinação óbvia em língua estrangeira pode nem ter sido marcada — os reason codes dariam precisão sobre o quê/porquê. **Nota:** este ponto passa a ser implementado dentro do item 4 (o ramo `transcription_problems` + dimensão `problem_reasons`).
 
-4. **Restruturação do schema — modelo hub-and-spoke (o mais estrutural).** Preocupação/visão do utilizador (2026-07-14): a `transcriptions` ficou "mais textual do que de índices", fora dos padrões modernos e pouco reutilizável. O utilizador (experiente em arquitetura de dados) quer um **hub central ("matrix") + satélites especializados** — enquadramento correto: hub-and-spoke / espírito Data Vault. **Foco explícito: arquitetura, gestão, reaproveitamento e consultas isoladas — NÃO performance** (o utilizador já reconhece que o Postgres aguenta; não repetir o argumento TOAST).
+4. ~~Restruturação do schema — hub-and-spoke.~~ **FEITO em v0.5.0 (2026-07-15, ver Registro).** Migrado na produção (8 linhas, backup guardado). Adiante ficam sub-itens: surface do reason_code na UI, e (mais tarde) satélites de proveniência/actor quando fizerem sentido. Preocupação/visão do utilizador (2026-07-14): a `transcriptions` ficou "mais textual do que de índices", fora dos padrões modernos e pouco reutilizável. O utilizador (experiente em arquitetura de dados) quer um **hub central ("matrix") + satélites especializados** — enquadramento correto: hub-and-spoke / espírito Data Vault. **Foco explícito: arquitetura, gestão, reaproveitamento e consultas isoladas — NÃO performance** (o utilizador já reconhece que o Postgres aguenta; não repetir o argumento TOAST).
 
    **Esqueleto-alvo (visão do utilizador + refinamentos meus):**
    - **hub `transcriptions`** (matrix, identidade IMUTÁVEL): id surrogate, código público, ref de origem, `service_type_id`. Nunca se apaga (apagar = flag).
@@ -332,6 +332,25 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-15: schema hub-and-spoke (item 4 do backlog) — v0.5.0
+
+### O que mudou
+- A tabela plana `transcriptions` foi partida no modelo **hub-and-spoke**: hub magro (`transcriptions`: identidade+FKs+metadados, **soft-delete via `deleted_at`** — o id nunca desaparece) + satélites `transcript_texts` (1:1, clean/raw/clean_path), `transcription_metrics` (1:1), `transcription_problems` (N:1) + dimensões `engines`, `service_types`, `problem_reasons`. Os `problems` em texto livre passaram a linhas com `reason_code` (classificador heurístico leve: COVERAGE_GAP, HALLUCINATION_LOOP, UNCLASSIFIED) — **absorve os itens 1 e 3 do backlog**.
+- `transcriptions_history` mantida intacta (auditoria flat); o snapshot passou a juntar hub+texts+metrics.
+- **Contrato JSON dos comandos inalterado** (library/library-item/etc.) → Rust e UI não mudaram neste passo (menos risco).
+- Nova função `migrate_v1_to_v2` (CLI `db-migrate`): transacional, renomeia a tabela antiga para `transcriptions_legacy_v1` (BACKUP, não apagada), preserva os ids, verifica contagens ANTES do commit.
+
+### Evidência / teste
+- Dump de segurança antes de tocar. Migração na produção: **8 transcrições / 8 textos / 8 métricas / 1 problema**, agregados idênticos ($0.8852, motores certos), backup `transcriptions_legacy_v1` com as 8 linhas.
+- Ciclo de vida completo testado num registo descartável (dev + worker congelado): insert→update→ack→soft-delete→limpeza. Raw sempre intacto; problemas classificados (COVERAGE_GAP + HALLUCINATION_LOOP); soft-delete esconde da lista mas mantém a linha + histórico ('update','delete'). Worker congelado fala com o v2 (db-check/library/library-item OK).
+- **Nota:** a VPS já está em v2; o app instalado <0.5.0 tem worker antigo (schema flat) e a Biblioteca dá erro até reinstalar — sem risco de dados (best-effort; ficheiro local primeiro).
+
+### Impacto em dados, custo ou privacidade
+- Nenhuma transcrição perdida (contagens verificadas + tabela antiga guardada + dump). Sem custo; nenhuma API paga chamada.
+
+### Próximo passo
+- Reinstalar (0.5.0). Depois: limpar `transcriptions_legacy_v1` quando houver confiança; possível surface do reason_code na UI; itens 5/7/8 (aparência).
 
 ### Registro — 2026-07-15: updates de segurança do Ubuntu + reboot da VPS
 
