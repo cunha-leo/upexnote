@@ -243,7 +243,7 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 ### Próximo trabalho (deixados em aberto)
 
 1. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
-2. Menor: reiniciar a VPS numa altura conveniente (o Ubuntu pede restart por updates de segurança pendentes — ver Registro 2026-07-14 (b)); considerar cópia periódica dos dumps para fora da VPS.
+2. Menor: considerar cópia periódica dos dumps para fora da VPS (a VPS é ponto único de falha). ~~Reboot pendente do Ubuntu~~ FEITO a 2026-07-15 (ver Registro). Hardening a considerar: reaplicar o firewall também a cada restart do Docker (hoje só no boot — as regras DOCKER-USER podem ser limpas quando o Docker reinicia; a 2026-07-15 sobreviveram ao upgrade do docker-ce, mas por sorte).
 
 ### Backlog de melhorias da Biblioteca (levantado 2026-07-14, IDEIAS — não agendado, não implementar sem confirmar)
 
@@ -324,6 +324,17 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-15: updates de segurança do Ubuntu + reboot da VPS
+
+### O que mudou
+- Aplicados 66 pacotes de atualização na VPS (incluindo segurança), mantendo as configs existentes (`--force-confold`; SSH/firewall não tocados). Dump fresco do Postgres antes de mexer. Reboot feito (autorizado pelo utilizador — VPS pessoal, não comercial, nada em uso).
+- Kernel novo ativo: **6.8.0-134-generic**; `reboot-required` limpo.
+
+### Evidência / teste
+- **Firewall sobrevive ao reboot:** o serviço systemd `upexnote-firewall.service` reaplicou as regras no arranque (DROP v4+v6 confirmados). Postgres OK pelo túnel (8 linhas). Backup cron presente.
+- **Efeito colateral:** o serviço `upexflow_n8n` (outro projeto, lmsc/upexflow — NÃO UpexNote) ficou 0/1 após o reboot: arrancou bem e depois recebeu SIGTERM; o Swarm não o reinicia (política provavelmente on-failure + exit 0 limpo). Todos os serviços do UpexNote (upexnote-db, drawio) voltaram 1/1. Nudge possível: `docker service update --force upexflow_n8n` (pendente de decisão do utilizador — pode estar desligado de propósito).
+- **Aprendizagem:** durante o upgrade o docker-ce foi atualizado (reinicia o Docker) e as regras DOCKER-USER sobreviveram, mas por sorte — reforço futuro: reaplicar o firewall a cada restart do Docker, não só no boot (ver §10 item 2).
 
 ### Registro — 2026-07-14 (e): Biblioteca — editar e apagar com histórico/auditoria (v0.4.0)
 
