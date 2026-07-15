@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 14 de julho de 2026 (v0.4.0 — Biblioteca: editar/apagar com histórico)  
+**Última atualização:** 15 de julho de 2026 (v0.6.0 — Aparência: galeria de temas + densidade + restyle moderno)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -270,7 +270,7 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
    **Timing:** antes das fases 3-6 (tudo se pendura no id do hub; mais barato agora). Migração do core (db.py + CLI), segura (poucos dados, backups+histórico).
    **Pendente de decisão do utilizador:** validar (a)/(b)/(c) e a ordem face às fases de produto. (Discussão em curso — utilizador disse ter mais pontos.)
 
-5. **Aparência: densidade + sistema de temas (NÃO impor um look).** Preocupação do utilizador (2026-07-14): o layout atual "parece Bootstrap/CRUD", arcaico; fontes grandes sem controlo de densidade. IMPORTANTE — o utilizador tem gosto forte e específico e **rejeita o cliché "escuro + indigo/lilás"** (demasiado batido). Duas tentativas minhas de "escolher um look moderno" falharam; a resposta certa NÃO é eu escolher, é dar-lhe controlo:
+5. **Aparência: densidade + sistema de temas (NÃO impor um look).** **PRIMEIRA LEVA FEITA em v0.6.0 (2026-07-15, ver Registro) — aguarda reação do utilizador.** Entregue: galeria de 5 temas (Upex Claro/Escuro, GitHub Light, Dracula, Nord) + densidade Compacto/Confortável + restyle estrutural anti-Bootstrap. Falta: reação do utilizador, restantes temas (Monokai Pro, GitHub Dark, One Dark, Solarized), decidir default de densidade (hoje: Confortável). Contexto original: preocupação do utilizador (2026-07-14): o layout atual "parece Bootstrap/CRUD", arcaico; fontes grandes sem controlo de densidade. IMPORTANTE — o utilizador tem gosto forte e específico e **rejeita o cliché "escuro + indigo/lilás"** (demasiado batido). Duas tentativas minhas de "escolher um look moderno" falharam; a resposta certa NÃO é eu escolher, é dar-lhe controlo:
    - **(a) Densidade** — modos **Compacto / Confortável** (à la VS Code/CDS), via `data-density` que remapeia espaçamentos e tamanhos de fonte. Resolve o "fontes grandes/grotescas".
    - **(b) Sistema de temas** — nas Definições, uma secção Aparência com **galeria de temas curados**, não só claro/escuro. Presets que o utilizador citou/gostou: **Monokai Pro, Dracula, GitHub (dark e light)**; +sugeridos: Nord, One Dark, Solarized. O **Indigo atual passa a ser 1 de vários**, não a identidade. Diagnóstico do arcaico mantém-se útil (raios gordos 14/9→6-8px, hairlines, hierarquia, motor como rádio-cards) mas aplicado DENTRO de cada tema.
    - **Arquitetura:** o `App.css` já usa variáveis CSS + `data-theme` (claro/escuro) — multi-tema é a extensão natural: cada tema = um conjunto de variáveis sob `data-theme="dracula"` etc.; o seletor troca o atributo. Contido e extensível (tema novo = bloco de variáveis novo). Persistir a escolha (localStorage/settings).
@@ -337,6 +337,26 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-15: sistema de temas + densidade + restyle moderno (item 5 do backlog, 1ª leva) — v0.6.0
+
+### O que mudou
+- **Sistema de temas (galeria, não imposição):** o `App.css` foi reescrito como sistema de tokens — cada tema é um bloco de variáveis CSS sob `[data-theme="…"]`; tema novo = 1 bloco novo + 1 entrada no registo `THEMES` do `App.tsx`. Lote inicial: **Upex Claro, Upex Escuro** (os atuais, refinados), **GitHub Light, Dracula, Nord**. O indigo/azul atual passou a ser "1 de vários", como pedido. Novas variáveis por tema: `--accent-soft` (tints de hover/seleção) e `--on-accent` (texto sobre o acento — Dracula e Nord têm acentos claros que pedem texto escuro).
+- **Galeria nas Definições (secção Aparência, primeiro cartão):** cartões de preview clicáveis. Truque de implementação: cada cartão leva o `data-theme` do respetivo tema no próprio elemento, e os blocos CSS cobrem `[data-theme]` em qualquer elemento (não só `:root`) — o preview pinta-se com as cores REAIS do tema, sem duplicar hexes no TSX.
+- **Densidade Compacto/Confortável:** `data-density` no `<html>` remapeia ~15 variáveis (fontes, paddings, gaps, alturas de linha). Confortável é o default e já baixou a base de 15px→14px; Compacto vai a 13px com espaçamentos apertados (resolve o "fontes grandes/grotescas"). Persistência de tema e densidade em `localStorage` (`upexnote-theme`/`upexnote-density`); o valor antigo de `upexnote-theme` ("light"/"dark") continua válido — sem migração.
+- **Restyle estrutural anti-"Bootstrap antigo"** (aplicado DENTRO do sistema, vale para todos os temas): raios 14/9px→10/7px; sombras quase-hairline; títulos de secção pequenos/uppercase/dim (padrão Linear/VS Code settings); nav ativa com tint de acento (`--accent-soft`) em vez de caixa com borda; botões secundários fantasma (transparentes com borda); focus ring visível (`:focus-visible` + box-shadow nos inputs — acessibilidade §9); cabeçalhos de tabela uppercase pequenos; badges mais discretos.
+- **Sidebar:** o botão "Tema claro/escuro" do rodapé (obsoleto com a galeria) deu lugar a "🎨 Aparência", que abre as Definições.
+- Versão da app: **0.6.0**.
+
+### Evidência / teste
+- `tsc`/`vite` limpos; instalador NSIS gerado e copiado para o Desktop.
+- **Pendente: reação/validação do utilizador** — este item é explicitamente iterativo ("2-3 temas primeiro, para eu reagir a algo concreto").
+
+### Impacto em dados, custo ou privacidade
+- Zero: só frontend (`App.css`/`App.tsx`); worker Python, Rust e schema intocados. Preferências ficam em `localStorage` local.
+
+### Próximo passo
+- Utilizador reage: temas que ficam/saem, restantes presets (Monokai Pro, GitHub Dark, One Dark, Solarized), default de densidade, ajustes ao restyle. Depois: itens 7 (fonte) e 8 (idioma) da mesma superfície de Preferências.
 
 ### Registro — 2026-07-15: schema hub-and-spoke (item 4 do backlog) — v0.5.0
 

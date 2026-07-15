@@ -25,16 +25,90 @@ type ResultData = {
 
 type View = "transcribe" | "library" | "settings";
 
-function useTheme() {
-  const [theme, setTheme] = useState<"light" | "dark">(
-    () => (localStorage.getItem("upexnote-theme") as "light" | "dark") ||
-      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+// ---------------------------------------------------------------------------
+// Aparência — tema (galeria) + densidade. Cada tema é um bloco de variáveis
+// CSS em App.css sob [data-theme="…"]; adicionar um tema = bloco novo lá + uma
+// entrada aqui. A escolha persiste em localStorage.
+// ---------------------------------------------------------------------------
+const THEMES: { id: string; label: string }[] = [
+  { id: "light", label: "Upex Claro" },
+  { id: "dark", label: "Upex Escuro" },
+  { id: "github-light", label: "GitHub Light" },
+  { id: "dracula", label: "Dracula" },
+  { id: "nord", label: "Nord" },
+];
+
+type Density = "comfortable" | "compact";
+
+function useAppearance() {
+  const [theme, setTheme] = useState<string>(() => {
+    const saved = localStorage.getItem("upexnote-theme");
+    if (saved && THEMES.some((t) => t.id === saved)) return saved;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+  const [density, setDensity] = useState<Density>(
+    () => (localStorage.getItem("upexnote-density") === "compact" ? "compact" : "comfortable")
   );
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("upexnote-theme", theme);
   }, [theme]);
-  return { theme, toggle: () => setTheme((t) => (t === "dark" ? "light" : "dark")) };
+  useEffect(() => {
+    document.documentElement.setAttribute("data-density", density);
+    localStorage.setItem("upexnote-density", density);
+  }, [density]);
+  return { theme, setTheme, density, setDensity };
+}
+
+type Appearance = ReturnType<typeof useAppearance>;
+
+function AppearanceCard({ theme, setTheme, density, setDensity }: Appearance) {
+  return (
+    <section className="card">
+      <h2>Aparência</h2>
+      <div className="field">
+        <label>Tema</label>
+        <div className="theme-grid">
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              data-theme={t.id}
+              className={"theme-card" + (theme === t.id ? " selected" : "")}
+              onClick={() => setTheme(t.id)}
+            >
+              <span className="tc-preview">
+                <span className="tc-side" />
+                <span className="tc-body">
+                  <span className="tc-line accent" />
+                  <span className="tc-line" />
+                  <span className="tc-line dim" />
+                </span>
+              </span>
+              <span className="tc-name">
+                {theme === t.id && <span className="tc-check">✓</span>}
+                {t.label}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <label>Densidade</label>
+        <div className="seg">
+          <button className={density === "comfortable" ? "on" : ""} onClick={() => setDensity("comfortable")}>
+            Confortável
+          </button>
+          <button className={density === "compact" ? "on" : ""} onClick={() => setDensity("compact")}>
+            Compacto
+          </button>
+        </div>
+        <div className="engine-info">
+          Compacto reduz tamanhos de letra e espaçamentos — mais conteúdo no ecrã. O zoom (Ctrl + scroll)
+          continua disponível por cima de qualquer densidade.
+        </div>
+      </div>
+    </section>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -695,7 +769,7 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
 // App — layout com menu lateral + roteamento de vistas
 // ---------------------------------------------------------------------------
 function App() {
-  const { theme, toggle } = useTheme();
+  const appearance = useAppearance();
   const [view, setView] = useState<View>("transcribe");
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem("upexnote-sidebar") === "collapsed"
@@ -877,9 +951,9 @@ function App() {
         </nav>
 
         <div className="sidebar-foot">
-          <button className="nav-item" onClick={toggle} title="Tema">
-            <span className="nav-ico">{theme === "dark" ? "☀" : "🌙"}</span>
-            {!collapsed && <span>{theme === "dark" ? "Tema claro" : "Tema escuro"}</span>}
+          <button className="nav-item" onClick={() => setView("settings")} title="Aparência (tema e densidade)">
+            <span className="nav-ico">🎨</span>
+            {!collapsed && <span>Aparência</span>}
           </button>
           <button className="nav-item" onClick={() => setCollapsed((c) => !c)} title="Recolher menu">
             <span className="nav-ico">{collapsed ? "»" : "«"}</span>
@@ -1006,6 +1080,7 @@ function App() {
           </div>
 
           <div className={"view-pane" + (view === "settings" ? "" : " hidden")}>
+            <AppearanceCard {...appearance} />
             <SettingsView onChanged={loadEngines} />
             <StorageSettingsCard />
           </div>
