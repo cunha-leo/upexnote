@@ -331,6 +331,24 @@ def cmd_library_update(args):
         return 1
 
 
+def cmd_library_ack(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.acknowledge_warnings(args.id, ack=not args.reopen)
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "message": "Reaberto." if args.reopen else "Avisos marcados como revistos."})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha: {e}"})
+        return 1
+
+
 def cmd_library_delete(args):
     from . import db
     err = _require_db()
@@ -434,6 +452,10 @@ def build_parser():
     p_libd = sub.add_parser("library-delete", help="Apaga uma transcricao (arquiva no historico).")
     p_libd.add_argument("--id", type=int, required=True, help="ID da transcricao.")
 
+    p_lack = sub.add_parser("library-ack", help="Marca/desmarca os avisos de validacao como revistos.")
+    p_lack.add_argument("--id", type=int, required=True, help="ID da transcricao.")
+    p_lack.add_argument("--reopen", action="store_true", help="Reabre o aviso (em vez de marcar como revisto).")
+
     return parser
 
 
@@ -454,6 +476,7 @@ def main(argv=None):
         "library-item": cmd_library_item,
         "library-update": cmd_library_update,
         "library-delete": cmd_library_delete,
+        "library-ack": cmd_library_ack,
     }
     return handlers[args.command](args)
 

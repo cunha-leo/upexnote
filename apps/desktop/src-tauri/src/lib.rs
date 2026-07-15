@@ -185,6 +185,17 @@ fn library_delete(id: i64) -> Result<String, String> {
     run_cli(&["library-delete", "--id", &id_s])
 }
 
+/// Marca/desmarca os avisos de validação como revistos.
+#[tauri::command]
+fn library_ack(id: i64, reopen: bool) -> Result<String, String> {
+    let id_s = id.to_string();
+    let mut args: Vec<&str> = vec!["library-ack", "--id", &id_s];
+    if reopen {
+        args.push("--reopen");
+    }
+    run_cli(&args)
+}
+
 /// Definições de armazenamento em vigor (pasta padrão + organização).
 #[tauri::command]
 fn get_settings() -> Result<String, String> {
@@ -265,7 +276,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
-            get_settings, set_settings, library, library_item, library_update, library_delete, transcribe
+            get_settings, set_settings, library, library_item, library_update, library_delete, library_ack, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

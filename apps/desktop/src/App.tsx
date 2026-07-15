@@ -60,6 +60,7 @@ type LibItem = {
   cost_usd: number | null;
   processing_s: number | null;
   validation_ok: boolean | null;
+  warnings_ack: boolean | null;
   clean_path: string | null;
 };
 type LibEngine = { engine: string; count: number; cost: number; duration: number; proc_avg: number };
@@ -117,6 +118,8 @@ function LibraryView() {
   const [saving, setSaving] = useState(false);
   const [actionMsg, setActionMsg] = useState("");
   const [confirmDel, setConfirmDel] = useState(false);
+  const [showWarnings, setShowWarnings] = useState(false);
+  const [ackBusy, setAckBusy] = useState(false);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
   async function load(searchTerm?: string) {
@@ -147,6 +150,7 @@ function LibraryView() {
     setDetail(null);
     setEditing(false);
     setConfirmDel(false);
+    setShowWarnings(false);
     setActionMsg("");
   }
 
@@ -160,6 +164,7 @@ function LibraryView() {
         setDetail(obj.item);
         setEditing(false);
         setConfirmDel(false);
+        setShowWarnings(false);
         setEditText(obj.item.clean_text);
       } else {
         setError(obj.message || "Falha a abrir a transcrição.");
@@ -212,6 +217,26 @@ function LibraryView() {
       setConfirmDel(false);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function toggleAck() {
+    if (!detail) return;
+    setAckBusy(true);
+    try {
+      const reopen = !!detail.warnings_ack;
+      const raw = await invoke<string>("library_ack", { id: detail.id, reopen });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        setDetail({ ...detail, warnings_ack: !reopen });
+        load(search.trim() || undefined);
+      } else {
+        setActionMsg("Erro: " + (obj.message || "falha"));
+      }
+    } catch (e) {
+      setActionMsg("Erro: " + String(e));
+    } finally {
+      setAckBusy(false);
     }
   }
 
@@ -270,15 +295,47 @@ function LibraryView() {
             #{detail.id}
           </span>
           <span className="badge">{engLabel(detail.engine)}</span>
-          <span className={"badge " + (detail.validation_ok ? "ok" : "warn")}>
-            {detail.validation_ok ? "✓ Validação OK" : "⚠ Com avisos"}
-          </span>
+          {detail.validation_ok ? (
+            <span className="badge ok">✓ Validação OK</span>
+          ) : (
+            <span
+              className={"badge warn-badge" + (detail.warnings_ack ? " ack" : "")}
+              onClick={() => setShowWarnings((s) => !s)}
+              title="Clica para ver o(s) aviso(s)"
+            >
+              {detail.warnings_ack ? "✓ Aviso revisto" : "⚠ Com avisos"}
+            </span>
+          )}
           {detail.edited_at && <span className="badge">editado</span>}
           {detail.language && <span className="badge">idioma: {detail.language}</span>}
           <span className="badge">{fmtCost(detail.cost_usd)}</span>
           <span className="badge">{fmtDur(detail.duration_s)}</span>
           <span className="badge">{fmtDate(detail.created_at)}</span>
         </div>
+        {!detail.validation_ok && showWarnings && (
+          <div className="warnings-panel">
+            {detail.problems && detail.problems.length > 0 ? (
+              <ul>
+                {detail.problems.map((p, i) => <li key={i}>{p}</li>)}
+              </ul>
+            ) : (
+              <div className="muted">Sem detalhe guardado para este aviso.</div>
+            )}
+            <div className="row wrap" style={{ marginTop: 10 }}>
+              {!editing && (
+                <button
+                  className="secondary"
+                  onClick={() => { setEditText(detail.clean_text); setEditing(true); setActionMsg(""); }}
+                >
+                  Corrigir texto
+                </button>
+              )}
+              <button className="secondary" onClick={toggleAck} disabled={ackBusy}>
+                {ackBusy ? "…" : detail.warnings_ack ? "Reabrir aviso" : "Marcar como revisto"}
+              </button>
+            </div>
+          </div>
+        )}
         {editing ? (
           <textarea
             ref={editRef}
@@ -392,7 +449,10 @@ function LibraryView() {
         <div className="lib-list">
           {items.map((it) => (
             <button key={it.id} className="lib-row" onClick={() => openItem(it.id)}>
-              <span className={"lib-dot " + (it.validation_ok ? "ok" : "warn")} title={it.validation_ok ? "Validação OK" : "Com avisos"} />
+              <span
+                className={"lib-dot " + (it.validation_ok ? "ok" : it.warnings_ack ? "ack" : "warn")}
+                title={it.validation_ok ? "Validação OK" : it.warnings_ack ? "Aviso revisto" : "Com avisos"}
+              />
               <span className="lib-main">
                 <div className="lib-name">{it.source_filename || `Transcrição #${it.id}`}</div>
                 <div className="lib-sub">#{it.id} · {engLabel(it.engine)} · {fmtDate(it.created_at)}{it.language ? " · " + it.language : ""}</div>

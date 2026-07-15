@@ -190,8 +190,9 @@ def close_connection(conn):
 def ensure_table(conn):
     with conn.cursor() as cur:
         cur.execute(DDL)
-        # Migração leve: coluna edited_at + tabela de histórico (idempotente).
+        # Migração leve: colunas novas + tabela de histórico (idempotente).
         cur.execute("ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS edited_at timestamptz")
+        cur.execute("ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS warnings_ack boolean NOT NULL DEFAULT false")
         cur.execute(HISTORY_DDL)
     conn.commit()
 
@@ -283,7 +284,7 @@ def library_list(limit=200, search=None):
         with conn.cursor() as cur:
             cur.execute(f"""
                 SELECT id, created_at, engine, source_filename, language,
-                       duration_s, cost_usd, processing_s, validation_ok, clean_path
+                       duration_s, cost_usd, processing_s, validation_ok, warnings_ack, clean_path
                 FROM transcriptions
                 {where}
                 ORDER BY created_at DESC, id DESC
@@ -307,7 +308,7 @@ def library_item(item_id):
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, created_at, edited_at, engine, source_filename, source_path,
-                       language, duration_s, cost_usd, processing_s, validation_ok,
+                       language, duration_s, cost_usd, processing_s, validation_ok, warnings_ack,
                        problems, clean_text, clean_path
                 FROM transcriptions WHERE id = %s
             """, (int(item_id),))
@@ -356,6 +357,29 @@ def update_transcription(item_id, new_clean_text):
             except Exception:
                 pass  # best-effort: o banco é a fonte de verdade da Biblioteca
         return {"ok": True, "file_updated": file_updated}
+    finally:
+        close_connection(conn)
+
+
+def acknowledge_warnings(item_id, ack=True):
+    """
+    Marca (ou desmarca) os avisos de validação como revistos. É só um flag de
+    estado — não mexe no conteúdo, por isso não precisa de snapshot no
+    histórico (ao contrário de update/delete). Reversível a qualquer momento.
+    """
+    conn = connect()
+    try:
+        ensure_table(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM transcriptions WHERE id = %s", (int(item_id),))
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(
+                "UPDATE transcriptions SET warnings_ack = %s WHERE id = %s",
+                (bool(ack), int(item_id)),
+            )
+        conn.commit()
+        return {"ok": True}
     finally:
         close_connection(conn)
 
