@@ -79,6 +79,19 @@ fn run_cli(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// Versão assíncrona: corre `run_cli` numa thread de bloqueio, para não
+/// congelar a UI enquanto o worker abre o túnel SSH + consulta a base
+/// (pode demorar 2-5s). Comandos síncronos de Tauri correm na thread
+/// principal e bloqueariam a janela toda durante esse tempo.
+async fn run_cli_async(args: Vec<String>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        run_cli(&refs)
+    })
+    .await
+    .map_err(|e| format!("erro na thread do worker: {e}"))?
+}
+
 /// Lista os motores (JSON de uma linha, tal como a CLI devolve).
 #[tauri::command]
 fn list_engines() -> Result<String, String> {
@@ -134,66 +147,69 @@ fn clear_credential(name: String) -> Result<String, String> {
 }
 
 /// Histórico + agregados da Biblioteca (JSON). `search` filtra por nome.
+/// `async` para correr fora da thread principal (não congela a UI).
 #[tauri::command]
-fn library(search: Option<String>) -> Result<String, String> {
-    let mut args: Vec<&str> = vec!["library"];
-    if let Some(s) = search.as_deref() {
+async fn library(search: Option<String>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["library".into()];
+    if let Some(s) = search {
         if !s.trim().is_empty() {
-            args.push("--search");
+            args.push("--search".into());
             args.push(s);
         }
     }
-    run_cli(&args)
+    run_cli_async(args).await
 }
 
 /// Uma transcrição completa (com texto) para a vista de detalhe.
 #[tauri::command]
-fn library_item(id: i64) -> Result<String, String> {
-    let id_s = id.to_string();
-    run_cli(&["library-item", "--id", &id_s])
+async fn library_item(id: i64) -> Result<String, String> {
+    run_cli_async(vec!["library-item".into(), "--id".into(), id.to_string()]).await
 }
 
 /// Edita o texto clean de uma transcrição. O texto vai por STDIN (pode ser
 /// grande e ter caracteres especiais), nunca por argumentos. A raw é intacta.
+/// Corre numa thread de bloqueio (não congela a UI).
 #[tauri::command]
-fn library_update(id: i64, text: String) -> Result<String, String> {
-    use std::io::Write;
-    let id_s = id.to_string();
-    let mut cmd = worker_command(&["library-update", "--id", &id_s]);
-    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    with_no_window(&mut cmd);
-    let mut child = cmd.spawn().map_err(|e| format!("Falha ao iniciar o worker Python: {e}"))?;
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-    }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(if err.trim().is_empty() {
-            String::from_utf8_lossy(&out.stdout).to_string()
-        } else {
-            err.to_string()
-        });
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+async fn library_update(id: i64, text: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        let id_s = id.to_string();
+        let mut cmd = worker_command(&["library-update", "--id", &id_s]);
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        with_no_window(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| format!("Falha ao iniciar o worker Python: {e}"))?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+        }
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(if err.trim().is_empty() {
+                String::from_utf8_lossy(&out.stdout).to_string()
+            } else {
+                err.to_string()
+            });
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    })
+    .await
+    .map_err(|e| format!("erro na thread do worker: {e}"))?
 }
 
 /// Apaga uma transcrição (arquivada no histórico pelo worker).
 #[tauri::command]
-fn library_delete(id: i64) -> Result<String, String> {
-    let id_s = id.to_string();
-    run_cli(&["library-delete", "--id", &id_s])
+async fn library_delete(id: i64) -> Result<String, String> {
+    run_cli_async(vec!["library-delete".into(), "--id".into(), id.to_string()]).await
 }
 
 /// Marca/desmarca os avisos de validação como revistos.
 #[tauri::command]
-fn library_ack(id: i64, reopen: bool) -> Result<String, String> {
-    let id_s = id.to_string();
-    let mut args: Vec<&str> = vec!["library-ack", "--id", &id_s];
+async fn library_ack(id: i64, reopen: bool) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["library-ack".into(), "--id".into(), id.to_string()];
     if reopen {
-        args.push("--reopen");
+        args.push("--reopen".into());
     }
-    run_cli(&args)
+    run_cli_async(args).await
 }
 
 /// Definições de armazenamento em vigor (pasta padrão + organização).
