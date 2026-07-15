@@ -105,10 +105,10 @@ function fmtDate(iso: string | null): string {
   }
 }
 
-function LibraryView() {
+function LibraryView({ active }: { active: boolean }) {
   const [summary, setSummary] = useState<LibSummary | null>(null);
   const [items, setItems] = useState<LibItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<LibDetail | null>(null);
@@ -120,6 +120,7 @@ function LibraryView() {
   const [confirmDel, setConfirmDel] = useState(false);
   const [showWarnings, setShowWarnings] = useState(false);
   const [ackBusy, setAckBusy] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const editRef = useRef<HTMLTextAreaElement>(null);
 
   async function load(searchTerm?: string) {
@@ -143,8 +144,16 @@ function LibraryView() {
     }
   }
   useEffect(() => {
-    load();
-  }, []);
+    // Só carrega quando a aba é aberta pela primeira vez — não no arranque
+    // da app. O primeiro invoke abre um túnel SSH (handshake pesado); disparar
+    // isso em paralelo com a inicialização da janela deixava-a sem resposta
+    // por alguns segundos. Depois de carregada uma vez, fica em memória (a
+    // vista nunca desmonta ao trocar de aba) e não volta a recarregar sozinha.
+    if (active && !loadedOnce) {
+      setLoadedOnce(true);
+      load();
+    }
+  }, [active, loadedOnce]);
 
   function closeDetail() {
     setDetail(null);
@@ -442,7 +451,7 @@ function LibraryView() {
           )}
         </div>
 
-        {!loading && !error && items.length === 0 && (
+        {loadedOnce && !loading && !error && items.length === 0 && (
           <div className="lib-empty">
             {search ? "Nenhuma transcrição corresponde à pesquisa." : "Ainda não há transcrições no histórico."}
           </div>
@@ -993,7 +1002,7 @@ function App() {
           </div>
 
           <div className={"view-pane" + (view === "library" ? "" : " hidden")}>
-            <LibraryView />
+            <LibraryView active={view === "library"} />
           </div>
 
           <div className={"view-pane" + (view === "settings" ? "" : " hidden")}>
