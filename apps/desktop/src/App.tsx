@@ -1,8 +1,30 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
+  Search, ArrowLeft, ArrowRight, Minus, Square, X,
+} from "lucide-react";
 import "./App.css";
+
+/* Marca UpexNote — balão de conversa + onda sonora (eco do ícone da app),
+   pintada com a cor de acento do tema ativo via currentColor. */
+function BrandMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg
+      width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+      <line x1="9" y1="10" x2="9" y2="13" />
+      <line x1="12" y1="8.5" x2="12" y2="14.5" />
+      <line x1="15" y1="10" x2="15" y2="13" />
+    </svg>
+  );
+}
 
 type Engine = {
   id: string;
@@ -32,10 +54,15 @@ type View = "transcribe" | "library" | "settings";
 // ---------------------------------------------------------------------------
 const THEMES: { id: string; label: string }[] = [
   { id: "light", label: "Upex Claro" },
-  { id: "dark", label: "Upex Escuro" },
   { id: "github-light", label: "GitHub Light" },
+  { id: "dark", label: "Upex Escuro" },
+  { id: "github-dark", label: "GitHub Dark" },
+  { id: "one-dark", label: "One Dark" },
   { id: "dracula", label: "Dracula" },
+  { id: "monokai-pro", label: "Monokai Pro" },
   { id: "nord", label: "Nord" },
+  { id: "grafite", label: "Grafite" },
+  { id: "oled", label: "Preto OLED" },
 ];
 
 type Density = "comfortable" | "compact";
@@ -512,13 +539,16 @@ function LibraryView({ active }: { active: boolean }) {
 
       <section className="card">
         <div className="lib-toolbar">
-          <input
-            type="text"
-            placeholder="Pesquisar por nome do ficheiro…"
-            value={search}
-            onChange={(e) => setSearch(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") load(search.trim() || undefined); }}
-          />
+          <div className="input-icon">
+            <Search size={14} strokeWidth={2} />
+            <input
+              type="text"
+              placeholder="Pesquisar por nome do ficheiro…"
+              value={search}
+              onChange={(e) => setSearch(e.currentTarget.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") load(search.trim() || undefined); }}
+            />
+          </div>
           <button className="secondary" onClick={() => load(search.trim() || undefined)} disabled={loading}>Pesquisar</button>
           {search && (
             <button className="secondary" onClick={() => { setSearch(""); load(); }} disabled={loading}>Limpar</button>
@@ -766,11 +796,69 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// Barra de título custom — a janela é criada sem decoração nativa
+// (decorations:false), por isso a tarja do Windows desaparece e esta barra,
+// pintada com as cores do tema, assume arrastar/min/max/fechar.
+// ---------------------------------------------------------------------------
+function Titlebar({
+  canBack, canFwd, onBack, onFwd,
+}: { canBack: boolean; canFwd: boolean; onBack: () => void; onFwd: () => void }) {
+  const win = getCurrentWindow();
+  return (
+    <div className="titlebar" data-tauri-drag-region>
+      <div className="tb-nav">
+        <button className="tb-btn" onClick={onBack} disabled={!canBack} title="Voltar">
+          <ArrowLeft size={15} />
+        </button>
+        <button className="tb-btn" onClick={onFwd} disabled={!canFwd} title="Avançar">
+          <ArrowRight size={15} />
+        </button>
+      </div>
+      <div className="tb-title" data-tauri-drag-region>UpexNote</div>
+      <div className="tb-controls">
+        <button className="tb-btn tb-win" onClick={() => win.minimize()} title="Minimizar">
+          <Minus size={15} />
+        </button>
+        <button className="tb-btn tb-win" onClick={() => win.toggleMaximize()} title="Maximizar / Restaurar">
+          <Square size={12} />
+        </button>
+        <button className="tb-btn tb-win tb-close" onClick={() => win.close()} title="Fechar">
+          <X size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // App — layout com menu lateral + roteamento de vistas
 // ---------------------------------------------------------------------------
 function App() {
   const appearance = useAppearance();
   const [view, setView] = useState<View>("transcribe");
+  // Histórico de vistas para as setas voltar/avançar da barra de título
+  const [histBack, setHistBack] = useState<View[]>([]);
+  const [histFwd, setHistFwd] = useState<View[]>([]);
+  function navTo(v: View) {
+    if (v === view) return;
+    setHistBack((h) => [...h, view]);
+    setHistFwd([]);
+    setView(v);
+  }
+  function goBack() {
+    if (!histBack.length) return;
+    const prev = histBack[histBack.length - 1];
+    setHistBack((h) => h.slice(0, -1));
+    setHistFwd((f) => [view, ...f]);
+    setView(prev);
+  }
+  function goFwd() {
+    if (!histFwd.length) return;
+    const next = histFwd[0];
+    setHistFwd((f) => f.slice(1));
+    setHistBack((h) => [...h, view]);
+    setView(next);
+  }
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem("upexnote-sidebar") === "collapsed"
   );
@@ -916,23 +1004,28 @@ function App() {
     if (typeof picked === "string") setFile(picked);
   }
 
-  const navItems: { id: View; icon: string; label: string }[] = [
-    { id: "transcribe", icon: "🎙", label: "Transcrever" },
-    { id: "library", icon: "📚", label: "Biblioteca" },
-    { id: "settings", icon: "⚙", label: "Definições" },
+  const navItems: { id: View; icon: ReactNode; label: string }[] = [
+    { id: "transcribe", icon: <Mic size={16} strokeWidth={1.75} />, label: "Transcrever" },
+    { id: "library", icon: <LibraryBig size={16} strokeWidth={1.75} />, label: "Biblioteca" },
+    { id: "settings", icon: <Settings size={16} strokeWidth={1.75} />, label: "Definições" },
   ];
 
   return (
-    <div className="layout">
+    <div className="shell">
+      <Titlebar canBack={histBack.length > 0} canFwd={histFwd.length > 0} onBack={goBack} onFwd={goFwd} />
+      <div className="layout">
       <aside className={"sidebar" + (collapsed ? " collapsed" : "")}>
         <div className="sidebar-brand">
           {collapsed ? (
-            <span className="logo-mini">U</span>
+            <span className="brand-mark"><BrandMark /></span>
           ) : (
-            <>
-              <div className="wordmark"><span className="up">Upex</span><span className="ex">Note</span></div>
-              <div className="tagline">Transcreva, organize e explore.</div>
-            </>
+            <div className="brand-row">
+              <span className="brand-mark"><BrandMark /></span>
+              <div>
+                <div className="wordmark"><span className="up">Upex</span><span className="ex">Note</span></div>
+                <div className="tagline">Transcreva, organize e explore.</div>
+              </div>
+            </div>
           )}
         </div>
 
@@ -941,7 +1034,7 @@ function App() {
             <button
               key={it.id}
               className={"nav-item" + (view === it.id ? " active" : "")}
-              onClick={() => setView(it.id)}
+              onClick={() => navTo(it.id)}
               title={it.label}
             >
               <span className="nav-ico">{it.icon}</span>
@@ -951,12 +1044,14 @@ function App() {
         </nav>
 
         <div className="sidebar-foot">
-          <button className="nav-item" onClick={() => setView("settings")} title="Aparência (tema e densidade)">
-            <span className="nav-ico">🎨</span>
+          <button className="nav-item" onClick={() => navTo("settings")} title="Aparência (tema e densidade)">
+            <span className="nav-ico"><Palette size={16} strokeWidth={1.75} /></span>
             {!collapsed && <span>Aparência</span>}
           </button>
-          <button className="nav-item" onClick={() => setCollapsed((c) => !c)} title="Recolher menu">
-            <span className="nav-ico">{collapsed ? "»" : "«"}</span>
+          <button className="nav-item" onClick={() => setCollapsed((c) => !c)} title={collapsed ? "Expandir menu" : "Recolher menu"}>
+            <span className="nav-ico">
+              {collapsed ? <PanelLeftOpen size={16} strokeWidth={1.75} /> : <PanelLeftClose size={16} strokeWidth={1.75} />}
+            </span>
             {!collapsed && <span>Recolher</span>}
           </button>
         </div>
@@ -1086,6 +1181,7 @@ function App() {
           </div>
         </div>
       </main>
+      </div>
     </div>
   );
 }

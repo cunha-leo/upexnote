@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 15 de julho de 2026 (v0.6.0 — Aparência: galeria de temas + densidade + restyle moderno)  
+**Última atualização:** 15 de julho de 2026 (v0.7.0 — titlebar custom, ícones Lucide, +5 temas escuros, métricas sem caixas)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -337,6 +337,34 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-15: reação do utilizador à v0.6.0 + 2ª leva do item 5 — v0.7.0
+
+### O que mudou (feedback do utilizador à v0.6.0 — IMPORTANTE para futuras IAs)
+O utilizador viu a v0.6.0 e continuou insatisfeito: "continua com cara de Bootstrap". Gostou dos TEMAS (pediu mais variações de preto/escuro), mas rejeitou os detalhes estruturais que denunciam "página web" em vez de app moderna:
+- **Emojis como ícones = "grosseiro", "ícone de ChatGPT"** — nunca usar emoji como ícone de UI neste projeto; usar ícones de linha (Lucide/codicon-style).
+- **Barra de título nativa azul do Windows = "ridículo de feio"** — tinha de ser da cor do tema.
+- **Setinhas «/» para recolher o menu = "bem antigo"** — usar o ícone de painel com recorte lateral (estilo VS Code).
+- Pediu: **lupa** no campo de pesquisa, **setas voltar/avançar** de navegação, borda lateral da sidebar na **cor forte do tema**, métricas da Biblioteca sem "duas tabelinhas" (não parecer Bootstrap), mais vida na logo, e referência explícita: VS Code, Claude desktop, "pacote Microsoft new" (Fluent).
+
+### Resposta (v0.7.0)
+- **Barra de título custom:** `decorations: false` no tauri.conf.json + componente `Titlebar` (React) com `data-tauri-drag-region`, botões min/max/fechar próprios (hover vermelho no fechar, padrão Windows) e **setas voltar/avançar** (histórico de vistas em memória). Permissões novas em `capabilities/default.json`: `core:window:allow-minimize/-toggle-maximize/-close/-is-maximized`. A tarja azul desapareceu; a barra é pintada pelo tema.
+- **Ícones Lucide** (`lucide-react`, empacotado — app continua offline): Mic/LibraryBig/Settings/Palette na nav, PanelLeftClose/Open no recolher, Search embutida no campo de pesquisa (`.input-icon`), ArrowLeft/Right e Minus/Square/X na titlebar.
+- **+5 temas escuros:** GitHub Dark, One Dark, Monokai Pro, **Grafite** (escuro neutro sem tinte azul, acento terracota) e **Preto OLED** (preto puro, acento branco, estilo Vercel). Total: 10 temas.
+- **Métricas sem caixas:** os 4 cartões da Biblioteca viraram números grandes com labels uppercase pequenos, separados por hairlines verticais (padrão Linear) — zero caixinhas.
+- **Sidebar:** borda direita na cor de acento do tema (pedido explícito); marca SVG (balão+onda, eco do ícone da app) na cor de acento ao lado do wordmark; quando recolhida mostra só a marca.
+- **Tipografia Fluent:** stack passa a "Segoe UI Variable Text" → "Segoe UI" → Inter (a fonte variável do Windows 11).
+- Versão: **0.7.0**.
+
+### Evidência / teste
+- `tsc`/`vite` limpos; instalador NSIS gerado e no Desktop. **Pendente: reação do utilizador** (2ª ronda do ciclo iterativo).
+- Risco a validar na máquina real: janela sem decoração nativa (WebView2 desta máquina tem historial de quirks) — arrastar, redimensionar, maximizar/restaurar, duplo-clique na titlebar.
+
+### Impacto em dados, custo ou privacidade
+- Zero: frontend + config da janela. `lucide-react` é dependência de build (SVGs inline), sem rede em runtime.
+
+### Próximo passo
+- Utilizador reage à v0.7.0. Ainda em aberto do item 5: quais temas ficam, default de densidade; depois itens 7 (fonte) e 8 (idioma).
 
 ### Registro — 2026-07-15: sistema de temas + densidade + restyle moderno (item 5 do backlog, 1ª leva) — v0.6.0
 
