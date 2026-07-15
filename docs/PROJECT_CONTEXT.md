@@ -333,7 +333,7 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ### Evidência / teste
 - **Firewall sobrevive ao reboot:** o serviço systemd `upexnote-firewall.service` reaplicou as regras no arranque (DROP v4+v6 confirmados). Postgres OK pelo túnel (8 linhas). Backup cron presente.
-- **Efeito colateral:** o serviço `upexflow_n8n` (outro projeto, lmsc/upexflow — NÃO UpexNote) ficou 0/1 após o reboot: arrancou bem e depois recebeu SIGTERM; o Swarm não o reinicia (política provavelmente on-failure + exit 0 limpo). Todos os serviços do UpexNote (upexnote-db, drawio) voltaram 1/1. Nudge possível: `docker service update --force upexflow_n8n` (pendente de decisão do utilizador — pode estar desligado de propósito).
+- **Efeito colateral (resolvido):** o serviço `upexflow_n8n` (outro projeto, lmsc/upexflow — NÃO UpexNote) ficou 0/1 após o reboot (arrancou e recebeu SIGTERM na reconciliação do boot; Swarm não reinicia com política on-failure + exit 0). Reposto com `docker service update --force upexflow_n8n` → 1/1 estável, v2.12.3. Imagem FIXADA em `n8nio/n8n:2.12.3` (não latest); a atualização de VERSÃO pendente deve ser feita pelo EasyPanel (gere o serviço; comando cru dessincronizaria + n8n corre migrações no arranque). Todos os serviços do UpexNote (upexnote-db, drawio) voltaram 1/1.
 - **Aprendizagem:** durante o upgrade o docker-ce foi atualizado (reinicia o Docker) e as regras DOCKER-USER sobreviveram, mas por sorte — reforço futuro: reaplicar o firewall a cada restart do Docker, não só no boot (ver §10 item 2).
 
 ### Registro — 2026-07-14 (e): Biblioteca — editar e apagar com histórico/auditoria (v0.4.0)
