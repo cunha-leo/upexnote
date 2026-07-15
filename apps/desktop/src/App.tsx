@@ -262,6 +262,13 @@ function LibraryView() {
           )}
         </div>
         <div className="result-head">
+          <span
+            className="badge badge-id"
+            title="Clica para copiar o id (útil para filtrar no DBeaver: WHERE id = …)"
+            onClick={() => navigator.clipboard.writeText(String(detail.id))}
+          >
+            #{detail.id}
+          </span>
           <span className="badge">{engLabel(detail.engine)}</span>
           <span className={"badge " + (detail.validation_ok ? "ok" : "warn")}>
             {detail.validation_ok ? "✓ Validação OK" : "⚠ Com avisos"}
@@ -388,7 +395,7 @@ function LibraryView() {
               <span className={"lib-dot " + (it.validation_ok ? "ok" : "warn")} title={it.validation_ok ? "Validação OK" : "Com avisos"} />
               <span className="lib-main">
                 <div className="lib-name">{it.source_filename || `Transcrição #${it.id}`}</div>
-                <div className="lib-sub">{engLabel(it.engine)} · {fmtDate(it.created_at)}{it.language ? " · " + it.language : ""}</div>
+                <div className="lib-sub">#{it.id} · {engLabel(it.engine)} · {fmtDate(it.created_at)}{it.language ? " · " + it.language : ""}</div>
               </span>
               <span className="lib-meta">
                 {openingId === it.id ? (

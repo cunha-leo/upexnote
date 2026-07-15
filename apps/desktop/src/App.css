@@ -302,6 +302,12 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
 }
 .badge.ok { color: var(--ok); border-color: var(--ok); }
 .badge.warn { color: var(--danger); border-color: var(--danger); }
+.badge-id {
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  font-family: "Cascadia Code", Consolas, ui-monospace, monospace;
+}
+.badge-id:hover { border-color: var(--accent); color: var(--text); }
 
 .transcript {
   background: var(--panel-2);
