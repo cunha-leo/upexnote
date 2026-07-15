@@ -331,6 +331,20 @@ def cmd_library_update(args):
         return 1
 
 
+def cmd_db_migrate(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    res = db.migrate_v1_to_v2(log=lambda m: _emit(sys.stderr, {"type": "progress", "message": m}))
+    if res.get("ok"):
+        _emit(sys.stdout, {"type": "ok", **res})
+        return 0
+    _emit(sys.stdout, {"type": "error", "message": f"Migração falhou: {res}"})
+    return 1
+
+
 def cmd_library_ack(args):
     from . import db
     err = _require_db()
@@ -439,6 +453,8 @@ def build_parser():
 
     sub.add_parser("db-check", help="Testa a ligacao ao Postgres da VPS e garante a tabela.")
 
+    sub.add_parser("db-migrate", help="Migra o schema flat (v1) para hub-and-spoke (v2). Uma vez.")
+
     p_lib = sub.add_parser("library", help="Historico + agregados da Biblioteca (JSON).")
     p_lib.add_argument("--limit", type=int, default=200, help="Maximo de itens na lista.")
     p_lib.add_argument("--search", help="Filtra por nome do ficheiro (case-insensitive).")
@@ -470,6 +486,7 @@ def main(argv=None):
         "check-key": cmd_check_key,
         "list-keys": cmd_list_keys,
         "db-check": cmd_db_check,
+        "db-migrate": cmd_db_migrate,
         "get-settings": cmd_get_settings,
         "set-settings": cmd_set_settings,
         "library": cmd_library,

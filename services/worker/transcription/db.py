@@ -1,13 +1,20 @@
 """
-Escrita best-effort dos transcripts no Postgres da VPS (serviço dedicado
-upexnote-db; ver docs/PROJECT_CONTEXT.md Registros (f)/(g)).
+Escrita/leitura dos transcripts no Postgres da VPS (serviço dedicado
+upexnote-db; ver docs/PROJECT_CONTEXT.md).
+
+SCHEMA (hub-and-spoke, desde 2026-07-15 — ver Registro):
+  transcriptions        HUB/matriz: identidade + metadados + FKs. NUNCA se
+                        apaga a sério — delete é soft (deleted_at).
+  transcript_texts      1:1: clean_text, raw_text, clean_path (o texto pesado).
+  transcription_metrics 1:1: duration_s, cost_usd, processing_s.
+  transcription_problems N:1: um aviso por linha, com reason_code (dimensão).
+  engines / service_types / problem_reasons  dimensões.
+  transcriptions_history  auditoria flat (snapshot antes de update/delete).
 
 - Ligação (host/porta/base/user) vem de db_config.json (IGNORADO pelo Git).
-- A PASSWORD vem do Windows Credential Manager
-  (UPEXNOTE_PG_PASSWORD) — nunca fica em ficheiro.
-- best-effort: o ficheiro local é sempre o artefacto primário. Se a VPS
-  estiver em baixo, faltar config ou password, apenas se regista um aviso e
-  o fluxo de transcrição continua — nunca se perde uma transcrição já paga.
+- A PASSWORD vem do Windows Credential Manager (UPEXNOTE_PG_PASSWORD).
+- best-effort: o ficheiro local é sempre o artefacto primário; se a VPS
+  estiver em baixo só se regista um aviso — nunca se perde uma transcrição paga.
 """
 import json
 import os
@@ -18,12 +25,6 @@ from pathlib import Path
 from .credentials import get_key
 
 if getattr(sys, "frozen", False):
-    # Executavel empacotado (sidecar). A config (host/porta/base/user —
-    # SEM password; essa fica no Credential Manager) e procurada por ordem:
-    #   1. %APPDATA%\UpexNote\db_config.json — override do utilizador,
-    #      sobrevive a atualizacoes da app;
-    #   2. ao lado do proprio worker — versao incluida no zip portatil,
-    #      para a app funcionar logo ao descompactar, sem passos manuais.
     _appdata = Path(os.environ.get("APPDATA", str(Path.home())))
     _candidates = [
         _appdata / "UpexNote" / "db_config.json",
@@ -34,33 +35,14 @@ else:
     CONFIG_PATH = Path(__file__).resolve().parent / "db_config.json"
 PG_PASSWORD_KEY = "UPEXNOTE_PG_PASSWORD"
 
-DDL = """
-CREATE TABLE IF NOT EXISTS transcriptions (
-    id            bigserial PRIMARY KEY,
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    engine        text NOT NULL,
-    source_filename text,
-    source_path   text,
-    language      text,
-    duration_s    numeric,
-    cost_usd      numeric,
-    processing_s  numeric,
-    validation_ok boolean,
-    problems      jsonb,
-    clean_text    text,
-    raw_text      text,
-    clean_path    text,
-    host          text
-)
-"""
-
-# Histórico/auditoria: antes de cada edição ou delete, a linha atual é
-# copiada para cá (o clean original nunca se perde; deletes são recuperáveis).
+# --------------------------------------------------------------------------
+# Schema (hub-and-spoke) — tudo idempotente (CREATE IF NOT EXISTS + upserts).
+# --------------------------------------------------------------------------
 HISTORY_DDL = """
 CREATE TABLE IF NOT EXISTS transcriptions_history (
     history_id      bigserial PRIMARY KEY,
     archived_at     timestamptz NOT NULL DEFAULT now(),
-    change_type     text NOT NULL,            -- 'update' | 'delete'
+    change_type     text NOT NULL,
     original_id     bigint,
     created_at      timestamptz,
     engine          text,
@@ -79,24 +61,87 @@ CREATE TABLE IF NOT EXISTS transcriptions_history (
 )
 """
 
-# Snapshot da linha atual para o histórico (usa SELECT ... para copiar tudo).
-SNAPSHOT = """
+SCHEMA_SQL = [
+    """CREATE TABLE IF NOT EXISTS engines (
+           id smallserial PRIMARY KEY,
+           code text UNIQUE NOT NULL,
+           label text,
+           is_primary boolean NOT NULL DEFAULT false
+       )""",
+    """CREATE TABLE IF NOT EXISTS service_types (
+           id smallserial PRIMARY KEY,
+           code text UNIQUE NOT NULL,
+           label text
+       )""",
+    """CREATE TABLE IF NOT EXISTS problem_reasons (
+           code text PRIMARY KEY,
+           label text,
+           severity text NOT NULL DEFAULT 'warning'
+       )""",
+    """CREATE TABLE IF NOT EXISTS transcriptions (
+           id bigserial PRIMARY KEY,
+           created_at timestamptz NOT NULL DEFAULT now(),
+           edited_at timestamptz,
+           deleted_at timestamptz,
+           engine_id smallint REFERENCES engines(id),
+           service_type_id smallint REFERENCES service_types(id),
+           language text,
+           source_filename text,
+           source_path text,
+           validation_ok boolean,
+           warnings_ack boolean NOT NULL DEFAULT false,
+           host text
+       )""",
+    """CREATE TABLE IF NOT EXISTS transcript_texts (
+           transcription_id bigint PRIMARY KEY REFERENCES transcriptions(id) ON DELETE CASCADE,
+           clean_text text,
+           raw_text text,
+           clean_path text
+       )""",
+    """CREATE TABLE IF NOT EXISTS transcription_metrics (
+           transcription_id bigint PRIMARY KEY REFERENCES transcriptions(id) ON DELETE CASCADE,
+           duration_s numeric,
+           cost_usd numeric,
+           processing_s numeric
+       )""",
+    """CREATE TABLE IF NOT EXISTS transcription_problems (
+           id bigserial PRIMARY KEY,
+           transcription_id bigint REFERENCES transcriptions(id) ON DELETE CASCADE,
+           reason_code text REFERENCES problem_reasons(code),
+           detail text,
+           detected_at timestamptz NOT NULL DEFAULT now()
+       )""",
+    HISTORY_DDL,
+]
+
+ENGINE_SEED = [
+    ("assemblyai", "AssemblyAI Universal-3.5 Pro", True),
+    ("whisper_openai", "whisper-1 (OpenAI)", False),
+    ("deepgram", "Deepgram Nova-3", False),
+    ("gpt4o_openai", "gpt-4o-transcribe (OpenAI)", False),
+]
+SERVICE_TYPE_SEED = [("file", "Ficheiro (áudio/vídeo)")]
+REASON_SEED = [
+    ("UNCLASSIFIED", "Aviso não classificado", "warning"),
+    ("COVERAGE_GAP", "Cobertura de tempo incompleta", "warning"),
+    ("HALLUCINATION_LOOP", "Possível alucinação / repetição", "warning"),
+]
+
+# Snapshot da linha atual (junta hub+texts+metrics+engine) para o histórico flat.
+SNAPSHOT_JOIN = """
 INSERT INTO transcriptions_history
 (change_type, original_id, created_at, engine, source_filename, source_path,
  language, duration_s, cost_usd, processing_s, validation_ok, problems,
  clean_text, raw_text, clean_path, host)
-SELECT %s, id, created_at, engine, source_filename, source_path,
- language, duration_s, cost_usd, processing_s, validation_ok, problems,
- clean_text, raw_text, clean_path, host
-FROM transcriptions WHERE id = %s
-"""
-
-INSERT = """
-INSERT INTO transcriptions
-(engine, source_filename, source_path, language, duration_s, cost_usd,
- processing_s, validation_ok, problems, clean_text, raw_text, clean_path, host)
-VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-RETURNING id
+SELECT %s, t.id, t.created_at, e.code, t.source_filename, t.source_path,
+ t.language, m.duration_s, m.cost_usd, m.processing_s, t.validation_ok,
+ (SELECT jsonb_agg(p.detail ORDER BY p.id) FROM transcription_problems p WHERE p.transcription_id = t.id),
+ x.clean_text, x.raw_text, x.clean_path, t.host
+FROM transcriptions t
+LEFT JOIN engines e ON e.id = t.engine_id
+LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
+LEFT JOIN transcript_texts x ON x.transcription_id = t.id
+WHERE t.id = %s
 """
 
 
@@ -119,11 +164,9 @@ _active_tunnel = None
 def connect(cfg=None):
     """
     Liga ao Postgres. Se o db_config.json tiver a secção "ssh", a ligação
-    passa por um TUNEL SSH (porta do Postgres fechada ao público; a chave
-    SSH da máquina é a credencial — funciona de qualquer rede/IP/VPN,
-    decisão 2026-07-14: o utilizador viaja constantemente e usa VPN, pelo
-    que allowlist de IP não serve). Sem "ssh", liga por TCP direto.
-    Fechar SEMPRE com close_connection(conn), para o túnel não ficar preso.
+    passa por um TÚNEL SSH (porta do Postgres fechada ao público; a chave SSH
+    da máquina é a credencial — funciona de qualquer rede/IP/VPN). Sem "ssh",
+    liga por TCP direto. Fechar SEMPRE com close_connection(conn).
     """
     global _active_tunnel
     import psycopg2
@@ -142,7 +185,7 @@ def connect(cfg=None):
         key_path = os.path.expanduser(ssh_cfg.get("key", "~/.ssh/upexnote_vps"))
         if not Path(key_path).exists():
             raise RuntimeError(
-                f"chave SSH não encontrada em {key_path} — ver runbook de acesso à VPS no PROJECT_CONTEXT.md"
+                f"chave SSH não encontrada em {key_path} — ver runbook no PROJECT_CONTEXT.md"
             )
         _active_tunnel = SSHTunnelForwarder(
             (ssh_cfg.get("host", host), ssh_cfg.get("port", 22)),
@@ -187,23 +230,70 @@ def close_connection(conn):
         _stop_tunnel()
 
 
-def ensure_table(conn):
+def ensure_schema(conn):
+    """Cria todas as tabelas (idempotente) e semeia as dimensões."""
     with conn.cursor() as cur:
-        cur.execute(DDL)
-        # Migração leve: colunas novas + tabela de histórico (idempotente).
-        cur.execute("ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS edited_at timestamptz")
-        cur.execute("ALTER TABLE transcriptions ADD COLUMN IF NOT EXISTS warnings_ack boolean NOT NULL DEFAULT false")
-        cur.execute(HISTORY_DDL)
+        for stmt in SCHEMA_SQL:
+            cur.execute(stmt)
+        for code, label, primary in ENGINE_SEED:
+            cur.execute(
+                "INSERT INTO engines (code, label, is_primary) VALUES (%s,%s,%s) "
+                "ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label, is_primary = EXCLUDED.is_primary",
+                (code, label, primary),
+            )
+        for code, label in SERVICE_TYPE_SEED:
+            cur.execute(
+                "INSERT INTO service_types (code, label) VALUES (%s,%s) "
+                "ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label",
+                (code, label),
+            )
+        for code, label, severity in REASON_SEED:
+            cur.execute(
+                "INSERT INTO problem_reasons (code, label, severity) VALUES (%s,%s,%s) "
+                "ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label, severity = EXCLUDED.severity",
+                (code, label, severity),
+            )
     conn.commit()
 
 
+# Compat: nome antigo ainda chamado nalguns sítios.
+ensure_table = ensure_schema
+
+
+def _engine_id(cur, code):
+    cur.execute(
+        "INSERT INTO engines (code) VALUES (%s) ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code RETURNING id",
+        (code,),
+    )
+    return cur.fetchone()[0]
+
+
+def _service_type_id(cur, code="file"):
+    cur.execute(
+        "INSERT INTO service_types (code) VALUES (%s) ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code RETURNING id",
+        (code,),
+    )
+    return cur.fetchone()[0]
+
+
+def _classify_problem(detail):
+    """Heurística leve → reason_code. A classificação fina fica para quando a
+    lógica de validação do worker emitir códigos diretamente."""
+    d = (detail or "").lower()
+    if "longe da duracao" in d or "cobertura" in d or "coverage" in d:
+        return "COVERAGE_GAP"
+    if "aluc" in d or "loop" in d or "repet" in d:
+        return "HALLUCINATION_LOOP"
+    return "UNCLASSIFIED"
+
+
 def check():
-    """Liga, garante a tabela, devolve nº de linhas. Levanta excecao se falhar."""
+    """Liga, garante o schema, devolve nº de transcrições ativas."""
     conn = connect()
     try:
-        ensure_table(conn)
+        ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("SELECT count(*) FROM transcriptions")
+            cur.execute("SELECT count(*) FROM transcriptions WHERE deleted_at IS NULL")
             rows = cur.fetchone()[0]
         return {"rows": rows}
     finally:
@@ -216,32 +306,33 @@ def _rows_to_dicts(cur):
 
 
 def library_summary():
-    """
-    Agregados para os dashboards da Biblioteca: totais e repartição por motor.
-    Numeros devolvidos como float (JSON-friendly); datas como ISO string.
-    """
     conn = connect()
     try:
-        ensure_table(conn)
+        ensure_schema(conn)
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT count(*)                         AS total,
-                       COALESCE(sum(cost_usd), 0)       AS cost_total,
-                       COALESCE(sum(duration_s), 0)     AS duration_total,
-                       COALESCE(avg(processing_s), 0)   AS proc_avg,
-                       min(created_at)                  AS first_at,
-                       max(created_at)                  AS last_at
-                FROM transcriptions
+                       COALESCE(sum(m.cost_usd), 0)     AS cost_total,
+                       COALESCE(sum(m.duration_s), 0)   AS duration_total,
+                       COALESCE(avg(m.processing_s), 0) AS proc_avg,
+                       min(t.created_at)                AS first_at,
+                       max(t.created_at)                AS last_at
+                FROM transcriptions t
+                LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
+                WHERE t.deleted_at IS NULL
             """)
             t = _rows_to_dicts(cur)[0]
             cur.execute("""
-                SELECT engine,
-                       count(*)                       AS count,
-                       COALESCE(sum(cost_usd), 0)     AS cost,
-                       COALESCE(sum(duration_s), 0)   AS duration,
-                       COALESCE(avg(processing_s), 0) AS proc_avg
-                FROM transcriptions
-                GROUP BY engine
+                SELECT e.code AS engine,
+                       count(*)                         AS count,
+                       COALESCE(sum(m.cost_usd), 0)     AS cost,
+                       COALESCE(sum(m.duration_s), 0)   AS duration,
+                       COALESCE(avg(m.processing_s), 0) AS proc_avg
+                FROM transcriptions t
+                LEFT JOIN engines e ON e.id = t.engine_id
+                LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
+                WHERE t.deleted_at IS NULL
+                GROUP BY e.code
                 ORDER BY count DESC
             """)
             by_engine = _rows_to_dicts(cur)
@@ -268,26 +359,26 @@ def library_summary():
 
 
 def library_list(limit=200, search=None):
-    """
-    Lista de transcricoes (METADADOS, sem os textos — payload leve), mais
-    recentes primeiro. `search` filtra por nome do ficheiro (case-insensitive).
-    """
     conn = connect()
     try:
-        ensure_table(conn)
+        ensure_schema(conn)
         params = []
-        where = ""
+        where = "WHERE t.deleted_at IS NULL"
         if search:
-            where = "WHERE source_filename ILIKE %s"
+            where += " AND t.source_filename ILIKE %s"
             params.append(f"%{search}%")
         params.append(int(limit))
         with conn.cursor() as cur:
             cur.execute(f"""
-                SELECT id, created_at, engine, source_filename, language,
-                       duration_s, cost_usd, processing_s, validation_ok, warnings_ack, clean_path
-                FROM transcriptions
+                SELECT t.id, t.created_at, e.code AS engine, t.source_filename, t.language,
+                       m.duration_s, m.cost_usd, m.processing_s, t.validation_ok, t.warnings_ack,
+                       x.clean_path
+                FROM transcriptions t
+                LEFT JOIN engines e ON e.id = t.engine_id
+                LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
+                LEFT JOIN transcript_texts x ON x.transcription_id = t.id
                 {where}
-                ORDER BY created_at DESC, id DESC
+                ORDER BY t.created_at DESC, t.id DESC
                 LIMIT %s
             """, params)
             items = _rows_to_dicts(cur)
@@ -301,21 +392,29 @@ def library_list(limit=200, search=None):
 
 
 def library_item(item_id):
-    """Um registo completo INCLUINDO o texto (para a vista de detalhe)."""
     conn = connect()
     try:
-        ensure_table(conn)
+        ensure_schema(conn)
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, created_at, edited_at, engine, source_filename, source_path,
-                       language, duration_s, cost_usd, processing_s, validation_ok, warnings_ack,
-                       problems, clean_text, clean_path
-                FROM transcriptions WHERE id = %s
+                SELECT t.id, t.created_at, t.edited_at, e.code AS engine, t.source_filename,
+                       t.source_path, t.language, m.duration_s, m.cost_usd, m.processing_s,
+                       t.validation_ok, t.warnings_ack, x.clean_text, x.clean_path
+                FROM transcriptions t
+                LEFT JOIN engines e ON e.id = t.engine_id
+                LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
+                LEFT JOIN transcript_texts x ON x.transcription_id = t.id
+                WHERE t.id = %s AND t.deleted_at IS NULL
             """, (int(item_id),))
             rows = _rows_to_dicts(cur)
-        if not rows:
-            return None
-        it = rows[0]
+            if not rows:
+                return None
+            it = rows[0]
+            cur.execute(
+                "SELECT detail FROM transcription_problems WHERE transcription_id = %s ORDER BY id",
+                (int(item_id),),
+            )
+            it["problems"] = [r[0] for r in cur.fetchall()]
         it["created_at"] = it["created_at"].isoformat() if it["created_at"] else None
         it["edited_at"] = it["edited_at"].isoformat() if it["edited_at"] else None
         for k in ("duration_s", "cost_usd", "processing_s"):
@@ -326,26 +425,28 @@ def library_item(item_id):
 
 
 def update_transcription(item_id, new_clean_text):
-    """
-    Edita a versão CLEAN de uma transcrição. A raw NUNCA é tocada (imutável).
-    Antes de gravar, copia a linha atual para o histórico (reversível). Também
-    reescreve o ficheiro clean no disco (best-effort), para não divergir.
-    Devolve {ok, file_updated} ou {ok: False, error: 'not_found'}.
-    """
+    """Edita a versão CLEAN. A raw NUNCA é tocada. Snapshot no histórico antes;
+    reescreve o ficheiro clean no disco (best-effort)."""
     conn = connect()
     try:
-        ensure_table(conn)
+        ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("SELECT clean_path FROM transcriptions WHERE id = %s", (int(item_id),))
+            cur.execute(
+                "SELECT x.clean_path FROM transcriptions t "
+                "LEFT JOIN transcript_texts x ON x.transcription_id = t.id "
+                "WHERE t.id = %s AND t.deleted_at IS NULL",
+                (int(item_id),),
+            )
             row = cur.fetchone()
             if not row:
                 return {"ok": False, "error": "not_found"}
             clean_path = row[0]
-            cur.execute(SNAPSHOT, ("update", int(item_id)))
+            cur.execute(SNAPSHOT_JOIN, ("update", int(item_id)))
             cur.execute(
-                "UPDATE transcriptions SET clean_text = %s, edited_at = now() WHERE id = %s",
+                "UPDATE transcript_texts SET clean_text = %s WHERE transcription_id = %s",
                 (new_clean_text, int(item_id)),
             )
+            cur.execute("UPDATE transcriptions SET edited_at = now() WHERE id = %s", (int(item_id),))
         conn.commit()
         file_updated = False
         if clean_path:
@@ -355,29 +456,21 @@ def update_transcription(item_id, new_clean_text):
                     p.write_text(new_clean_text, encoding="utf-8")
                     file_updated = True
             except Exception:
-                pass  # best-effort: o banco é a fonte de verdade da Biblioteca
+                pass
         return {"ok": True, "file_updated": file_updated}
     finally:
         close_connection(conn)
 
 
 def acknowledge_warnings(item_id, ack=True):
-    """
-    Marca (ou desmarca) os avisos de validação como revistos. É só um flag de
-    estado — não mexe no conteúdo, por isso não precisa de snapshot no
-    histórico (ao contrário de update/delete). Reversível a qualquer momento.
-    """
     conn = connect()
     try:
-        ensure_table(conn)
+        ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM transcriptions WHERE id = %s", (int(item_id),))
+            cur.execute("SELECT 1 FROM transcriptions WHERE id = %s AND deleted_at IS NULL", (int(item_id),))
             if not cur.fetchone():
                 return {"ok": False, "error": "not_found"}
-            cur.execute(
-                "UPDATE transcriptions SET warnings_ack = %s WHERE id = %s",
-                (bool(ack), int(item_id)),
-            )
+            cur.execute("UPDATE transcriptions SET warnings_ack = %s WHERE id = %s", (bool(ack), int(item_id)))
         conn.commit()
         return {"ok": True}
     finally:
@@ -385,19 +478,17 @@ def acknowledge_warnings(item_id, ack=True):
 
 
 def delete_transcription(item_id):
-    """
-    Apaga uma transcrição da tabela ativa, DEPOIS de a arquivar no histórico
-    (recuperável). Não toca em ficheiros no disco. Devolve {ok} ou not_found.
-    """
+    """Soft-delete: arquiva no histórico + marca deleted_at. A identidade (id) e
+    o conteúdo ficam — recuperável, e nada que aponte para este id se parte."""
     conn = connect()
     try:
-        ensure_table(conn)
+        ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM transcriptions WHERE id = %s", (int(item_id),))
+            cur.execute("SELECT 1 FROM transcriptions WHERE id = %s AND deleted_at IS NULL", (int(item_id),))
             if not cur.fetchone():
                 return {"ok": False, "error": "not_found"}
-            cur.execute(SNAPSHOT, ("delete", int(item_id)))
-            cur.execute("DELETE FROM transcriptions WHERE id = %s", (int(item_id),))
+            cur.execute(SNAPSHOT_JOIN, ("delete", int(item_id)))
+            cur.execute("UPDATE transcriptions SET deleted_at = now() WHERE id = %s", (int(item_id),))
         conn.commit()
         return {"ok": True}
     finally:
@@ -405,7 +496,7 @@ def delete_transcription(item_id):
 
 
 def insert_transcription(record, log=print):
-    """best-effort: devolve o id inserido ou None; nunca levanta excecao."""
+    """best-effort: devolve o id inserido ou None; nunca levanta exceção."""
     if not load_config():
         log("DB: db_config.json ausente — só ficheiro local (sem escrita na VPS).")
         return None
@@ -415,29 +506,148 @@ def insert_transcription(record, log=print):
     conn = None
     try:
         conn = connect()
-        ensure_table(conn)
+        ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute(INSERT, (
-                record.get("engine"),
-                record.get("source_filename"),
-                record.get("source_path"),
-                record.get("language"),
-                record.get("duration_s"),
-                record.get("cost_usd"),
-                record.get("processing_s"),
-                record.get("validation_ok"),
-                json.dumps(record.get("problems") or []),
-                record.get("clean_text"),
-                record.get("raw_text"),
-                record.get("clean_path"),
-                record.get("host") or socket.gethostname(),
-            ))
+            eng_id = _engine_id(cur, record.get("engine"))
+            st_id = _service_type_id(cur, "file")
+            cur.execute(
+                "INSERT INTO transcriptions "
+                "(engine_id, service_type_id, language, source_filename, source_path, validation_ok, host) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                (eng_id, st_id, record.get("language"), record.get("source_filename"),
+                 record.get("source_path"), record.get("validation_ok"),
+                 record.get("host") or socket.gethostname()),
+            )
             new_id = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO transcript_texts (transcription_id, clean_text, raw_text, clean_path) VALUES (%s,%s,%s,%s)",
+                (new_id, record.get("clean_text"), record.get("raw_text"), record.get("clean_path")),
+            )
+            cur.execute(
+                "INSERT INTO transcription_metrics (transcription_id, duration_s, cost_usd, processing_s) VALUES (%s,%s,%s,%s)",
+                (new_id, record.get("duration_s"), record.get("cost_usd"), record.get("processing_s")),
+            )
+            for p in (record.get("problems") or []):
+                cur.execute(
+                    "INSERT INTO transcription_problems (transcription_id, reason_code, detail) VALUES (%s,%s,%s)",
+                    (new_id, _classify_problem(p), p),
+                )
         conn.commit()
         log(f"DB: linha #{new_id} gravada no Postgres da VPS.")
         return new_id
     except Exception as e:  # noqa: BLE001 - best-effort, reportar e seguir
         log(f"DB: não gravou na VPS ({e}) — ficheiro local está seguro; sincroniza depois.")
         return None
+    finally:
+        close_connection(conn)
+
+
+def migrate_v1_to_v2(log=print):
+    """
+    Migração ÚNICA do schema flat (v1) para o hub-and-spoke (v2). Segura:
+    - deteta v1 pela coluna `clean_text` na tabela `transcriptions`;
+    - renomeia a tabela antiga para `transcriptions_legacy_v1` (BACKUP, não apaga);
+    - cria o schema novo e copia os dados PRESERVANDO os ids;
+    - tudo numa transação, com verificação de contagens ANTES do commit;
+    - `transcriptions_history` fica intacta.
+    Idempotente: se já for v2, não faz nada.
+    """
+    conn = connect()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute("""SELECT 1 FROM information_schema.columns
+                           WHERE table_name='transcriptions' AND column_name='clean_text'""")
+            is_v1 = cur.fetchone() is not None
+            if not is_v1:
+                log("Migração: já está em v2 (nada a fazer).")
+                return {"ok": True, "migrated": False}
+
+            cur.execute("SELECT count(*) FROM transcriptions")
+            legacy_count = cur.fetchone()[0]
+            log(f"Migração: v1 detetada, {legacy_count} transcrições. A renomear tabela antiga…")
+
+            cur.execute("ALTER TABLE transcriptions RENAME TO transcriptions_legacy_v1")
+            cur.execute("ALTER SEQUENCE transcriptions_id_seq RENAME TO transcriptions_legacy_v1_id_seq")
+
+        # cria schema novo + semeia dimensões (usa a mesma conexão/transação)
+        with conn.cursor() as cur:
+            for stmt in SCHEMA_SQL:
+                cur.execute(stmt)
+            for code, label, primary in ENGINE_SEED:
+                cur.execute(
+                    "INSERT INTO engines (code, label, is_primary) VALUES (%s,%s,%s) "
+                    "ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label, is_primary = EXCLUDED.is_primary",
+                    (code, label, primary))
+            for code, label in SERVICE_TYPE_SEED:
+                cur.execute("INSERT INTO service_types (code, label) VALUES (%s,%s) "
+                            "ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label", (code, label))
+            for code, label, severity in REASON_SEED:
+                cur.execute("INSERT INTO problem_reasons (code, label, severity) VALUES (%s,%s,%s) "
+                            "ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label", (code, label, severity))
+
+            # garante que todos os motores presentes na legacy existem na dimensão
+            cur.execute("SELECT DISTINCT engine FROM transcriptions_legacy_v1 WHERE engine IS NOT NULL")
+            for (code,) in cur.fetchall():
+                _engine_id(cur, code)
+
+            # hub (preserva id, created_at, edited_at)
+            cur.execute("""
+                INSERT INTO transcriptions
+                  (id, created_at, edited_at, engine_id, service_type_id, language,
+                   source_filename, source_path, validation_ok, warnings_ack, host)
+                SELECT l.id, l.created_at, l.edited_at, e.id, st.id, l.language,
+                       l.source_filename, l.source_path, l.validation_ok,
+                       COALESCE(l.warnings_ack, false), l.host
+                FROM transcriptions_legacy_v1 l
+                LEFT JOIN engines e ON e.code = l.engine
+                CROSS JOIN (SELECT id FROM service_types WHERE code='file') st
+            """)
+            cur.execute("SELECT setval('transcriptions_id_seq', (SELECT COALESCE(max(id),1) FROM transcriptions))")
+
+            cur.execute("""
+                INSERT INTO transcript_texts (transcription_id, clean_text, raw_text, clean_path)
+                SELECT id, clean_text, raw_text, clean_path FROM transcriptions_legacy_v1
+            """)
+            cur.execute("""
+                INSERT INTO transcription_metrics (transcription_id, duration_s, cost_usd, processing_s)
+                SELECT id, duration_s, cost_usd, processing_s FROM transcriptions_legacy_v1
+            """)
+
+            # problems: expandir o jsonb array em linhas, classificando cada uma
+            cur.execute("SELECT id, problems FROM transcriptions_legacy_v1 WHERE problems IS NOT NULL")
+            prob_rows = 0
+            for tid, problems in cur.fetchall():
+                if not problems:
+                    continue
+                for p in problems:
+                    cur.execute(
+                        "INSERT INTO transcription_problems (transcription_id, reason_code, detail) VALUES (%s,%s,%s)",
+                        (tid, _classify_problem(p), p))
+                    prob_rows += 1
+
+            # verificação ANTES do commit
+            cur.execute("SELECT count(*) FROM transcriptions")
+            hub_count = cur.fetchone()[0]
+            cur.execute("SELECT count(*) FROM transcript_texts")
+            text_count = cur.fetchone()[0]
+            cur.execute("SELECT count(*) FROM transcription_metrics")
+            metric_count = cur.fetchone()[0]
+
+            if hub_count != legacy_count or text_count != legacy_count or metric_count != legacy_count:
+                conn.rollback()
+                return {"ok": False, "error": "count_mismatch",
+                        "legacy": legacy_count, "hub": hub_count, "texts": text_count, "metrics": metric_count}
+
+        conn.commit()
+        log(f"Migração OK: {hub_count} transcrições, {text_count} textos, {metric_count} métricas, "
+            f"{prob_rows} problemas. Tabela antiga guardada como transcriptions_legacy_v1.")
+        return {"ok": True, "migrated": True, "count": hub_count, "problems": prob_rows}
+    except Exception as e:  # noqa: BLE001
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "error": str(e)}
     finally:
         close_connection(conn)
