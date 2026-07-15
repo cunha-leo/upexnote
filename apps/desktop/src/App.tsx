@@ -398,28 +398,30 @@ function LibraryView() {
             </div>
 
             {summary.by_engine.length > 0 && (
-              <table className="eng-table" style={{ marginTop: 16 }}>
-                <thead>
-                  <tr>
-                    <th>Motor</th>
-                    <th>Transcrições</th>
-                    <th>Custo</th>
-                    <th>Áudio</th>
-                    <th>Tempo médio</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.by_engine.map((e) => (
-                    <tr key={e.engine}>
-                      <td>{engLabel(e.engine)}</td>
-                      <td>{e.count}</td>
-                      <td>{fmtCost(e.cost)}</td>
-                      <td>{fmtDur(e.duration)}</td>
-                      <td>{Math.round(e.proc_avg)}s</td>
+              <div className="table-scroll" style={{ marginTop: 16 }}>
+                <table className="eng-table">
+                  <thead>
+                    <tr>
+                      <th>Motor</th>
+                      <th>Transcrições</th>
+                      <th>Custo</th>
+                      <th>Áudio</th>
+                      <th>Tempo médio</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {summary.by_engine.map((e) => (
+                      <tr key={e.engine}>
+                        <td>{engLabel(e.engine)}</td>
+                        <td>{e.count}</td>
+                        <td>{fmtCost(e.cost)}</td>
+                        <td>{fmtDur(e.duration)}</td>
+                        <td>{Math.round(e.proc_avg)}s</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </>
         )}
