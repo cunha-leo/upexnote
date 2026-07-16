@@ -351,7 +351,8 @@ Ao trabalhar neste projeto, uma IA deve:
 - Versão: **0.10.0**.
 
 ### Evidência / teste
-- `tsc`/`vite` limpos; fontes visíveis no bundle do Vite (subsets woff2). Instalador no Desktop. **Pendente: validação do utilizador** (trocar fontes, sliders, fontes do sistema, sombra).
+- `tsc`/`vite` limpos; fontes visíveis no bundle do Vite (subsets woff2). Instalador no Desktop.
+- **VALIDADO pelo utilizador (2026-07-16):** capturas com Rosé Pine + Inter em uso; veredicto: "avançamos muito, saímos de uma coisa grosseira de bootstrap e agora sim está ganhando design e vida". **Grupo Preferências (itens 5, 6, 7, 8) COMPLETO e validado** — tema, densidade, zoom, tipografia (fonte/tamanho/peso/sombra) e idioma.
 
 ### Impacto em dados, custo ou privacidade
 - Sem custo/rede em runtime (fontes empacotadas; licenças OFL incluídas nos pacotes). O comando Rust só lê nomes de fontes do registry local.
