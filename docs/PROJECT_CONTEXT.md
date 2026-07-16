@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 15 de julho de 2026 (v0.8.1 — Biblioteca abre com a última sessão em cache, atualiza em fundo)  
+**Última atualização:** 16 de julho de 2026 (v0.9.0 — idioma da UI PT/EN/ES, item 8 do backlog)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -283,7 +283,7 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 7. **Família de fonte nas Definições (≤5).** Estética, separada da escala. Nota técnica: app é offline → fontes têm de ser **empacotadas** (não Google Fonts CDN). Escolher ~5 (ex.: Inter, humanista, mono, neutra); a definição troca `--font-sans`. Contido.
 
-8. **Idioma da UI (PT/EN/ES) — só o chrome, NÃO o conteúdo.** Utilizador consome muito em EN, algum ES, menos PT; quer trocar o idioma dos **labels da interface**. Explícito: transcripts NÃO se traduzem (ficam na língua do áudio — são dados). É o mais trabalhoso do grupo: as strings da UI estão hoje hard-coded em PT por todo o `App.tsx` → externalizar para dicionários por idioma + um `t()` leve (sem biblioteca pesada para 3 idiomas). Tradução profunda de conteúdo = passo futuro separado, fora deste item.
+8. ~~Idioma da UI (PT/EN/ES) — só o chrome, NÃO o conteúdo.~~ **FEITO em v0.9.0 (2026-07-16, ver Registro).** Dicionários tipados em `i18n.ts` (falta de chave = erro de compilação), seletor em Definições→Aparência, persistido; transcripts e mensagens do worker NUNCA traduzidos, como especificado. Pendente: validação do utilizador da naturalidade EN/ES. Contexto original: utilizador consome muito em EN, algum ES, menos PT; explícito: transcripts NÃO se traduzem (ficam na língua do áudio — são dados). Tradução profunda de conteúdo = passo futuro separado, fora deste item.
 
 ### Correção 2026-07-15 (v0.5.1) — UI congelava nas ações da Biblioteca
 Os comandos Tauri `library*` eram síncronos com IO bloqueante (spawn do worker + handshake do túnel SSH + query, ~2-5s). Comandos síncronos correm na thread principal → a janela **inteira** congelava durante esse tempo a cada ação. Corrigido: passaram a `async` via `tauri::async_runtime::spawn_blocking`, a UI fica responsiva (spinner, janela mexível) enquanto o worker corre. NÃO remove a latência do túnel por chamada (item 10) — só impede que ela congele a UI.
@@ -339,6 +339,24 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-16: idioma da UI PT/EN/ES (item 8 do backlog) — v0.9.0
+
+### O que mudou
+- **i18n leve, sem biblioteca** (`apps/desktop/src/i18n.ts`): ~110 chaves tipadas × 3 idiomas (PT-PT tu-forma, EN, ES tú-forma). `type Key = keyof typeof pt` + `Record<Key, string>` nos outros idiomas → **uma tradução em falta é erro de compilação**. `t(key, {vars})` com interpolação `{var}`. Contexto React (`LangProvider`/`useLang`) no `App.tsx`; o export raiz passou a ser um wrapper `Root` com o provider.
+- **Só o CHROME é traduzido** (regra do item 8): labels, botões, placeholders, tooltips, mensagens de estado, diálogos nativos. Transcripts e mensagens de progresso vindas do worker ficam na língua original (são conteúdo/dados). Nomes de temas são nomes próprios, exceto "Upex Claro/Escuro" (traduzidos).
+- **Seletor nas Definições → Aparência:** segmentado Português / English / Español; persiste em `localStorage` (`upexnote-lang`, default pt); o `lang` do `<html>` acompanha; datas formatam no locale (pt-PT/en-US/es-ES via `fmtDate(iso, locale)`).
+- Detalhe técnico: o listener de eventos do worker re-subscreve quando o idioma muda (dep `[t]`) para as mensagens de fim ("Concluído.") não saírem no idioma antigo.
+- Versão: **0.9.0**.
+
+### Evidência / teste
+- `tsc`/`vite` limpos (a tipagem valida a completude dos 3 dicionários); instalador no Desktop. **Pendente: validação do utilizador** (trocar idioma nas Definições, percorrer os 3 ecrãs, confirmar naturalidade das traduções EN/ES).
+
+### Impacto em dados, custo ou privacidade
+- Zero: só frontend; preferência de idioma em localStorage local.
+
+### Próximo passo
+- Validação do utilizador. Do grupo de Preferências resta o item 7 (família de fonte, ≤5, empacotadas). Estrutural: item 10 (túnel persistente).
 
 ### Registro — 2026-07-15: Biblioteca deixa de "resetar" a cada arranque — v0.8.1
 

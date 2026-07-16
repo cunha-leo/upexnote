@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -7,7 +7,29 @@ import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
   Search, ArrowLeft, ArrowRight, Minus, Square, X,
 } from "lucide-react";
+import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import "./App.css";
+
+// ---------------------------------------------------------------------------
+// Idioma da UI (item 8) — só o chrome; transcripts e mensagens do worker
+// ficam na língua original. Dicionários em i18n.ts; escolha em localStorage.
+// ---------------------------------------------------------------------------
+type LangCtxValue = { lang: Lang; setLang: (l: Lang) => void; t: TFn; locale: string };
+const LangCtx = createContext<LangCtxValue>({ lang: "pt", setLang: () => {}, t: makeT("pt"), locale: LOCALES.pt });
+const useLang = () => useContext(LangCtx);
+
+function LangProvider({ children }: { children: ReactNode }) {
+  const [lang, setLang] = useState<Lang>(() => {
+    const saved = localStorage.getItem("upexnote-lang");
+    return saved === "en" || saved === "es" || saved === "pt" ? saved : "pt";
+  });
+  useEffect(() => {
+    localStorage.setItem("upexnote-lang", lang);
+    document.documentElement.setAttribute("lang", LOCALES[lang]);
+  }, [lang]);
+  const value = useMemo<LangCtxValue>(() => ({ lang, setLang, t: makeT(lang), locale: LOCALES[lang] }), [lang]);
+  return <LangCtx.Provider value={value}>{children}</LangCtx.Provider>;
+}
 
 /* Marca UpexNote — balão de conversa + onda sonora (eco do ícone da app),
    pintada com a cor de acento do tema ativo via currentColor. */
@@ -52,10 +74,10 @@ type View = "transcribe" | "library" | "settings";
 // CSS em App.css sob [data-theme="…"]; adicionar um tema = bloco novo lá + uma
 // entrada aqui. A escolha persiste em localStorage.
 // ---------------------------------------------------------------------------
-const THEMES: { id: string; label: string }[] = [
-  { id: "light", label: "Upex Claro" },
+const THEMES: { id: string; label?: string; labelKey?: I18nKey }[] = [
+  { id: "light", labelKey: "themeUpexLight" },
   { id: "github-light", label: "GitHub Light" },
-  { id: "dark", label: "Upex Escuro" },
+  { id: "dark", labelKey: "themeUpexDark" },
   { id: "github-dark", label: "GitHub Dark" },
   { id: "one-dark", label: "One Dark" },
   { id: "tokyo-night", label: "Tokyo Night" },
@@ -93,18 +115,19 @@ function useAppearance() {
 type Appearance = ReturnType<typeof useAppearance>;
 
 function AppearanceCard({ theme, setTheme, density, setDensity }: Appearance) {
+  const { lang, setLang, t } = useLang();
   return (
     <section className="card">
-      <h2>Aparência</h2>
+      <h2>{t("appTitle")}</h2>
       <div className="field">
-        <label>Tema</label>
+        <label>{t("appTheme")}</label>
         <div className="theme-grid">
-          {THEMES.map((t) => (
+          {THEMES.map((th) => (
             <button
-              key={t.id}
-              data-theme={t.id}
-              className={"theme-card" + (theme === t.id ? " selected" : "")}
-              onClick={() => setTheme(t.id)}
+              key={th.id}
+              data-theme={th.id}
+              className={"theme-card" + (theme === th.id ? " selected" : "")}
+              onClick={() => setTheme(th.id)}
             >
               <span className="tc-preview">
                 <span className="tc-side" />
@@ -115,27 +138,35 @@ function AppearanceCard({ theme, setTheme, density, setDensity }: Appearance) {
                 </span>
               </span>
               <span className="tc-name">
-                {theme === t.id && <span className="tc-check">✓</span>}
-                {t.label}
+                {theme === th.id && <span className="tc-check">✓</span>}
+                {th.label ?? t(th.labelKey!)}
               </span>
             </button>
           ))}
         </div>
       </div>
       <div className="field">
-        <label>Densidade</label>
+        <label>{t("appDensity")}</label>
         <div className="seg">
           <button className={density === "comfortable" ? "on" : ""} onClick={() => setDensity("comfortable")}>
-            Confortável
+            {t("appComfortable")}
           </button>
           <button className={density === "compact" ? "on" : ""} onClick={() => setDensity("compact")}>
-            Compacto
+            {t("appCompact")}
           </button>
         </div>
-        <div className="engine-info">
-          Compacto reduz tamanhos de letra e espaçamentos — mais conteúdo no ecrã. O zoom (Ctrl + scroll)
-          continua disponível por cima de qualquer densidade.
+        <div className="engine-info">{t("appDensityInfo")}</div>
+      </div>
+      <div className="field">
+        <label>{t("appLang")}</label>
+        <div className="seg">
+          {LANGS.map((l) => (
+            <button key={l.id} className={lang === l.id ? "on" : ""} onClick={() => setLang(l.id)}>
+              {l.label}
+            </button>
+          ))}
         </div>
+        <div className="engine-info">{t("appLangInfo")}</div>
       </div>
     </section>
   );
@@ -144,11 +175,11 @@ function AppearanceCard({ theme, setTheme, density, setDensity }: Appearance) {
 // ---------------------------------------------------------------------------
 // Ecrã de Definições — gerir chaves/credenciais (guardadas no Credential Manager)
 // ---------------------------------------------------------------------------
-const CREDENTIALS = [
-  { name: "ASSEMBLYAI_API_KEY", label: "AssemblyAI API Key", hint: "Motor principal. Obtém em console.assemblyai.com" },
-  { name: "OPENAI_API_KEY", label: "OpenAI API Key", hint: "whisper-1 / gpt-4o. Obtém em platform.openai.com" },
-  { name: "DEEPGRAM_API_KEY", label: "Deepgram API Key", hint: "Obtém em console.deepgram.com" },
-  { name: "UPEXNOTE_PG_PASSWORD", label: "Password do Postgres (VPS)", hint: "Para gravar o histórico/backup na base de dados" },
+const CREDENTIALS: { name: string; label?: string; labelKey?: I18nKey; hintKey: I18nKey }[] = [
+  { name: "ASSEMBLYAI_API_KEY", label: "AssemblyAI API Key", hintKey: "hintAssembly" },
+  { name: "OPENAI_API_KEY", label: "OpenAI API Key", hintKey: "hintOpenai" },
+  { name: "DEEPGRAM_API_KEY", label: "Deepgram API Key", hintKey: "hintDeepgram" },
+  { name: "UPEXNOTE_PG_PASSWORD", labelKey: "credPgLabel", hintKey: "hintPg" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -198,10 +229,10 @@ function fmtDur(sec: number | null): string {
   const h = Math.floor(m / 60);
   return `${h}h ${m % 60}min`;
 }
-function fmtDate(iso: string | null): string {
+function fmtDate(iso: string | null, locale?: string): string {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString(undefined, {
+    return new Date(iso).toLocaleString(locale, {
       day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
     });
   } catch {
@@ -227,6 +258,7 @@ function readLibCache(): LibCache | null {
 }
 
 function LibraryView({ active }: { active: boolean }) {
+  const { t, locale } = useLang();
   const [summary, setSummary] = useState<LibSummary | null>(null);
   const [items, setItems] = useState<LibItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -318,7 +350,7 @@ function LibraryView({ active }: { active: boolean }) {
         setShowWarnings(false);
         setEditText(obj.item.clean_text);
       } else {
-        setError(obj.message || "Falha a abrir a transcrição.");
+        setError(obj.message || t("libOpenFail"));
       }
     } catch (e) {
       setError(String(e));
@@ -337,13 +369,13 @@ function LibraryView({ active }: { active: boolean }) {
       if (obj.type === "ok") {
         setDetail({ ...detail, clean_text: editText, edited_at: new Date().toISOString() });
         setEditing(false);
-        setActionMsg("Guardado ✓" + (obj.file_updated ? " (ficheiro também atualizado)" : ""));
+        setActionMsg(t("savedTick") + (obj.file_updated ? t("fileAlsoUpdated") : ""));
         load(search.trim() || undefined);
       } else {
-        setActionMsg("Erro: " + (obj.message || "falha ao guardar"));
+        setActionMsg(t("errPrefix") + (obj.message || t("errSaveFail")));
       }
     } catch (e) {
-      setActionMsg("Erro: " + String(e));
+      setActionMsg(t("errPrefix") + String(e));
     } finally {
       setSaving(false);
     }
@@ -360,11 +392,11 @@ function LibraryView({ active }: { active: boolean }) {
         closeDetail();
         load(search.trim() || undefined);
       } else {
-        setActionMsg("Erro: " + (obj.message || "falha ao apagar"));
+        setActionMsg(t("errPrefix") + (obj.message || t("errDeleteFail")));
         setConfirmDel(false);
       }
     } catch (e) {
-      setActionMsg("Erro: " + String(e));
+      setActionMsg(t("errPrefix") + String(e));
       setConfirmDel(false);
     } finally {
       setSaving(false);
@@ -382,10 +414,10 @@ function LibraryView({ active }: { active: boolean }) {
         setDetail({ ...detail, warnings_ack: !reopen });
         load(search.trim() || undefined);
       } else {
-        setActionMsg("Erro: " + (obj.message || "falha"));
+        setActionMsg(t("errPrefix") + (obj.message || t("errFail")));
       }
     } catch (e) {
-      setActionMsg("Erro: " + String(e));
+      setActionMsg(t("errPrefix") + String(e));
     } finally {
       setAckBusy(false);
     }
@@ -411,57 +443,57 @@ function LibraryView({ active }: { active: boolean }) {
     return (
       <section className="card">
         <div className="detail-head">
-          <button className="secondary" onClick={closeDetail} disabled={saving}>← Voltar</button>
+          <button className="secondary" onClick={closeDetail} disabled={saving}>{t("back")}</button>
           <h2 style={{ margin: 0, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {detail.source_filename || `Transcrição #${detail.id}`}
+            {detail.source_filename || t("libItemN", { id: detail.id })}
           </h2>
           {!editing && (
             <>
-              <button className="secondary" onClick={() => { setEditText(detail.clean_text); setEditing(true); setActionMsg(""); }}>Editar</button>
-              <button className="secondary" onClick={() => navigator.clipboard.writeText(detail.clean_text)}>Copiar</button>
+              <button className="secondary" onClick={() => { setEditText(detail.clean_text); setEditing(true); setActionMsg(""); }}>{t("edit")}</button>
+              <button className="secondary" onClick={() => navigator.clipboard.writeText(detail.clean_text)}>{t("copy")}</button>
               {!confirmDel ? (
-                <button className="secondary btn-danger" onClick={() => setConfirmDel(true)} disabled={saving}>Apagar</button>
+                <button className="secondary btn-danger" onClick={() => setConfirmDel(true)} disabled={saving}>{t("del")}</button>
               ) : (
                 <>
-                  <span className="muted" style={{ color: "var(--danger)" }}>Apagar mesmo?</span>
-                  <button className="btn-danger-solid" onClick={deleteItem} disabled={saving}>{saving ? "A apagar…" : "Sim, apagar"}</button>
-                  <button className="secondary" onClick={() => setConfirmDel(false)} disabled={saving}>Não</button>
+                  <span className="muted" style={{ color: "var(--danger)" }}>{t("delConfirm")}</span>
+                  <button className="btn-danger-solid" onClick={deleteItem} disabled={saving}>{saving ? t("deleting") : t("delYes")}</button>
+                  <button className="secondary" onClick={() => setConfirmDel(false)} disabled={saving}>{t("delNo")}</button>
                 </>
               )}
             </>
           )}
           {editing && (
             <>
-              <button onClick={saveEdit} disabled={saving}>{saving ? "A guardar…" : "Guardar"}</button>
-              <button className="secondary" onClick={() => { setEditing(false); setActionMsg(""); }} disabled={saving}>Cancelar</button>
+              <button onClick={saveEdit} disabled={saving}>{saving ? t("saving") : t("save")}</button>
+              <button className="secondary" onClick={() => { setEditing(false); setActionMsg(""); }} disabled={saving}>{t("cancel")}</button>
             </>
           )}
         </div>
         <div className="result-head">
           <span
             className="badge badge-id"
-            title="Clica para copiar o id (útil para filtrar no DBeaver: WHERE id = …)"
+            title={t("idTooltip")}
             onClick={() => navigator.clipboard.writeText(String(detail.id))}
           >
             #{detail.id}
           </span>
           <span className="badge">{engLabel(detail.engine)}</span>
           {detail.validation_ok ? (
-            <span className="badge ok">✓ Validação OK</span>
+            <span className="badge ok">{t("valOk")}</span>
           ) : (
             <span
               className={"badge warn-badge" + (detail.warnings_ack ? " ack" : "")}
               onClick={() => setShowWarnings((s) => !s)}
-              title="Clica para ver o(s) aviso(s)"
+              title={t("warnClickTitle")}
             >
-              {detail.warnings_ack ? "✓ Aviso revisto" : "⚠ Com avisos"}
+              {detail.warnings_ack ? t("warnReviewed") : t("valWarn")}
             </span>
           )}
-          {detail.edited_at && <span className="badge">editado</span>}
-          {detail.language && <span className="badge">idioma: {detail.language}</span>}
+          {detail.edited_at && <span className="badge">{t("badgeEdited")}</span>}
+          {detail.language && <span className="badge">{t("langBadge", { lang: detail.language })}</span>}
           <span className="badge">{fmtCost(detail.cost_usd)}</span>
           <span className="badge">{fmtDur(detail.duration_s)}</span>
-          <span className="badge">{fmtDate(detail.created_at)}</span>
+          <span className="badge">{fmtDate(detail.created_at, locale)}</span>
         </div>
         {!detail.validation_ok && showWarnings && (
           <div className="warnings-panel">
@@ -470,7 +502,7 @@ function LibraryView({ active }: { active: boolean }) {
                 {detail.problems.map((p, i) => <li key={i}>{p}</li>)}
               </ul>
             ) : (
-              <div className="muted">Sem detalhe guardado para este aviso.</div>
+              <div className="muted">{t("warnEmpty")}</div>
             )}
             <div className="row wrap" style={{ marginTop: 10 }}>
               {!editing && (
@@ -478,11 +510,11 @@ function LibraryView({ active }: { active: boolean }) {
                   className="secondary"
                   onClick={() => { setEditText(detail.clean_text); setEditing(true); setActionMsg(""); }}
                 >
-                  Corrigir texto
+                  {t("fixText")}
                 </button>
               )}
               <button className="secondary" onClick={toggleAck} disabled={ackBusy}>
-                {ackBusy ? "…" : detail.warnings_ack ? "Reabrir aviso" : "Marcar como revisto"}
+                {ackBusy ? "…" : detail.warnings_ack ? t("ackReopen") : t("ackMark")}
               </button>
             </div>
           </div>
@@ -502,8 +534,8 @@ function LibraryView({ active }: { active: boolean }) {
         {actionMsg && <div className="muted" style={{ marginTop: 8 }}>{actionMsg}</div>}
         <div className="muted" style={{ marginTop: 8 }}>
           {editing
-            ? "A editar a versão de leitura (clean). O texto bruto (raw) fica sempre intacto; a versão anterior vai para o histórico ao guardar."
-            : detail.clean_path ? "Ficheiro: " + detail.clean_path : ""}
+            ? t("editingHint")
+            : detail.clean_path ? t("filePrefix", { path: detail.clean_path }) : ""}
         </div>
       </section>
     );
@@ -516,30 +548,32 @@ function LibraryView({ active }: { active: boolean }) {
       {loading && !summary && (
         <div className="load-overlay">
           <span className="spinner big" />
-          <div className="load-title">A carregar a Biblioteca…</div>
-          <div className="muted">
-            A primeira ligação abre um túnel seguro até à tua base de dados — pode demorar alguns segundos.
-          </div>
+          <div className="load-title">{t("libLoadTitle")}</div>
+          <div className="muted">{t("libLoadHint")}</div>
         </div>
       )}
       <section className="card">
         <div className="result-head">
-          <h2 style={{ margin: 0, flex: 1 }}>Biblioteca</h2>
+          <h2 style={{ margin: 0, flex: 1 }}>{t("libTitle")}</h2>
           {cacheTs && (
-            <span className="badge" title="A mostrar a última sessão guardada nesta máquina enquanto a versão atual chega da base de dados">
-              {loading ? <><span className="spinner" /> dados de {fmtDate(cacheTs)} · a atualizar…</> : <>dados de {fmtDate(cacheTs)}</>}
+            <span className="badge" title={t("libCacheTitle")}>
+              {loading ? (
+                <><span className="spinner" /> {t("libCacheUpdating", { ts: fmtDate(cacheTs, locale) })}</>
+              ) : (
+                <>{t("libCache", { ts: fmtDate(cacheTs, locale) })}</>
+              )}
             </span>
           )}
           <button className="secondary" onClick={() => load(search.trim() || undefined)} disabled={loading}>
-            {loading ? "A carregar…" : "Atualizar"}
+            {loading ? t("libLoadingBtn") : t("libRefresh")}
           </button>
         </div>
 
         {error && (
           <div className="key-warn">
             {error.includes("db_config") || error.includes("Password")
-              ? "A base de dados não está configurada — abre Definições para ligar ao Postgres."
-              : "Não consegui ler a Biblioteca: " + error}
+              ? t("libDbNotConfigured")
+              : t("libReadFail", { err: error })}
           </div>
         )}
 
@@ -548,19 +582,19 @@ function LibraryView({ active }: { active: boolean }) {
             <div className="stat-grid">
               <div className="stat">
                 <div className="stat-val">{summary.total}</div>
-                <div className="stat-lbl">transcrições</div>
+                <div className="stat-lbl">{t("statTranscriptions")}</div>
               </div>
               <div className="stat">
                 <div className="stat-val">{fmtCost(summary.cost_total)}</div>
-                <div className="stat-lbl">custo total</div>
+                <div className="stat-lbl">{t("statCost")}</div>
               </div>
               <div className="stat">
                 <div className="stat-val">{fmtDur(summary.duration_total)}</div>
-                <div className="stat-lbl">áudio processado</div>
+                <div className="stat-lbl">{t("statAudio")}</div>
               </div>
               <div className="stat">
                 <div className="stat-val">{Math.round(summary.proc_avg)}s</div>
-                <div className="stat-lbl">tempo médio</div>
+                <div className="stat-lbl">{t("statAvg")}</div>
               </div>
             </div>
 
@@ -569,11 +603,11 @@ function LibraryView({ active }: { active: boolean }) {
                 <table className="eng-table">
                   <thead>
                     <tr>
-                      <th>Motor</th>
-                      <th>Transcrições</th>
-                      <th>Custo</th>
-                      <th>Áudio</th>
-                      <th>Tempo médio</th>
+                      <th>{t("thEngine")}</th>
+                      <th>{t("thCount")}</th>
+                      <th>{t("thCost")}</th>
+                      <th>{t("thAudio")}</th>
+                      <th>{t("thAvg")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -600,21 +634,21 @@ function LibraryView({ active }: { active: boolean }) {
             <Search size={14} strokeWidth={2} />
             <input
               type="text"
-              placeholder="Pesquisar por nome do ficheiro…"
+              placeholder={t("libSearchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.currentTarget.value)}
               onKeyDown={(e) => { if (e.key === "Enter") load(search.trim() || undefined); }}
             />
           </div>
-          <button className="secondary" onClick={() => load(search.trim() || undefined)} disabled={loading}>Pesquisar</button>
+          <button className="secondary" onClick={() => load(search.trim() || undefined)} disabled={loading}>{t("libSearchBtn")}</button>
           {search && (
-            <button className="secondary" onClick={() => { setSearch(""); load(); }} disabled={loading}>Limpar</button>
+            <button className="secondary" onClick={() => { setSearch(""); load(); }} disabled={loading}>{t("trClear")}</button>
           )}
         </div>
 
         {loadedOnce && !loading && !error && items.length === 0 && (
           <div className="lib-empty">
-            {search ? "Nenhuma transcrição corresponde à pesquisa." : "Ainda não há transcrições no histórico."}
+            {search ? t("libEmptySearch") : t("libEmpty")}
           </div>
         )}
 
@@ -623,11 +657,11 @@ function LibraryView({ active }: { active: boolean }) {
             <button key={it.id} className="lib-row" onClick={() => openItem(it.id)}>
               <span
                 className={"lib-dot " + (it.validation_ok ? "ok" : it.warnings_ack ? "ack" : "warn")}
-                title={it.validation_ok ? "Validação OK" : it.warnings_ack ? "Aviso revisto" : "Com avisos"}
+                title={it.validation_ok ? t("valOk") : it.warnings_ack ? t("warnReviewed") : t("valWarn")}
               />
               <span className="lib-main">
-                <div className="lib-name">{it.source_filename || `Transcrição #${it.id}`}</div>
-                <div className="lib-sub">#{it.id} · {engLabel(it.engine)} · {fmtDate(it.created_at)}{it.language ? " · " + it.language : ""}</div>
+                <div className="lib-name">{it.source_filename || t("libItemN", { id: it.id })}</div>
+                <div className="lib-sub">#{it.id} · {engLabel(it.engine)} · {fmtDate(it.created_at, locale)}{it.language ? " · " + it.language : ""}</div>
               </span>
               <span className="lib-meta">
                 {openingId === it.id ? (
@@ -655,6 +689,7 @@ type StorageSettings = {
 };
 
 function StorageSettingsCard() {
+  const { t } = useLang();
   const [s, setS] = useState<StorageSettings | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -664,7 +699,7 @@ function StorageSettingsCard() {
       const raw = await invoke<string>("get_settings");
       setS(JSON.parse(raw));
     } catch (e) {
-      setMsg("Erro a carregar: " + String(e));
+      setMsg(t("stoLoadErr", { err: String(e) }));
     }
   }
   useEffect(() => {
@@ -679,7 +714,7 @@ function StorageSettingsCard() {
       setS(JSON.parse(raw));
       setMsg(okMsg);
     } catch (e) {
-      setMsg("Erro: " + String(e));
+      setMsg(t("errPrefix") + String(e));
     } finally {
       setBusy(false);
     }
@@ -689,37 +724,36 @@ function StorageSettingsCard() {
     const picked = await open({
       directory: true,
       multiple: false,
-      title: "Escolhe a pasta padrão dos transcripts",
+      title: t("dlgFolder"),
     });
     if (typeof picked === "string") {
-      await apply({ storageDir: picked }, "Pasta padrão atualizada ✓");
+      await apply({ storageDir: picked }, t("stoFolderUpdated"));
     }
   }
 
   return (
     <section className="card">
-      <h2>Transcrições — Onde guardar</h2>
+      <h2>{t("stoTitle")}</h2>
       <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
-        Os transcripts são gravados na pasta que escolheres — a tua estrutura manda. Podes ainda trocar
-        pontualmente no ecrã Transcrever ("Guardar em…").
+        {t("stoIntro")}
       </p>
       <div className="field">
-        <label>Pasta padrão</label>
+        <label>{t("stoFolderLabel")}</label>
         <div className="row">
-          <input type="text" readOnly value={s ? s.storage_dir : "a carregar…"} />
-          <button className="secondary" onClick={chooseFolder} disabled={busy || !s}>Escolher…</button>
+          <input type="text" readOnly value={s ? s.storage_dir : "…"} />
+          <button className="secondary" onClick={chooseFolder} disabled={busy || !s}>{t("trChoose")}</button>
           {s?.storage_dir_custom && (
             <button
               className="secondary"
-              onClick={() => apply({ clearStorageDir: true }, "Reposta a pasta padrão de fábrica.")}
+              onClick={() => apply({ clearStorageDir: true }, t("stoResetMsg"))}
               disabled={busy}
             >
-              Repor padrão
+              {t("stoReset")}
             </button>
           )}
         </div>
         {s && !s.storage_dir_custom && (
-          <div className="engine-info">Padrão de fábrica: {s.default_storage_dir}</div>
+          <div className="engine-info">{t("stoFactory", { path: s.default_storage_dir })}</div>
         )}
       </div>
       <div className="field">
@@ -728,14 +762,13 @@ function StorageSettingsCard() {
             type="checkbox"
             checked={s ? s.organize_by_day_engine : true}
             disabled={busy || !s}
-            onChange={(e) => apply({ organize: e.currentTarget.checked }, "Organização atualizada ✓")}
+            onChange={(e) => apply({ organize: e.currentTarget.checked }, t("stoOrgUpdated"))}
             style={{ width: "auto" }}
           />
-          <span>Organizar em subpastas por dia e motor (ex.: 2026-07-14\assemblyai\)</span>
+          <span>{t("stoOrganize")}</span>
         </label>
         <div className="engine-info">
-          Desligado: os ficheiros ficam diretamente na pasta padrão. O nome já inclui origem, data,
-          motor e tipo, por isso identificam-se sozinhos.
+          {t("stoOrganizeInfo")}
           {msg ? " — " + msg : ""}
         </div>
       </div>
@@ -744,6 +777,7 @@ function StorageSettingsCard() {
 }
 
 function SettingsView({ onChanged }: { onChanged: () => void }) {
+  const { t } = useLang();
   const [status, setStatus] = useState<Record<string, boolean>>({});
   const [loaded, setLoaded] = useState(false);
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -772,18 +806,18 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
   async function save(name: string) {
     const value = (inputs[name] || "").trim();
     if (!value) {
-      setMsg((m) => ({ ...m, [name]: "Escreve um valor primeiro." }));
+      setMsg((m) => ({ ...m, [name]: t("credWriteFirst") }));
       return;
     }
     setBusy((b) => ({ ...b, [name]: true }));
     try {
       await invoke("save_credential", { name, value });
       setInputs((i) => ({ ...i, [name]: "" }));
-      setMsg((m) => ({ ...m, [name]: "Guardada ✓" }));
+      setMsg((m) => ({ ...m, [name]: t("savedTick") }));
       await loadStatuses();
       onChanged();
     } catch (e) {
-      setMsg((m) => ({ ...m, [name]: "Erro: " + String(e) }));
+      setMsg((m) => ({ ...m, [name]: t("errPrefix") + String(e) }));
     } finally {
       setBusy((b) => ({ ...b, [name]: false }));
     }
@@ -793,11 +827,11 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
     setBusy((b) => ({ ...b, [name]: true }));
     try {
       await invoke("clear_credential", { name });
-      setMsg((m) => ({ ...m, [name]: "Removida." }));
+      setMsg((m) => ({ ...m, [name]: t("credRemoved") }));
       await loadStatuses();
       onChanged();
     } catch (e) {
-      setMsg((m) => ({ ...m, [name]: "Erro: " + String(e) }));
+      setMsg((m) => ({ ...m, [name]: t("errPrefix") + String(e) }));
     } finally {
       setBusy((b) => ({ ...b, [name]: false }));
     }
@@ -805,17 +839,16 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
 
   return (
     <section className="card">
-      <h2>Definições — Chaves e credenciais</h2>
+      <h2>{t("setTitle")}</h2>
       <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
-        Guardadas no Windows Credential Manager (o cofre encriptado do Windows), nunca em ficheiros nem no
-        código. O valor nunca é mostrado depois de guardado.
+        {t("setIntro")}
       </p>
       {CREDENTIALS.map((c) => (
         <div className="field cred" key={c.name}>
           <div className="cred-head">
-            <label style={{ margin: 0 }}>{c.label}</label>
+            <label style={{ margin: 0 }}>{c.label ?? t(c.labelKey!)}</label>
             <span className={"badge " + (!loaded ? "" : status[c.name] ? "ok" : "warn")}>
-              {!loaded ? "a verificar…" : status[c.name] ? "Configurada" : "Não configurada"}
+              {!loaded ? t("credChecking") : status[c.name] ? t("credConfigured") : t("credNotConfigured")}
             </span>
           </div>
           <div className="row">
@@ -825,7 +858,7 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
-              placeholder={status[c.name] ? "configurada — escreve para substituir" : "Cola aqui o valor…"}
+              placeholder={status[c.name] ? t("credPlaceholderSet") : t("credPlaceholderEmpty")}
               value={inputs[c.name] || ""}
               onPaste={(e) => {
                 // Intercetamos o colar e inserimos o texto nós próprios, para
@@ -837,13 +870,13 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
               }}
               onChange={(e) => setInputs((i) => ({ ...i, [c.name]: e.currentTarget.value }))}
             />
-            <button onClick={() => save(c.name)} disabled={busy[c.name]}>Guardar</button>
+            <button onClick={() => save(c.name)} disabled={busy[c.name]}>{t("save")}</button>
             {status[c.name] && (
-              <button className="secondary" onClick={() => clear(c.name)} disabled={busy[c.name]}>Remover</button>
+              <button className="secondary" onClick={() => clear(c.name)} disabled={busy[c.name]}>{t("credRemove")}</button>
             )}
           </div>
           <div className="engine-info">
-            {c.hint}
+            {t(c.hintKey)}
             {msg[c.name] ? " — " + msg[c.name] : ""}
           </div>
         </div>
@@ -860,26 +893,27 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
 function Titlebar({
   canBack, canFwd, onBack, onFwd,
 }: { canBack: boolean; canFwd: boolean; onBack: () => void; onFwd: () => void }) {
+  const { t } = useLang();
   const win = getCurrentWindow();
   return (
     <div className="titlebar" data-tauri-drag-region>
       <div className="tb-nav">
-        <button className="tb-btn" onClick={onBack} disabled={!canBack} title="Voltar">
+        <button className="tb-btn" onClick={onBack} disabled={!canBack} title={t("tbBack")}>
           <ArrowLeft size={15} />
         </button>
-        <button className="tb-btn" onClick={onFwd} disabled={!canFwd} title="Avançar">
+        <button className="tb-btn" onClick={onFwd} disabled={!canFwd} title={t("tbFwd")}>
           <ArrowRight size={15} />
         </button>
       </div>
       <div className="tb-title" data-tauri-drag-region>UpexNote</div>
       <div className="tb-controls">
-        <button className="tb-btn tb-win" onClick={() => win.minimize()} title="Minimizar">
+        <button className="tb-btn tb-win" onClick={() => win.minimize()} title={t("tbMin")}>
           <Minus size={15} />
         </button>
-        <button className="tb-btn tb-win" onClick={() => win.toggleMaximize()} title="Maximizar / Restaurar">
+        <button className="tb-btn tb-win" onClick={() => win.toggleMaximize()} title={t("tbMax")}>
           <Square size={12} />
         </button>
-        <button className="tb-btn tb-win tb-close" onClick={() => win.close()} title="Fechar">
+        <button className="tb-btn tb-win tb-close" onClick={() => win.close()} title={t("tbClose")}>
           <X size={16} />
         </button>
       </div>
@@ -891,6 +925,7 @@ function Titlebar({
 // App — layout com menu lateral + roteamento de vistas
 // ---------------------------------------------------------------------------
 function App() {
+  const { t } = useLang();
   const appearance = useAppearance();
   const [view, setView] = useState<View>("transcribe");
   // Histórico de vistas para as setas voltar/avançar da barra de título
@@ -937,13 +972,7 @@ function App() {
 
   const selected = useMemo(() => engines.find((e) => e.id === engineId), [engines, engineId]);
 
-  const STAGES = [
-    "A preparar…",
-    "A enviar o ficheiro para a nuvem…",
-    "Ficheiro enviado. A submeter o pedido…",
-    "A transcrever na nuvem… (costuma demorar 1–2 min)",
-    "A finalizar e validar…",
-  ];
+  const STAGES = [t("stage0"), t("stage1"), t("stage2"), t("stage3"), t("stage4")];
 
   function stageFor(msg: string): number {
     const m = msg.toLowerCase();
@@ -986,15 +1015,15 @@ function App() {
         return;
       }
       if (obj.type === "progress" || obj.type === "start") {
-        const msg = obj.message || "A processar…";
+        const msg = obj.message || t("trProcessing");
         setStatus(msg);
         const s = stageFor(msg);
         if (s > 0) setStage((cur) => Math.max(cur, s));
       } else if (obj.type === "result") {
         setResult(obj as ResultData);
-        setStatus(obj.ok ? "Concluído." : "Concluído com avisos.");
+        setStatus(obj.ok ? t("trDone") : t("trDoneWarn"));
       } else if (obj.type === "error") {
-        setStatus("Erro: " + obj.message);
+        setStatus(t("errPrefix") + obj.message);
       }
     });
     const unlistenDone = listen("worker://done", () => setRunning(false));
@@ -1002,7 +1031,8 @@ function App() {
       unlistenEvent.then((f) => f());
       unlistenDone.then((f) => f());
     };
-  }, []);
+    // re-subscreve quando o idioma muda, para o t do closure não ficar velho
+  }, [t]);
 
   useEffect(() => {
     if (!running) return;
@@ -1026,11 +1056,11 @@ function App() {
     setRunning(true);
     setResult(null);
     setStage(1);
-    setStatus("A iniciar…");
+    setStatus(t("trStarting"));
     try {
       await invoke("transcribe", { engine: selected.id, file, dest: dest.trim() || null });
     } catch (e) {
-      setStatus("Erro: " + String(e));
+      setStatus(t("errPrefix") + String(e));
       setRunning(false);
     }
   }
@@ -1043,7 +1073,7 @@ function App() {
     const picked = await open({
       directory: true,
       multiple: false,
-      title: "Guardar o transcript em…",
+      title: t("dlgDest"),
     });
     if (typeof picked === "string") setDest(picked);
   }
@@ -1052,19 +1082,19 @@ function App() {
     const picked = await open({
       multiple: false,
       directory: false,
-      title: "Escolhe o vídeo ou áudio",
+      title: t("dlgFile"),
       filters: [
-        { name: "Vídeo / Áudio", extensions: ["mp4", "mov", "mkv", "webm", "avi", "wav", "mp3", "m4a", "aac", "flac", "ogg"] },
-        { name: "Todos os ficheiros", extensions: ["*"] },
+        { name: t("filterMedia"), extensions: ["mp4", "mov", "mkv", "webm", "avi", "wav", "mp3", "m4a", "aac", "flac", "ogg"] },
+        { name: t("filterAll"), extensions: ["*"] },
       ],
     });
     if (typeof picked === "string") setFile(picked);
   }
 
   const navItems: { id: View; icon: ReactNode; label: string }[] = [
-    { id: "transcribe", icon: <Mic size={16} strokeWidth={1.75} />, label: "Transcrever" },
-    { id: "library", icon: <LibraryBig size={16} strokeWidth={1.75} />, label: "Biblioteca" },
-    { id: "settings", icon: <Settings size={16} strokeWidth={1.75} />, label: "Definições" },
+    { id: "transcribe", icon: <Mic size={16} strokeWidth={1.75} />, label: t("navTranscribe") },
+    { id: "library", icon: <LibraryBig size={16} strokeWidth={1.75} />, label: t("navLibrary") },
+    { id: "settings", icon: <Settings size={16} strokeWidth={1.75} />, label: t("navSettings") },
   ];
 
   return (
@@ -1080,7 +1110,7 @@ function App() {
               <span className="brand-mark"><BrandMark /></span>
               <div>
                 <div className="wordmark"><span className="up">Upex</span><span className="ex">Note</span></div>
-                <div className="tagline">Transcreva, organize e explore.</div>
+                <div className="tagline">{t("tagline")}</div>
               </div>
             </div>
           )}
@@ -1101,15 +1131,15 @@ function App() {
         </nav>
 
         <div className="sidebar-foot">
-          <button className="nav-item" onClick={() => navTo("settings")} title="Aparência (tema e densidade)">
+          <button className="nav-item" onClick={() => navTo("settings")} title={t("navAppearanceTitle")}>
             <span className="nav-ico"><Palette size={16} strokeWidth={1.75} /></span>
-            {!collapsed && <span>Aparência</span>}
+            {!collapsed && <span>{t("navAppearance")}</span>}
           </button>
-          <button className="nav-item" onClick={() => setCollapsed((c) => !c)} title={collapsed ? "Expandir menu" : "Recolher menu"}>
+          <button className="nav-item" onClick={() => setCollapsed((c) => !c)} title={collapsed ? t("navExpandTitle") : t("navCollapseTitle")}>
             <span className="nav-ico">
               {collapsed ? <PanelLeftOpen size={16} strokeWidth={1.75} /> : <PanelLeftClose size={16} strokeWidth={1.75} />}
             </span>
-            {!collapsed && <span>Recolher</span>}
+            {!collapsed && <span>{t("navCollapse")}</span>}
           </button>
         </div>
       </aside>
@@ -1122,42 +1152,42 @@ function App() {
               tudo pelo túnel SSH sempre que voltavas a ela. */}
           <div className={"view-pane" + (view === "transcribe" ? "" : " hidden")}>
               <section className="card">
-                <h2>Transcrever</h2>
+                <h2>{t("trTitle")}</h2>
 
                 <div className="field">
-                  <label>Vídeo ou áudio</label>
+                  <label>{t("trFileLabel")}</label>
                   <div className="row">
                     <input
                       type="text"
                       value={file}
-                      placeholder="Escolhe um ficheiro ou cola aqui o caminho…"
+                      placeholder={t("trFilePlaceholder")}
                       onChange={(e) => setFile(e.currentTarget.value)}
                     />
-                    <button className="secondary" onClick={chooseFile} disabled={running}>Escolher…</button>
+                    <button className="secondary" onClick={chooseFile} disabled={running}>{t("trChoose")}</button>
                   </div>
                 </div>
 
                 <div className="field">
-                  <label>Guardar em (opcional — só desta vez)</label>
+                  <label>{t("trDestLabel")}</label>
                   <div className="row">
                     <input
                       type="text"
                       value={dest}
-                      placeholder="Vazio = pasta padrão das Definições"
+                      placeholder={t("trDestPlaceholder")}
                       onChange={(e) => setDest(e.currentTarget.value)}
                     />
-                    <button className="secondary" onClick={chooseDest} disabled={running}>Escolher…</button>
+                    <button className="secondary" onClick={chooseDest} disabled={running}>{t("trChoose")}</button>
                     {dest && (
-                      <button className="secondary" onClick={() => setDest("")} disabled={running}>Limpar</button>
+                      <button className="secondary" onClick={() => setDest("")} disabled={running}>{t("trClear")}</button>
                     )}
                   </div>
                   {dest && (
-                    <div className="engine-info">Os ficheiros desta transcrição vão diretos para: {dest}</div>
+                    <div className="engine-info">{t("trDestInfo", { dest })}</div>
                   )}
                 </div>
 
                 <div className="field">
-                  <label>Motor de transcrição</label>
+                  <label>{t("trEngineLabel")}</label>
                   <select value={engineId} onChange={(e) => setEngineId(e.currentTarget.value)}>
                     {engines.map((e) => (
                       <option key={e.id} value={e.id}>{e.label}</option>
@@ -1165,25 +1195,23 @@ function App() {
                   </select>
                   {selected && <div className="engine-info">{selected.info}</div>}
                   {selected && !selected.key_set && (
-                    <div className="key-warn">
-                      ⚠ A chave {selected.key_name} ainda não está configurada — abre <b>Definições</b> para a guardar.
-                    </div>
+                    <div className="key-warn">{t("trKeyMissing", { key: selected.key_name })}</div>
                   )}
-                  {loadError && <div className="key-warn">Não consegui carregar os motores: {loadError}</div>}
+                  {loadError && <div className="key-warn">{t("trEnginesError", { err: loadError })}</div>}
                 </div>
 
                 <div className="row wrap">
                   <button onClick={startTranscription} disabled={!file || running || !selected}>
-                    {running ? "A transcrever…" : "Transcrever"}
+                    {running ? t("trRunning") : t("trStart")}
                   </button>
                   {!running && (result || status) && (
-                    <button className="secondary" onClick={reset}>Novo</button>
+                    <button className="secondary" onClick={reset}>{t("trNew")}</button>
                   )}
                   {running && (
                     <div className="status">
                       <span className="spinner" />
                       <span>{STAGES[stage] || status}</span>
-                      <span className="elapsed">decorrido {fmtElapsed(elapsed)}</span>
+                      <span className="elapsed">{t("trElapsed", { t: fmtElapsed(elapsed) })}</span>
                     </div>
                   )}
                   {!running && status && <div className="status"><span>{status}</span></div>}
@@ -1195,10 +1223,10 @@ function App() {
                       <div key={n} className={"step" + (stage >= n ? " done" : "") + (stage === n ? " active" : "")}>
                         <span className="dot" />
                         <span className="step-label">
-                          {n === 1 && "Enviar"}
-                          {n === 2 && "Submeter"}
-                          {n === 3 && "Transcrever"}
-                          {n === 4 && "Finalizar"}
+                          {n === 1 && t("stepSend")}
+                          {n === 2 && t("stepSubmit")}
+                          {n === 3 && t("stepTranscribe")}
+                          {n === 4 && t("stepFinish")}
                         </span>
                       </div>
                     ))}
@@ -1209,19 +1237,19 @@ function App() {
               {result && (
                 <section className="card">
                   <div className="result-head">
-                    <h2 style={{ margin: 0 }}>Resultado</h2>
+                    <h2 style={{ margin: 0 }}>{t("resTitle")}</h2>
                     <span className={"badge " + (result.ok ? "ok" : "warn")}>
-                      {result.ok ? "✓ Validação OK" : "⚠ Com avisos"}
+                      {result.ok ? t("valOk") : t("valWarn")}
                     </span>
-                    {result.language && <span className="badge">idioma: {result.language}</span>}
+                    {result.language && <span className="badge">{t("langBadge", { lang: result.language })}</span>}
                     <span className="badge">~${result.cost.toFixed(4)}</span>
                     <span className="badge">{Math.round(result.duration_s / 60)} min</span>
                     <div className="spacer" style={{ flex: 1 }} />
-                    <button className="secondary" onClick={copyTranscript}>Copiar tudo</button>
+                    <button className="secondary" onClick={copyTranscript}>{t("copyAll")}</button>
                   </div>
                   <pre className="transcript" ref={transcriptRef}>{result.clean_text}</pre>
                   {result.clean_path && (
-                    <div className="muted" style={{ marginTop: 8 }}>Guardado em: {result.clean_path}</div>
+                    <div className="muted" style={{ marginTop: 8 }}>{t("savedAt", { path: result.clean_path })}</div>
                   )}
                 </section>
               )}
@@ -1243,4 +1271,11 @@ function App() {
   );
 }
 
-export default App;
+// O App consome o contexto de idioma, por isso o export raiz é o provider
+export default function Root() {
+  return (
+    <LangProvider>
+      <App />
+    </LangProvider>
+  );
+}
