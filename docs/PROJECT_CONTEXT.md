@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 16 de julho de 2026 (v0.10.0 — tipografia: 15 fontes + tamanho/peso/sombra, item 7 do backlog)  
+**Última atualização:** 16 de julho de 2026 (v0.10.1 — versão visível na titlebar + © UpexFlow na sidebar)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -347,6 +347,17 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-16: identidade profissional no front — versão visível + direitos — v0.10.1
+
+### O que mudou
+- **Pedido do utilizador:** app sem versão visível "é um perigo" (suporte vira adivinhação) e faltavam os direitos/atribuição a ele/ao domínio.
+- **Versão na titlebar** (à direita, antes dos botões de janela, discreta): lida em runtime via `getVersion()` do Tauri — vem do binário/tauri.conf.json, **nunca dessincroniza** com hardcode.
+- **© {ano} UpexFlow · upexflow.com** no rodapé da sidebar (ano calculado; oculto quando a sidebar está recolhida). Sem chaves i18n — nomes próprios, universal.
+- Versão: **0.10.1**.
+
+### Impacto
+- Zero em dados/custo. Frontend + config. Pendente: validação visual do utilizador.
 
 ### Registro — 2026-07-16: tipografia — 15 fontes curadas + controlos (item 7, âmbito ampliado pelo utilizador) — v0.10.0
 

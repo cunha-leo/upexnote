@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
   Search, ArrowLeft, ArrowRight, Minus, Square, X,
@@ -1013,6 +1014,11 @@ function Titlebar({
 }: { canBack: boolean; canFwd: boolean; onBack: () => void; onFwd: () => void }) {
   const { t } = useLang();
   const win = getCurrentWindow();
+  // Versão lida do próprio binário (tauri.conf.json) — nunca fica dessincronizada
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => {});
+  }, []);
   return (
     <div className="titlebar" data-tauri-drag-region>
       <div className="tb-nav">
@@ -1024,6 +1030,7 @@ function Titlebar({
         </button>
       </div>
       <div className="tb-title" data-tauri-drag-region>UpexNote</div>
+      {version && <span className="tb-version" data-tauri-drag-region>v{version}</span>}
       <div className="tb-controls">
         <button className="tb-btn tb-win" onClick={() => win.minimize()} title={t("tbMin")}>
           <Minus size={15} />
@@ -1260,6 +1267,11 @@ function App() {
             </span>
             {!collapsed && <span>{t("navCollapse")}</span>}
           </button>
+          {!collapsed && (
+            <div className="sidebar-meta" title="UpexNote © UpexFlow">
+              © {new Date().getFullYear()} UpexFlow · upexflow.com
+            </div>
+          )}
         </div>
       </aside>
 
