@@ -104,6 +104,61 @@ fn check_key(name: String) -> Result<String, String> {
     run_cli(&["check-key", "--name", &name])
 }
 
+/// Remove o sufixo de formato ("Arial (TrueType)" → "Arial") e os estilos no
+/// fim do nome ("Segoe UI Semibold Italic" → "Segoe UI"), para o seletor de
+/// tipografia listar FAMÍLIAS e não cada variante instalada.
+#[cfg(windows)]
+fn clean_font_family(raw: &str) -> Option<String> {
+    let mut s = raw.split(" (").next().unwrap_or(raw).trim().to_string();
+    const STYLES: [&str; 16] = [
+        "Bold", "Italic", "Oblique", "Regular", "Light", "Semilight", "SemiLight",
+        "Medium", "SemiBold", "Semibold", "ExtraBold", "Black", "Thin", "ExtraLight",
+        "Condensed", "SemiCondensed",
+    ];
+    loop {
+        let mut trimmed = false;
+        for st in STYLES {
+            if let Some(p) = s.strip_suffix(st) {
+                s = p.trim_end().to_string();
+                trimmed = true;
+            }
+        }
+        if !trimmed {
+            break;
+        }
+    }
+    (!s.is_empty()).then_some(s)
+}
+
+/// Famílias de fontes instaladas no Windows (HKLM = para todos os utilizadores,
+/// HKCU = instaladas só para este utilizador), únicas e ordenadas. Alimenta o
+/// grupo "Instaladas nesta máquina" do seletor de tipografia.
+#[tauri::command]
+fn list_system_fonts() -> Result<Vec<String>, String> {
+    #[cfg(windows)]
+    {
+        use std::collections::BTreeSet;
+        use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+        use winreg::RegKey;
+        const FONTS_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts";
+        let mut families: BTreeSet<String> = BTreeSet::new();
+        for root in [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
+            if let Ok(key) = RegKey::predef(root).open_subkey(FONTS_KEY) {
+                for value in key.enum_values().flatten() {
+                    if let Some(f) = clean_font_family(&value.0) {
+                        families.insert(f);
+                    }
+                }
+            }
+        }
+        Ok(families.into_iter().collect())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(Vec::new())
+    }
+}
+
 /// Estado de todas as chaves numa só chamada (o ecrã de Definições usa isto).
 #[tauri::command]
 fn list_credentials() -> Result<String, String> {
@@ -292,7 +347,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
-            get_settings, set_settings, library, library_item, library_update, library_delete, library_ack, transcribe
+            get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
+            list_system_fonts, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

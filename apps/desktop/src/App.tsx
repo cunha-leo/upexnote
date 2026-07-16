@@ -8,6 +8,7 @@ import {
   Search, ArrowLeft, ArrowRight, Minus, Square, X,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
+import FONTS from "./fonts.json";
 import "./App.css";
 
 // ---------------------------------------------------------------------------
@@ -113,6 +114,114 @@ function useAppearance() {
 }
 
 type Appearance = ReturnType<typeof useAppearance>;
+
+// ---------------------------------------------------------------------------
+// Tipografia (item 7) — fonte (empacotadas de fonts.json + instaladas na
+// máquina via Rust), tamanho (escala %), peso base e sombra de texto.
+// Aplicado por variáveis CSS no <html>; persistido em localStorage.
+// ---------------------------------------------------------------------------
+type FontPrefs = { id: string; family: string; scale: number; weight: number; shadow: boolean };
+
+const FONT_DEFAULT: FontPrefs = {
+  id: FONTS[0].id,
+  family: FONTS[0].family,
+  scale: 1,
+  weight: 400,
+  shadow: false,
+};
+
+function useFontPrefs() {
+  const [prefs, setPrefs] = useState<FontPrefs>(() => {
+    try {
+      const raw = localStorage.getItem("upexnote-font");
+      if (raw) return { ...FONT_DEFAULT, ...JSON.parse(raw) };
+    } catch { /* prefs corrompidas → default */ }
+    return FONT_DEFAULT;
+  });
+  useEffect(() => {
+    const st = document.documentElement.style;
+    st.setProperty("--font-sans", prefs.family);
+    st.setProperty("--font-scale", String(prefs.scale));
+    st.setProperty("--fw-base", String(prefs.weight));
+    st.setProperty("--text-shadow", prefs.shadow ? "0 1px 2px rgba(0, 0, 0, 0.35)" : "none");
+    localStorage.setItem("upexnote-font", JSON.stringify(prefs));
+  }, [prefs]);
+  return { prefs, setPrefs };
+}
+
+function TypographyCard({ prefs, setPrefs }: { prefs: FontPrefs; setPrefs: (p: FontPrefs) => void }) {
+  const { t } = useLang();
+  const [sysFonts, setSysFonts] = useState<string[]>([]);
+  useEffect(() => {
+    invoke<string[]>("list_system_fonts").then(setSysFonts).catch(() => { /* opcional */ });
+  }, []);
+
+  function selectFont(value: string) {
+    if (value.startsWith("sys:")) {
+      const name = value.slice(4);
+      setPrefs({ ...prefs, id: value, family: `'${name}', 'Segoe UI', sans-serif` });
+    } else {
+      const f = FONTS.find((f) => f.id === value);
+      if (f) setPrefs({ ...prefs, id: f.id, family: f.family });
+    }
+  }
+
+  return (
+    <section className="card">
+      <h2>{t("typTitle")}</h2>
+      <div className="field">
+        <label>{t("typFont")}</label>
+        <select value={prefs.id} onChange={(e) => selectFont(e.currentTarget.value)}>
+          <optgroup label={t("typBundled")}>
+            {FONTS.map((f) => (
+              <option key={f.id} value={f.id}>{f.label}{f.note ? ` — ${f.note}` : ""}</option>
+            ))}
+          </optgroup>
+          {sysFonts.length > 0 && (
+            <optgroup label={t("typSystem")}>
+              {sysFonts.map((n) => (
+                <option key={n} value={"sys:" + n}>{n}</option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        <div className="type-preview" style={{ fontFamily: prefs.family, fontWeight: prefs.weight }}>
+          {t("typPreview")}
+        </div>
+      </div>
+      <div className="row wrap" style={{ alignItems: "flex-end" }}>
+        <div className="field" style={{ flex: 1, minWidth: 170, marginBottom: 0 }}>
+          <label>{t("typSize")} — {Math.round(prefs.scale * 100)}%</label>
+          <input
+            type="range" min={90} max={115} step={1}
+            value={Math.round(prefs.scale * 100)}
+            onChange={(e) => setPrefs({ ...prefs, scale: Number(e.currentTarget.value) / 100 })}
+          />
+        </div>
+        <div className="field" style={{ flex: 1, minWidth: 170, marginBottom: 0 }}>
+          <label>{t("typWeight")} — {prefs.weight}</label>
+          <input
+            type="range" min={300} max={600} step={25}
+            value={prefs.weight}
+            onChange={(e) => setPrefs({ ...prefs, weight: Number(e.currentTarget.value) })}
+          />
+        </div>
+      </div>
+      <div className="field" style={{ marginTop: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={prefs.shadow}
+            onChange={(e) => setPrefs({ ...prefs, shadow: e.currentTarget.checked })}
+            style={{ width: "auto" }}
+          />
+          <span>{t("typShadow")}</span>
+        </label>
+      </div>
+      <button className="secondary" onClick={() => setPrefs(FONT_DEFAULT)}>{t("typReset")}</button>
+    </section>
+  );
+}
 
 function AppearanceCard({ theme, setTheme, density, setDensity }: Appearance) {
   const { lang, setLang, t } = useLang();
@@ -936,6 +1045,7 @@ function Titlebar({
 function App() {
   const { t } = useLang();
   const appearance = useAppearance();
+  const font = useFontPrefs();
   const [view, setView] = useState<View>("transcribe");
   // Histórico de vistas para as setas voltar/avançar da barra de título
   const [histBack, setHistBack] = useState<View[]>([]);
@@ -1276,6 +1386,7 @@ function App() {
 
           <div className={"view-pane" + (view === "settings" ? "" : " hidden")}>
             <AppearanceCard {...appearance} />
+            <TypographyCard prefs={font.prefs} setPrefs={font.setPrefs} />
             <SettingsView onChanged={loadEngines} />
             <StorageSettingsCard />
           </div>

@@ -5,14 +5,17 @@
    Tema novo = 1 bloco de variáveis aqui + 1 entrada no registo THEMES (App.tsx).
    DENSIDADE: [data-density="compact"] remapeia fontes/espaçamentos. */
 
-/* ---- Densidade (padrão: confortável) ---- */
+/* ---- Densidade (padrão: confortável) ----
+   Cada tamanho multiplica por --font-scale (controlo "Tamanho" da Tipografia,
+   0.90–1.15), que atua POR CIMA da densidade escolhida. */
 :root {
-  --fs-base: 14px;   /* texto corrente */
-  --fs-ui: 13px;     /* controlos, nav, botões */
-  --fs-sm: 12px;     /* metadados, badges */
-  --fs-xs: 11px;     /* cabeçalhos de tabela, títulos de secção */
-  --fs-stat: 20px;   /* números dos cartões de estatística */
-  --fs-mono: 12.5px; /* transcript */
+  --font-scale: 1;
+  --fs-base: calc(14px * var(--font-scale));   /* texto corrente */
+  --fs-ui: calc(13px * var(--font-scale));     /* controlos, nav, botões */
+  --fs-sm: calc(12px * var(--font-scale));     /* metadados, badges */
+  --fs-xs: calc(11px * var(--font-scale));     /* cabeçalhos de tabela, títulos de secção */
+  --fs-stat: calc(20px * var(--font-scale));   /* números dos cartões de estatística */
+  --fs-mono: calc(12.5px * var(--font-scale)); /* transcript */
   --lh: 1.55;
   --card-pad: 18px;
   --view-gap: 16px;
@@ -25,12 +28,12 @@
   --sidebar-w: 220px;
 }
 :root[data-density="compact"] {
-  --fs-base: 13px;
-  --fs-ui: 12.5px;
-  --fs-sm: 11.5px;
-  --fs-xs: 10.5px;
-  --fs-stat: 17px;
-  --fs-mono: 11.5px;
+  --fs-base: calc(13px * var(--font-scale));
+  --fs-ui: calc(12.5px * var(--font-scale));
+  --fs-sm: calc(11.5px * var(--font-scale));
+  --fs-xs: calc(10.5px * var(--font-scale));
+  --fs-stat: calc(17px * var(--font-scale));
+  --fs-mono: calc(11.5px * var(--font-scale));
   --lh: 1.45;
   --card-pad: 13px;
   --view-gap: 11px;
@@ -269,13 +272,15 @@
 
 /* ---- Base ---- */
 :root {
-  /* Segoe UI Variable = a tipografia Fluent do Windows 11 */
-  font-family: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, Helvetica, Arial, sans-serif;
+  /* --font-sans/--fw-base/--text-shadow vêm do cartão Tipografia (via JS);
+     o fallback é a stack Fluent do Windows 11 */
+  font-family: var(--font-sans, "Segoe UI Variable Text", "Segoe UI", "Inter Variable", system-ui, Helvetica, Arial, sans-serif);
   font-size: var(--fs-base);
+  font-weight: var(--fw-base, 400);
   line-height: var(--lh);
   color: var(--text);
   background-color: var(--bg);
-  font-synthesis: none;
+  text-shadow: var(--text-shadow, none);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
@@ -865,3 +870,21 @@ textarea.edit-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px va
   font-weight: 600;
 }
 .seg button.on:hover:not(:disabled) { background: var(--panel); }
+
+/* ---- Tipografia ---- */
+.type-preview {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ctl);
+  font-size: calc(var(--fs-base) + 2px);
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}

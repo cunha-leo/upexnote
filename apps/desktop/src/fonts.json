@@ -1,0 +1,17 @@
+[
+  { "id": "segoe", "label": "Segoe UI Variable (sistema)", "family": "'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif", "bundled": false, "note": "Fluent / Windows 11" },
+  { "id": "inter", "label": "Inter", "family": "'Inter Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "Notion, Linear, Figma" },
+  { "id": "geist", "label": "Geist", "family": "'Geist Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "Vercel" },
+  { "id": "roboto-flex", "label": "Roboto Flex", "family": "'Roboto Flex Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "Google / Android" },
+  { "id": "open-sans", "label": "Open Sans", "family": "'Open Sans Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "humanista workhorse" },
+  { "id": "lato", "label": "Lato", "family": "'Lato', 'Segoe UI', sans-serif", "bundled": true, "note": "Slack" },
+  { "id": "source-sans", "label": "Source Sans 3", "family": "'Source Sans 3 Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "Adobe" },
+  { "id": "ibm-plex", "label": "IBM Plex Sans", "family": "'IBM Plex Sans Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "IBM Carbon" },
+  { "id": "manrope", "label": "Manrope", "family": "'Manrope Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "SaaS moderno" },
+  { "id": "dm-sans", "label": "DM Sans", "family": "'DM Sans Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "geométrica limpa" },
+  { "id": "figtree", "label": "Figtree", "family": "'Figtree Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "geométrica amigável" },
+  { "id": "nunito-sans", "label": "Nunito Sans", "family": "'Nunito Sans Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "arredondada-humanista" },
+  { "id": "public-sans", "label": "Public Sans", "family": "'Public Sans Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "USWDS, sóbria" },
+  { "id": "lexend", "label": "Lexend", "family": "'Lexend Variable', 'Segoe UI', sans-serif", "bundled": true, "note": "acessibilidade: fluência de leitura" },
+  { "id": "atkinson", "label": "Atkinson Hyperlegible", "family": "'Atkinson Hyperlegible', 'Segoe UI', sans-serif", "bundled": true, "note": "acessibilidade: máxima distinção" }
+]

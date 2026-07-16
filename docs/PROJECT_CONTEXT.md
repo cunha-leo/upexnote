@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 16 de julho de 2026 (v0.9.0 — idioma da UI PT/EN/ES, item 8 do backlog)  
+**Última atualização:** 16 de julho de 2026 (v0.10.0 — tipografia: 15 fontes + tamanho/peso/sombra, item 7 do backlog)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -339,6 +339,25 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-16: tipografia — 15 fontes curadas + controlos (item 7, âmbito ampliado pelo utilizador) — v0.10.0
+
+### O que mudou
+- **Âmbito ampliado pelo utilizador:** em vez de ≤5 fontes, pediu ~15 das mais usadas em apps estilo Electron, escolhidas com PESQUISA REAL (modernidade, impacto visual, acessibilidade/fadiga ocular), registo em **JSON pré-carregado**, absorção de **fontes já instaladas na máquina**, e controlos de **negrito, sombra e tamanho** além da escolha de fonte.
+- **Pesquisa feita (2026-07-16):** Inter é o padrão das UIs modernas (Notion/Linear/Figma); Geist (Vercel) é o outro neo-grotesco de referência; Lato é a do Slack; a gg sans do Discord é proprietária (não empacotável). Fontes variáveis = standard. Acessibilidade com investigação real: **Lexend** (fluência de leitura) e **Atkinson Hyperlegible** (Braille Institute).
+- **Lote (15):** Segoe UI Variable (sistema/default) + 14 empacotadas: Inter, Geist, Roboto Flex, Open Sans, Lato, Source Sans 3, IBM Plex Sans, Manrope, DM Sans, Figtree, Nunito Sans, Public Sans, Lexend, Atkinson Hyperlegible. Todas OFL/livres, via pacotes npm `@fontsource-variable/*` (woff2 variáveis, offline, ~1.5 MB em subsets — só o latino carrega). Registo de metadados em `src/fonts.json` (fonte nova = 1 pacote npm + 1 import no main.tsx + 1 linha no JSON); imports estáticos no `main.tsx` = pré-carregamento.
+- **Fontes do sistema:** novo comando Rust `list_system_fonts` (crate `winreg`; lê HKLM+HKCU `...\CurrentVersion\Fonts`, limpa sufixos de formato e estilos, devolve famílias únicas) → segundo grupo no seletor.
+- **Cartão "Tipografia" nas Definições** (entre Aparência e Credenciais): seletor com os 2 grupos + **preview ao vivo** (pangram na fonte/peso escolhidos), slider **Tamanho** (90–115%, multiplica os tamanhos da densidade via `--font-scale`), slider **Peso do texto** (300–600, passo 25 — as variáveis rendem qualquer valor; nas estáticas o browser sintetiza), toggle **Sombra no texto**, botão Repor. Persistência: `upexnote-font` (localStorage). CSS: `--font-sans`/`--fw-base`/`--text-shadow` no `:root`; `font-synthesis: none` removido (bloqueava pesos sintetizados de Lato/Atkinson).
+- Versão: **0.10.0**.
+
+### Evidência / teste
+- `tsc`/`vite` limpos; fontes visíveis no bundle do Vite (subsets woff2). Instalador no Desktop. **Pendente: validação do utilizador** (trocar fontes, sliders, fontes do sistema, sombra).
+
+### Impacto em dados, custo ou privacidade
+- Sem custo/rede em runtime (fontes empacotadas; licenças OFL incluídas nos pacotes). O comando Rust só lê nomes de fontes do registry local.
+
+### Próximo passo
+- Validação do utilizador. Grupo Preferências (itens 5-8) fica então COMPLETO. Estrutural: item 10 (túnel persistente); produto: fases 3-6.
 
 ### Registro — 2026-07-16: idioma da UI PT/EN/ES (item 8 do backlog) — v0.9.0
 

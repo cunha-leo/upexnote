@@ -190,6 +190,17 @@ const pt = {
   engInfoDeepgram: "Baixa latência, candidato a modo ao vivo futuro; diarização/qualidade geral um pouco abaixo da AssemblyAI.",
   engLabelGpt4o: "gpt-4o-transcribe (OpenAI) — não recomendado",
   engInfoGpt4o: "Desqualificado para reuniões longas: loops de alucinação graves em testes reais. Mantido só por referência.",
+
+  // Tipografia
+  typTitle: "Tipografia",
+  typFont: "Fonte",
+  typBundled: "Recomendadas (empacotadas)",
+  typSystem: "Instaladas nesta máquina",
+  typSize: "Tamanho",
+  typWeight: "Peso do texto",
+  typShadow: "Sombra no texto (profundidade subtil)",
+  typPreview: "A raposa ágil salta sobre o cão preguiçoso. 0123456789 — AaBbCc àéõç",
+  typReset: "Repor tipografia",
 } as const;
 
 export type Key = keyof typeof pt;
@@ -355,6 +366,16 @@ const en: Record<Key, string> = {
   engInfoDeepgram: "Low latency, candidate for a future live mode; diarization/overall quality slightly below AssemblyAI.",
   engLabelGpt4o: "gpt-4o-transcribe (OpenAI) — not recommended",
   engInfoGpt4o: "Disqualified for long meetings: severe hallucination loops in real tests. Kept for reference only.",
+
+  typTitle: "Typography",
+  typFont: "Font",
+  typBundled: "Recommended (bundled)",
+  typSystem: "Installed on this machine",
+  typSize: "Size",
+  typWeight: "Text weight",
+  typShadow: "Text shadow (subtle depth)",
+  typPreview: "The quick brown fox jumps over the lazy dog. 0123456789 — AaBbCc",
+  typReset: "Reset typography",
 };
 
 const es: Record<Key, string> = {
@@ -518,6 +539,16 @@ const es: Record<Key, string> = {
   engInfoDeepgram: "Baja latencia, candidato al futuro modo en vivo; diarización/calidad general algo por debajo de AssemblyAI.",
   engLabelGpt4o: "gpt-4o-transcribe (OpenAI) — no recomendado",
   engInfoGpt4o: "Descartado para reuniones largas: bucles de alucinación graves en pruebas reales. Se mantiene solo como referencia.",
+
+  typTitle: "Tipografía",
+  typFont: "Fuente",
+  typBundled: "Recomendadas (incluidas)",
+  typSystem: "Instaladas en esta máquina",
+  typSize: "Tamaño",
+  typWeight: "Peso del texto",
+  typShadow: "Sombra en el texto (profundidad sutil)",
+  typPreview: "El veloz murciélago hindú comía feliz cardillo y kiwi. 0123456789 — AaBbCc ñáü",
+  typReset: "Restaurar tipografía",
 };
 
 const DICTS: Record<Lang, Record<Key, string>> = { pt, en, es };
