@@ -180,6 +180,16 @@ const pt = {
   dlgFolder: "Escolhe a pasta padrão dos transcripts",
   filterMedia: "Vídeo / Áudio",
   filterAll: "Todos os ficheiros",
+
+  // Motores — sobrepõem label/info do worker (que vem sempre em PT sem acentos)
+  engLabelAssembly: "AssemblyAI Universal-3.5 Pro (recomendado)",
+  engInfoAssembly: "Melhor fidelidade geral, multilingue (PT/EN), diarização e melhor custo observado. Motor principal.",
+  engLabelWhisper: "whisper-1 (OpenAI)",
+  engInfoWhisper: "Rápido e barato, muito fiel em português; pode falhar em inglês inserido a meio de frases (limitação de deteção de idioma por bloco).",
+  engLabelDeepgram: "Deepgram Nova-3",
+  engInfoDeepgram: "Baixa latência, candidato a modo ao vivo futuro; diarização/qualidade geral um pouco abaixo da AssemblyAI.",
+  engLabelGpt4o: "gpt-4o-transcribe (OpenAI) — não recomendado",
+  engInfoGpt4o: "Desqualificado para reuniões longas: loops de alucinação graves em testes reais. Mantido só por referência.",
 } as const;
 
 export type Key = keyof typeof pt;
@@ -336,6 +346,15 @@ const en: Record<Key, string> = {
   dlgFolder: "Choose the default transcripts folder",
   filterMedia: "Video / Audio",
   filterAll: "All files",
+
+  engLabelAssembly: "AssemblyAI Universal-3.5 Pro (recommended)",
+  engInfoAssembly: "Best overall fidelity, multilingual (PT/EN), diarization and best observed cost. Primary engine.",
+  engLabelWhisper: "whisper-1 (OpenAI)",
+  engInfoWhisper: "Fast and cheap, very faithful in Portuguese; can miss English inserted mid-sentence (per-block language detection limitation).",
+  engLabelDeepgram: "Deepgram Nova-3",
+  engInfoDeepgram: "Low latency, candidate for a future live mode; diarization/overall quality slightly below AssemblyAI.",
+  engLabelGpt4o: "gpt-4o-transcribe (OpenAI) — not recommended",
+  engInfoGpt4o: "Disqualified for long meetings: severe hallucination loops in real tests. Kept for reference only.",
 };
 
 const es: Record<Key, string> = {
@@ -490,6 +509,15 @@ const es: Record<Key, string> = {
   dlgFolder: "Elige la carpeta predeterminada de los transcripts",
   filterMedia: "Vídeo / Audio",
   filterAll: "Todos los archivos",
+
+  engLabelAssembly: "AssemblyAI Universal-3.5 Pro (recomendado)",
+  engInfoAssembly: "Mejor fidelidad general, multilingüe (PT/EN), diarización y mejor coste observado. Motor principal.",
+  engLabelWhisper: "whisper-1 (OpenAI)",
+  engInfoWhisper: "Rápido y barato, muy fiel en portugués; puede fallar con inglés insertado a mitad de frase (limitación de detección de idioma por bloque).",
+  engLabelDeepgram: "Deepgram Nova-3",
+  engInfoDeepgram: "Baja latencia, candidato al futuro modo en vivo; diarización/calidad general algo por debajo de AssemblyAI.",
+  engLabelGpt4o: "gpt-4o-transcribe (OpenAI) — no recomendado",
+  engInfoGpt4o: "Descartado para reuniones largas: bucles de alucinación graves en pruebas reales. Se mantiene solo como referencia.",
 };
 
 const DICTS: Record<Lang, Record<Key, string>> = { pt, en, es };

@@ -218,6 +218,15 @@ const ENGINE_LABELS: Record<string, string> = {
 };
 const engLabel = (id: string) => ENGINE_LABELS[id] || id;
 
+// label/info dos motores vêm do worker em PT — sobrepomos com traduções por
+// id; motor desconhecido cai no texto original do worker (fallback seguro)
+const ENGINE_I18N: Record<string, { label: I18nKey; info: I18nKey }> = {
+  assemblyai: { label: "engLabelAssembly", info: "engInfoAssembly" },
+  whisper_openai: { label: "engLabelWhisper", info: "engInfoWhisper" },
+  deepgram: { label: "engLabelDeepgram", info: "engInfoDeepgram" },
+  gpt4o_openai: { label: "engLabelGpt4o", info: "engInfoGpt4o" },
+};
+
 function fmtCost(v: number | null): string {
   if (v == null) return "—";
   return "$" + v.toFixed(v < 1 ? 4 : 2);
@@ -1190,10 +1199,16 @@ function App() {
                   <label>{t("trEngineLabel")}</label>
                   <select value={engineId} onChange={(e) => setEngineId(e.currentTarget.value)}>
                     {engines.map((e) => (
-                      <option key={e.id} value={e.id}>{e.label}</option>
+                      <option key={e.id} value={e.id}>
+                        {ENGINE_I18N[e.id] ? t(ENGINE_I18N[e.id].label) : e.label}
+                      </option>
                     ))}
                   </select>
-                  {selected && <div className="engine-info">{selected.info}</div>}
+                  {selected && (
+                    <div className="engine-info">
+                      {ENGINE_I18N[selected.id] ? t(ENGINE_I18N[selected.id].info) : selected.info}
+                    </div>
+                  )}
                   {selected && !selected.key_set && (
                     <div className="key-warn">{t("trKeyMissing", { key: selected.key_name })}</div>
                   )}

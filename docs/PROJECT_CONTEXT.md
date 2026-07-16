@@ -350,7 +350,8 @@ Ao trabalhar neste projeto, uma IA deve:
 - Versão: **0.9.0**.
 
 ### Evidência / teste
-- `tsc`/`vite` limpos (a tipagem valida a completude dos 3 dicionários); instalador no Desktop. **Pendente: validação do utilizador** (trocar idioma nas Definições, percorrer os 3 ecrãs, confirmar naturalidade das traduções EN/ES).
+- `tsc`/`vite` limpos (a tipagem valida a completude dos 3 dicionários); instalador no Desktop. **Validação do utilizador (2026-07-16):** EN e ES percorridos; encontrado 1 vazamento em cada — a descrição/label do MOTOR continuava em PT (vem do worker: `registry.py` devolve `label`/`info` em PT sem acentos).
+- **Corrigido em v0.9.1:** mapa `ENGINE_I18N` no frontend sobrepõe label+info por id de motor nos 3 idiomas (com fallback para o texto do worker se surgir motor novo). Bónus: o PT ganhou acentos ("diarização", "rápido") que as strings do worker não têm. Sem re-empacotar o worker.
 
 ### Impacto em dados, custo ou privacidade
 - Zero: só frontend; preferência de idioma em localStorage local.
