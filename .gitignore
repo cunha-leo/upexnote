@@ -50,3 +50,8 @@ tmp/
 temp/
 *.spec
 apps/desktop/src-tauri/worker/
+
+# SQLite local (dados gerados — nunca no Git)
+services/worker/transcription/upexnote.db
+services/worker/transcription/upexnote.db-*
+services/worker/transcription/tunnel_state.json
