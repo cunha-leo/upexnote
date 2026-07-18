@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
-  Search, ArrowLeft, ArrowRight, Minus, Square, X,
+  Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
@@ -860,22 +860,9 @@ function StorageSettingsCard() {
       </p>
       <div className="field">
         <label>{t("stoModeLabel")}</label>
-        <div className="row wrap">
-          <span className={"badge " + (s?.storage_mode === "vps" ? "ok" : "")}>
-            {s?.storage_mode === "vps" ? "🔒 " + t("stoModeVps") : t("stoModeLocal")}
-          </span>
-          <button
-            className="secondary"
-            onClick={() => {
-              // termina a sessão (a conta local fica); cache pertence ao modo atual
-              localStorage.removeItem("upexnote-session");
-              localStorage.removeItem("upexnote-lib-cache");
-              window.location.reload();
-            }}
-          >
-            {t("stoLogout")}
-          </button>
-        </div>
+        <span className={"badge " + (s?.storage_mode === "vps" ? "ok" : "")}>
+          {s?.storage_mode === "vps" ? "🔒 " + t("stoModeVps") : t("stoModeLocal")}
+        </span>
       </div>
       <div className="field">
         <label>{t("stoFolderLabel")}</label>
@@ -1058,9 +1045,10 @@ const GoogleG = () => (
 
 function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   const { t } = useLang();
-  // Login é SEMPRE o primeiro ecrã (padrão de mercado); criar conta é via link
+  // Login é SEMPRE o primeiro ecrã (padrão de mercado); criar conta é via link.
+  // E-mail NUNCA pré-preenchido (após logout, a pessoa decide a conta).
   const [screen, setScreen] = useState<"login" | "create" | "reset" | "precad">("login");
-  const [email, setEmail] = useState(() => localStorage.getItem("upexnote-last-email") || "");
+  const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [userId, setUserId] = useState("");
@@ -1075,7 +1063,6 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
 
   function finish(profile: "user" | "admin", user?: AccountUser | null) {
     localStorage.removeItem("upexnote-lib-cache"); // cache pertence ao modo anterior
-    if (user?.email) localStorage.setItem("upexnote-last-email", user.email);
     localStorage.setItem(
       "upexnote-session",
       JSON.stringify({ profile, email: user?.email || email, user_id: user?.user_id || null })
@@ -1260,33 +1247,42 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           />
         </div>
         {(screen === "create" || screen === "precad") && (
-          <div className="field" style={{ marginBottom: 10 }}>
-            <label>{t("loginUserId")}</label>
-            <input
-              type="text" autoComplete="off" spellCheck={false}
-              value={userId}
-              onChange={(e) =>
-                setUserId(e.currentTarget.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))
-              }
-            />
-            {avail && (
-              <div className="engine-info">
-                {avail.available ? t("loginUserIdOk") : (
-                  <>
-                    {t("loginUserIdTaken")}{" "}
-                    {avail.suggestions.map((s) => (
-                      <button key={s} className="link-btn" onClick={() => setUserId(s)}>{s}</button>
-                    ))}
-                  </>
-                )}
+          <>
+            <div className="field" style={{ marginBottom: 10 }}>
+              <label>{t("loginUserId")}</label>
+              <input
+                type="text" autoComplete="off" spellCheck={false}
+                value={userId}
+                onChange={(e) =>
+                  setUserId(e.currentTarget.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))
+                }
+              />
+              {avail && (
+                <div className="engine-info">
+                  {avail.available ? t("loginUserIdOk") : (
+                    <>
+                      {t("loginUserIdTaken")}{" "}
+                      {avail.suggestions.map((s) => (
+                        <button key={s} className="link-btn" onClick={() => setUserId(s)}>{s}</button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="row" style={{ marginBottom: 10 }}>
+              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                <label>{t("loginFirstName")}</label>
+                <input type="text" autoComplete="off" spellCheck={false} value={firstName}
+                  onChange={(e) => setFirstName(e.currentTarget.value)} />
               </div>
-            )}
-          </div>
-        )}
-        {screen === "precad" && (firstName || lastName) && (
-          <div className="engine-info" style={{ marginBottom: 10 }}>
-            {[firstName, lastName].filter(Boolean).join(" ")}
-          </div>
+              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                <label>{t("loginLastName")}</label>
+                <input type="text" autoComplete="off" spellCheck={false} value={lastName}
+                  onChange={(e) => setLastName(e.currentTarget.value)} />
+              </div>
+            </div>
+          </>
         )}
         {screen !== "precad" && (
           <div className="field" style={{ marginBottom: 10 }}>
@@ -1318,12 +1314,11 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
             : screen === "reset" ? t("loginResetBtn") : screen === "precad" ? t("loginFinish") : t("loginCreateBtn")}
         </button>
         <div className="login-links">
+          {/* "Esqueci a senha" REMOVIDO até haver reset com verificação real por
+              e-mail (código enviado) — um reset local aberto era anti-segurança
+              (feedback do utilizador, 2026-07-18). Chega com a infra de e-mail. */}
           {screen === "login" ? (
-            <>
-              <button className="link-btn" onClick={() => { setErr(""); setScreen("reset"); }}>{t("loginForgot")}</button>
-              <span>·</span>
-              <button className="link-btn" onClick={() => { setErr(""); setScreen("create"); }}>{t("loginNoAccount")}</button>
-            </>
+            <button className="link-btn" onClick={() => { setErr(""); setScreen("create"); }}>{t("loginNoAccount")}</button>
           ) : screen !== "precad" ? (
             <button className="link-btn" onClick={() => { setErr(""); setScreen("login"); }}>{t("loginHaveAccount")}</button>
           ) : null}
@@ -1332,6 +1327,43 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
       <button className="link-btn login-admin" onClick={adminEnter} disabled={busy !== ""}>
         {busy === "admin" ? <><span className="spinner" /> {t("loginChecking")}</> : t("loginAdminLink")}
       </button>
+    </div>
+  );
+}
+
+// Perfil na sidebar (padrão das plataformas): avatar com inicial + identidade
+// da sessão + sair. O logout vive AQUI, não nas definições de armazenamento.
+function SidebarProfile({ collapsed }: { collapsed: boolean }) {
+  const { t } = useLang();
+  const sess = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("upexnote-session") || "null");
+    } catch {
+      return null;
+    }
+  }, []);
+  if (!sess) return null;
+  const name: string = sess.user_id || sess.email || "admin";
+  const initial = (name[0] || "?").toUpperCase();
+  function logout() {
+    localStorage.removeItem("upexnote-session");
+    localStorage.removeItem("upexnote-lib-cache");
+    window.location.reload();
+  }
+  return (
+    <div className={"side-profile" + (collapsed ? " collapsed" : "")}>
+      <span className="avatar" title={sess.email || name}>{initial}</span>
+      {!collapsed && (
+        <span className="sp-main">
+          <span className="sp-name">{name}</span>
+          {sess.profile === "admin" && <span className="sp-role">admin</span>}
+        </span>
+      )}
+      {!collapsed && (
+        <button className="tb-btn" onClick={logout} title={t("stoLogout")}>
+          <LogOut size={15} strokeWidth={1.75} />
+        </button>
+      )}
     </div>
   );
 }
@@ -1617,6 +1649,7 @@ function App() {
             </span>
             {!collapsed && <span>{t("navCollapse")}</span>}
           </button>
+          <SidebarProfile collapsed={collapsed} />
           {!collapsed && (
             <div className="sidebar-meta" title="UpexNote © UpexFlow">
               © {new Date().getFullYear()} UpexFlow · upexflow.com

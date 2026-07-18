@@ -229,7 +229,7 @@ const pt = {
   loginUserIdOk: "Disponível ✓",
   loginUserIdTaken: "Indisponível — sugestões:",
   loginFirstName: "Nome",
-  loginLastName: "Apelido",
+  loginLastName: "Sobrenome",
   loginPrecadTitle: "Completa o teu perfil",
   loginGithubCode: "Código de confirmação",
   loginOauthWaiting: "A aguardar confirmação no browser…",

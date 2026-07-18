@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 18 de julho de 2026 (v0.14.0 — identidade completa: tabela users + login social, item 13-C)  
+**Última atualização:** 18 de julho de 2026 (v0.14.2 — review completo do utilizador aplicado; 2 pendências de segurança especificadas)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -370,6 +370,24 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-18: review de ponta a ponta do utilizador à identidade + correções — v0.14.2
+
+### O que o utilizador VALIDOU (testes reais dele)
+- Login-first correto; senha errada → mensagem certa. Criar conta transporta o e-mail da tentativa; user_id normaliza e valida disponibilidade ("cunhaleonardo ✓").
+- **Separação de modos comprovada na prática:** como utilizador comum viu SÓ a transcrição feita nesse modo (SQLite, 1 linha); como admin viu as 10+ do Postgres/VPS. Aparência/tipografia/temas/idioma/pasta: "tudo muito bom".
+
+### Correções aplicadas (v0.14.2, frontend)
+- **Nome e Sobrenome DE VOLTA** no criar conta e pré-cadastro (com o user_id normalizado deixaram de ser redundantes; label "Sobrenome", não "Apelido" — tom pt-BR na entrada).
+- **Logout saiu do cartão de armazenamento** ("Local nesta máquina + Terminar sessão" lado a lado era confuso) → **perfil na sidebar**: avatar com inicial + user_id + badge admin + botão sair (padrão das plataformas). Cartão de armazenamento mantém só o badge do modo.
+- **E-mail NÃO fica pré-preenchido após logout** — campo limpo; a pessoa decide a conta.
+- **"Esqueci-me da senha" REMOVIDO** — o utilizador demonstrou o buraco: qualquer pessoa com o e-mail de alguém redefinia a senha e entrava. Sem verificação real, melhor sem a funcionalidade.
+
+### ⚠ DUAS PENDÊNCIAS DE SEGURANÇA — topo da próxima sessão (Fase 1b)
+1. **Gate do administrador:** hoje o link entra livremente em máquinas com as credenciais instaladas (a do dono). Exposição real limitada (quem está na máquina dele já abriria o DBeaver), MAS a regra é rigidez igual para todos: admin deve exigir **login de conta + segundo fator digitado** (a credencial do banco escrita e validada por ligação real com ESSA senha — não a guardada; worker: db-check com password por stdin) e registar o admin como linha na tabela `users` da VPS com `role=admin`.
+2. **Reset de senha com verificação real:** enviar código por e-mail antes de permitir nova senha. **Sinergia com item 16/n8n:** o n8n da VPS pode ser o remetente (webhook → SMTP) — custo zero, e de quebra estreia o contrato de webhooks do item 14C. Confirmação de e-mail no registo entra no mesmo pacote.
+
+### Versão: **0.14.2** (só frontend).
 
 ### Registro — 2026-07-18: identidade completa — tabela users + login social (item 13-C) — v0.14.0
 

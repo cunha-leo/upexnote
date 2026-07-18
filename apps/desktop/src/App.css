@@ -389,6 +389,45 @@ body { margin: 0; }
   border-top: 1px solid var(--border);
   padding-top: 8px;
 }
+.side-profile {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+}
+.side-profile.collapsed { justify-content: center; padding: 8px 0 4px; }
+.side-profile .avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  flex-shrink: 0;
+}
+.side-profile .sp-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.side-profile .sp-name {
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.side-profile .sp-role {
+  font-size: var(--fs-xs);
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
 .sidebar-meta {
   font-size: var(--fs-xs);
   color: var(--text-dim);
