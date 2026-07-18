@@ -378,13 +378,15 @@ def run_tunnel_keeper() -> int:
     return 0
 
 
-def connect(cfg=None):
+def connect(cfg=None, password_override=None):
     """
     Liga ao Postgres. Se o db_config.json tiver a secção "ssh", a ligação
     passa por um TÚNEL SSH (porta do Postgres fechada ao público; a chave SSH
     da máquina é a credencial — funciona de qualquer rede/IP/VPN). Preferência:
     túnel do guardião persistente (rápido); fallback: túnel próprio por
     chamada. Sem "ssh", liga por TCP direto. Fechar SEMPRE com close_connection().
+    `password_override`: valida uma credencial DIGITADA (gate do administrador —
+    prova de conhecimento, não de posse da máquina) em vez da guardada.
     """
     global _active_tunnel
     import psycopg2
@@ -394,7 +396,7 @@ def connect(cfg=None):
     cfg = cfg or load_config()
     if not cfg:
         raise RuntimeError("db_config.json não encontrado")
-    pw = get_key(PG_PASSWORD_KEY)
+    pw = password_override or get_key(PG_PASSWORD_KEY)
     if not pw:
         raise RuntimeError(f"password do Postgres não configurada ({PG_PASSWORD_KEY})")
 
@@ -519,9 +521,9 @@ def _classify_problem(detail):
     return "UNCLASSIFIED"
 
 
-def check():
+def check(password_override=None):
     """Liga, garante o schema, devolve nº de transcrições ativas."""
-    conn = connect()
+    conn = connect(password_override=password_override)
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:

@@ -253,20 +253,23 @@ def cmd_db_check(args):
         if not db.load_config():
             _emit(sys.stdout, {"type": "error", "message": "db_config.json não encontrado — copia db_config.example.json para db_config.json."})
             return 1
-        if not get_key(db.PG_PASSWORD_KEY):
+        if not getattr(args, "stdin_password", False) and not get_key(db.PG_PASSWORD_KEY):
             _emit(sys.stdout, {"type": "error", "message": f"Password não configurada. Corre: set-key --name {db.PG_PASSWORD_KEY}"})
             return 1
     try:
+        # Gate do administrador: credencial DIGITADA chega por stdin e é
+        # validada por ligação REAL (prova de conhecimento, nunca a guardada).
+        pw_override = sys.stdin.read().strip() if getattr(args, "stdin_password", False) else None
         if getattr(args, "mode", None):
             # força o modo pedido só durante este teste
             original = db.storage_mode
             db.storage_mode = lambda: args.mode
             try:
-                res = db.check()
+                res = db.check(password_override=pw_override)
             finally:
                 db.storage_mode = original
         else:
-            res = db.check()
+            res = db.check(password_override=pw_override)
         _emit(sys.stdout, {"type": "db", "ok": True, "rows": res["rows"], "mode": mode,
                            "message": f"Ligação OK ({mode}). Linhas atuais: {res['rows']}."})
         return 0
@@ -519,6 +522,7 @@ def build_parser():
 
     p_dbc = sub.add_parser("db-check", help="Testa a ligacao a base (modo em vigor, ou --mode especifico) e garante o schema.")
     p_dbc.add_argument("--mode", choices=["local", "vps"], help="Testa um modo especifico SEM o gravar.")
+    p_dbc.add_argument("--stdin-password", action="store_true", help="Valida uma credencial digitada (via stdin) em vez da guardada.")
 
     sub.add_parser("db-migrate", help="Migra o schema flat (v1) para hub-and-spoke (v2). Uma vez.")
 

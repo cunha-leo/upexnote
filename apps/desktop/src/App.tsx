@@ -1180,11 +1180,23 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     }
   }
 
+  // Gate do administrador (feedback 2026-07-18): entrar como admin exige
+  // DIGITAR a credencial, validada por ligação real — posse da máquina não
+  // chega. 1º clique abre o campo; 2º valida.
+  const [adminPw, setAdminPw] = useState("");
+  const [showAdminPw, setShowAdminPw] = useState(false);
+
   async function adminEnter() {
+    if (!showAdminPw) {
+      setErr("");
+      setShowAdminPw(true);
+      return;
+    }
+    if (!adminPw) return;
     setBusy("admin");
     setErr("");
     try {
-      const raw = await invoke<string>("db_check", { mode: "vps" });
+      const raw = await invoke<string>("db_check_secret", { secret: adminPw });
       const obj = JSON.parse(raw);
       if (obj.ok) {
         await invoke("set_settings", { storageMode: "vps" });
@@ -1196,6 +1208,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
       setErr(t("loginAdminFail"));
     } finally {
       setBusy("");
+      setAdminPw("");
     }
   }
 
@@ -1324,9 +1337,32 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           ) : null}
         </div>
       </div>
-      <button className="link-btn login-admin" onClick={adminEnter} disabled={busy !== ""}>
-        {busy === "admin" ? <><span className="spinner" /> {t("loginChecking")}</> : t("loginAdminLink")}
-      </button>
+      {showAdminPw ? (
+        <div className="login-card" style={{ paddingTop: 14 }}>
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>{t("loginAdminPw")}</label>
+            <input
+              type="text" className="pw-mask" autoComplete="off" spellCheck={false}
+              value={adminPw}
+              onChange={(e) => setAdminPw(e.currentTarget.value)}
+              onPaste={maskedPaste(setAdminPw)}
+              onKeyDown={(e) => { if (e.key === "Enter") adminEnter(); }}
+            />
+          </div>
+          <button style={{ width: "100%" }} onClick={adminEnter} disabled={busy !== "" || !adminPw}>
+            {busy === "admin" ? t("loginChecking") : t("loginAdminLink")}
+          </button>
+          <div className="login-links">
+            <button className="link-btn" onClick={() => { setShowAdminPw(false); setAdminPw(""); setErr(""); }}>
+              {t("cancel")}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button className="link-btn login-admin" onClick={adminEnter} disabled={busy !== ""}>
+          {t("loginAdminLink")}
+        </button>
+      )}
     </div>
   );
 }

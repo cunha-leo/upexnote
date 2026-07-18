@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 18 de julho de 2026 (v0.14.2 — review completo do utilizador aplicado; 2 pendências de segurança especificadas)  
+**Última atualização:** 18 de julho de 2026 (v0.15.0 — gate do administrador: credencial digitada validada por ligação real)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -370,6 +370,19 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-18: gate do administrador (pendência de segurança nº 1) — v0.15.0
+
+### O que mudou
+- **"Entrar como administrador" deixou de ser livre.** 1º clique abre um campo **"Senha de administrador"** (mascarado, paste intercetado, copy genérico — zero infra); a credencial DIGITADA vai por stdin ao worker e é validada por **ligação real à base com ESSA senha** (`db-check --stdin-password` + `connect(password_override=...)`) — nunca contra a guardada na máquina. Dois fatores de facto: posse da máquina (chave SSH instalada) + conhecimento da credencial. Errou → "Credenciais de administrador inválidas." e o campo limpa.
+- Worker: `db.connect/check` ganham `password_override`; CLI `db-check --stdin-password` (salta o guard da credencial guardada). Rust: `db_check_secret(secret)` com stdin (padrão do `account`). Worker re-empacotado.
+- Versão: **0.15.0**.
+
+### Evidência / teste
+- `tsc`/`vite` limpos; pendente validação do utilizador: senha certa → entra admin; senha errada/vazia → recusa.
+
+### Pendências que SEGUEM para a próxima sessão
+- Reset de senha com código por e-mail via n8n (pendência nº 2, precisa do utilizador para configurar o n8n/SMTP); admin como linha `role=admin` na tabela users; registo das OAuth apps Google/GitHub pelo dono (botões prontos à espera).
 
 ### Registro — 2026-07-18: review de ponta a ponta do utilizador à identidade + correções — v0.14.2
 
