@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 18 de julho de 2026 (v0.12.0 — SQLite embutido + ecrã de perfis, item 13 Fase 1a)  
+**Última atualização:** 18 de julho de 2026 (v0.13.0 — login padrão de mercado substitui o ecrã de perfis)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -361,6 +361,26 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-18: login padrão de mercado (redesenho pós-feedback) — v0.13.0
+
+### O que mudou
+- **A tela de perfis da v0.12.0 foi substituída** conforme o feedback do utilizador (registado no item 13): sem aula, sem cards gigantes, **zero menção a infraestrutura** no ecrã de entrada.
+- **Cartão de login normal** (~380px, centrado): e-mail + senha + Entrar; primeira execução = "Criar conta" (e-mail, senha ≥6, confirmação); "Esqueci-me da senha" → repor senha local (copy honesto e genérico); "Criar conta"/"Já tenho conta" alternam. Conta **local desta máquina** nesta fase: e-mail + hash SHA-256 com salt (Web Crypto) em localStorage — é um portão de identidade, não cifra de dados; a identidade migra para a API na Fase 2 (GitHub/2FA entram aí, validados no servidor — sem teatro local).
+- **"Entrar como administrador"** = link discreto sob o cartão: valida a ligação real por trás (`db_check --mode vps`); falha → mensagem genérica "Esta máquina não tem perfil de administrador configurado." Nada de túnel/Postgres/VPS no copy.
+- **Logout**: "Terminar sessão" nas Definições (substitui "Trocar de perfil") — limpa a sessão (conta fica; e-mail lembrado no login) + cache da Biblioteca. Sessão em `upexnote-session`; chave `upexnote-profile` da v0.12.0 é limpa (obsoleta).
+- Badges de armazenamento suavizados: "Local nesta máquina" / "Base central 🔒".
+- Gotcha WebView2 respeitado: campos de senha são `type="text"` com máscara CSS (`-webkit-text-security: disc`) + interceção de paste — `type="password"` crasha nesta máquina.
+- Só frontend (sem repack do worker). Versão: **0.13.0**.
+
+### Evidência / teste
+- `tsc`/`vite` limpos; instalador no Desktop. Pendente: validação do utilizador (criar conta → logout → login; link de administrador na máquina dele).
+
+### Impacto em dados, custo ou privacidade
+- Zero: mecanismo de armazenamento intacto; conta local sem dados sensíveis além do e-mail (senha só como hash+salt).
+
+### Próximo passo
+- Validação do utilizador. Fase 1b (assistente admin máquina virgem) e depois item 15.
 
 ### Registro — 2026-07-18: SQLite embutido + ecrã de perfis (item 13, Fase 1a) — v0.12.0
 

@@ -867,13 +867,13 @@ function StorageSettingsCard() {
           <button
             className="secondary"
             onClick={() => {
-              // limpa perfil + cache da Biblioteca (pertence ao modo atual)
-              localStorage.removeItem("upexnote-profile");
+              // termina a sessão (a conta local fica); cache pertence ao modo atual
+              localStorage.removeItem("upexnote-session");
               localStorage.removeItem("upexnote-lib-cache");
               window.location.reload();
             }}
           >
-            {t("stoSwitchProfile")}
+            {t("stoLogout")}
           </button>
         </div>
       </div>
@@ -1026,33 +1026,81 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Ecrã de perfis (item 13, Fase 1): decide o modo de armazenamento de forma
-// EXPLÍCITA (preferência do utilizador — nada de deteção silenciosa).
-// Utilizador → SQLite local, zero fricção. Administrador → valida uma ligação
-// REAL à VPS antes de trocar (os segredos são a autenticação; sem eles a porta
-// não abre a ninguém). O assistente de máquina virgem chega na Fase 1b.
+// Login (item 13 — apresentação padrão de mercado, 2026-07-18): cartão de
+// e-mail+senha como toda app profissional; conta LOCAL nesta fase (hash+salt
+// via Web Crypto — a identidade migra para a API na Fase 2). "Entrar como
+// administrador" é um link discreto que valida a ligação real por trás, sem
+// UMA palavra sobre infraestrutura no ecrã (regra do utilizador).
+// WebView2 desta máquina: type="password" crasha → máscara via CSS.
 // ---------------------------------------------------------------------------
-function ProfileGate({ onDone }: { onDone: (profile: string) => void }) {
+type LocalAccount = { email: string; salt: string; hash: string };
+
+async function hashPassword(salt: string, password: string): Promise<string> {
+  const data = new TextEncoder().encode(salt + " " + password);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function readAccount(): LocalAccount | null {
+  try {
+    const raw = localStorage.getItem("upexnote-account");
+    if (!raw) return null;
+    const a = JSON.parse(raw) as LocalAccount;
+    return a && a.email && a.hash ? a : null;
+  } catch {
+    return null;
+  }
+}
+
+function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   const { t } = useLang();
-  const [busy, setBusy] = useState<"" | "user" | "admin">("");
+  const account = useMemo(readAccount, []);
+  const [screen, setScreen] = useState<"login" | "create" | "reset">(account ? "login" : "create");
+  const [email, setEmail] = useState(account?.email || "");
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState<"" | "form" | "admin">("");
   const [err, setErr] = useState("");
 
-  function finish(profile: string) {
-    // cache da Biblioteca pertence ao modo anterior — nunca misturar bases
-    localStorage.removeItem("upexnote-lib-cache");
-    localStorage.setItem("upexnote-profile", profile);
+  function finish(profile: "user" | "admin", mail: string) {
+    localStorage.removeItem("upexnote-lib-cache"); // cache pertence ao modo anterior
+    localStorage.setItem("upexnote-session", JSON.stringify({ profile, email: mail }));
     onDone(profile);
   }
 
-  async function chooseUser() {
-    setBusy("user");
+  async function submit() {
+    setErr("");
+    const mail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setErr(t("loginErrEmail"));
+    if (screen !== "login") {
+      if (pw.length < 6) return setErr(t("loginErrPwShort"));
+      if (pw !== pw2) return setErr(t("loginErrPwMatch"));
+    }
+    setBusy("form");
     try {
-      await invoke("set_settings", { storageMode: "local" });
-    } catch { /* settings é best-effort; o worker cai em local por defeito */ }
-    finish("user");
+      if (screen === "login") {
+        const acc = readAccount();
+        if (!acc || acc.email !== mail || (await hashPassword(acc.salt, pw)) !== acc.hash) {
+          setErr(t("loginErrWrong"));
+          return;
+        }
+      } else {
+        // criar conta / repor senha — conta local desta máquina
+        const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+          .map((b) => b.toString(16).padStart(2, "0")).join("");
+        const acc: LocalAccount = { email: mail, salt, hash: await hashPassword(salt, pw) };
+        localStorage.setItem("upexnote-account", JSON.stringify(acc));
+      }
+      try {
+        await invoke("set_settings", { storageMode: "local" });
+      } catch { /* best-effort; o worker cai em local por defeito */ }
+      finish("user", mail);
+    } finally {
+      setBusy("");
+    }
   }
 
-  async function chooseAdmin() {
+  async function adminEnter() {
     setBusy("admin");
     setErr("");
     try {
@@ -1060,43 +1108,86 @@ function ProfileGate({ onDone }: { onDone: (profile: string) => void }) {
       const obj = JSON.parse(raw);
       if (obj.ok) {
         await invoke("set_settings", { storageMode: "vps" });
-        finish("admin");
+        finish("admin", email.trim().toLowerCase() || "admin");
         return;
       }
-      setErr(obj.message || t("pgAdminFail"));
+      setErr(t("loginAdminFail"));
     } catch {
-      setErr(t("pgAdminFail"));
+      setErr(t("loginAdminFail"));
     } finally {
       setBusy("");
     }
   }
 
+  function maskedPaste(setter: (v: string) => void) {
+    return (e: ClipboardEvent<HTMLInputElement>) => {
+      e.preventDefault();
+      setter(e.clipboardData.getData("text"));
+    };
+  }
+
   return (
     <div className="profile-gate">
       <div className="pg-head">
-        <span className="brand-mark"><BrandMark size={30} /></span>
-        <div className="wordmark" style={{ fontSize: 22 }}>
+        <span className="brand-mark"><BrandMark size={28} /></span>
+        <div className="wordmark" style={{ fontSize: 20 }}>
           <span className="up">Upex</span><span className="ex">Note</span>
         </div>
       </div>
-      <h1 className="pg-title">{t("pgTitle")}</h1>
-      <div className="pg-cards">
-        <button className="pg-card" onClick={chooseUser} disabled={busy !== ""}>
-          <span className="pg-ico"><Mic size={22} strokeWidth={1.75} /></span>
-          <span className="pg-name">{t("pgUserTitle")}</span>
-          <span className="pg-desc">{t("pgUserDesc")}</span>
+      <div className="login-card">
+        <h1 className="pg-title">{screen === "create" ? t("loginCreateTitle") : t("loginTitle")}</h1>
+        {screen === "reset" && <div className="muted" style={{ textAlign: "left" }}>{t("loginResetInfo")}</div>}
+        <div className="field" style={{ marginBottom: 10 }}>
+          <label>{t("loginEmail")}</label>
+          <input
+            type="text" autoComplete="off" spellCheck={false}
+            value={email}
+            onChange={(e) => setEmail(e.currentTarget.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          />
+        </div>
+        <div className="field" style={{ marginBottom: 10 }}>
+          <label>{t("loginPassword")}</label>
+          <input
+            type="text" className="pw-mask" autoComplete="off" spellCheck={false}
+            value={pw}
+            onChange={(e) => setPw(e.currentTarget.value)}
+            onPaste={maskedPaste(setPw)}
+            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+          />
+        </div>
+        {screen !== "login" && (
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>{t("loginPasswordConfirm")}</label>
+            <input
+              type="text" className="pw-mask" autoComplete="off" spellCheck={false}
+              value={pw2}
+              onChange={(e) => setPw2(e.currentTarget.value)}
+              onPaste={maskedPaste(setPw2)}
+              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+            />
+          </div>
+        )}
+        {err && <div className="key-warn" style={{ marginBottom: 8 }}>{err}</div>}
+        <button style={{ width: "100%" }} onClick={submit} disabled={busy !== ""}>
+          {busy === "form" ? t("loginChecking") : screen === "login" ? t("loginBtn")
+            : screen === "reset" ? t("loginResetBtn") : t("loginCreateBtn")}
         </button>
-        <button className="pg-card" onClick={chooseAdmin} disabled={busy !== ""}>
-          <span className="pg-ico"><Settings size={22} strokeWidth={1.75} /></span>
-          <span className="pg-name">{t("pgAdminTitle")}</span>
-          <span className="pg-desc">{t("pgAdminDesc")}</span>
-          {busy === "admin" && (
-            <span className="pg-busy"><span className="spinner" /> {t("pgChecking")}</span>
+        <div className="login-links">
+          {screen === "login" ? (
+            <>
+              <button className="link-btn" onClick={() => { setErr(""); setScreen("reset"); }}>{t("loginForgot")}</button>
+              <span>·</span>
+              <button className="link-btn" onClick={() => { setErr(""); setScreen("create"); }}>{t("loginNoAccount")}</button>
+            </>
+          ) : (
+            <button className="link-btn" onClick={() => { setErr(""); setScreen("login"); }}>{t("loginHaveAccount")}</button>
           )}
-        </button>
+        </div>
       </div>
-      {err && <div className="key-warn pg-err">{err}</div>}
-      <div className="muted">{t("pgHint")}</div>
+      <button className="link-btn login-admin" onClick={adminEnter} disabled={busy !== ""}>
+        {busy === "admin" ? <><span className="spinner" /> {t("loginChecking")}</> : t("loginAdminLink")}
+      </button>
     </div>
   );
 }
@@ -1150,10 +1241,15 @@ function App() {
   const { t } = useLang();
   const appearance = useAppearance();
   const font = useFontPrefs();
-  // Perfil escolhido no primeiro arranque (user/admin) — null = mostrar o gate
-  const [profile, setProfile] = useState<string | null>(
-    () => localStorage.getItem("upexnote-profile")
-  );
+  // Sessão iniciada (user/admin) — null = mostrar o login
+  const [session, setSession] = useState<string | null>(() => {
+    try {
+      const raw = localStorage.getItem("upexnote-session");
+      if (raw) return (JSON.parse(raw).profile as string) || null;
+    } catch { /* sessão corrompida → login */ }
+    localStorage.removeItem("upexnote-profile"); // chave da v0.12.0, obsoleta
+    return null;
+  });
   const [view, setView] = useState<View>("transcribe");
   // Histórico de vistas para as setas voltar/avançar da barra de título
   const [histBack, setHistBack] = useState<View[]>([]);
@@ -1324,11 +1420,11 @@ function App() {
     { id: "settings", icon: <Settings size={16} strokeWidth={1.75} />, label: t("navSettings") },
   ];
 
-  if (profile === null) {
+  if (session === null) {
     return (
       <div className="shell">
         <Titlebar canBack={false} canFwd={false} onBack={() => {}} onFwd={() => {}} />
-        <ProfileGate onDone={setProfile} />
+        <LoginGate onDone={setSession} />
       </div>
     );
   }

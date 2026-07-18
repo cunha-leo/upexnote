@@ -881,37 +881,46 @@ textarea.edit-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px va
   font-weight: 600;
   letter-spacing: -0.01em;
 }
-.pg-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(240px, 300px));
-  gap: 14px;
-}
-.pg-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  text-align: left;
-  padding: 18px;
+.login-card {
+  width: min(380px, 92vw);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  color: var(--text);
+  box-shadow: var(--shadow);
+  padding: 22px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.login-card .pg-title { text-align: left; margin-bottom: 10px; }
+/* WebView2 desta máquina crasha com type="password" → máscara via CSS */
+.pw-mask { -webkit-text-security: disc; }
+.link-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  padding: 4px 6px;
   cursor: pointer;
-  transition: border-color 0.12s, box-shadow 0.12s;
 }
-.pg-card:hover:not(:disabled) {
-  background: var(--panel);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+.link-btn:hover:not(:disabled) { background: transparent; color: var(--accent); }
+.login-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
 }
-.pg-ico { color: var(--accent); }
-.pg-name { font-weight: 600; font-size: calc(var(--fs-base) + 1px); }
-.pg-desc { color: var(--text-dim); font-size: var(--fs-ui); font-weight: 400; line-height: 1.5; }
-.pg-busy { display: flex; align-items: center; gap: 7px; color: var(--text-dim); font-size: var(--fs-sm); }
-.pg-err { max-width: 620px; }
-@media (max-width: 700px) {
-  .pg-cards { grid-template-columns: 1fr; }
+.login-admin {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+  opacity: 0.85;
 }
 
 /* Segmentado (densidade) */
