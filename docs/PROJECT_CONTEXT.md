@@ -391,6 +391,12 @@ Ao trabalhar neste projeto, uma IA deve:
 ### Próximo passo
 - Utilizador: valida a UI + regista as 2 OAuth apps (guio quando quiseres). Depois: Fase 1b, MFA (Fase 2) e item 15.
 
+### Correção 2026-07-18 (v0.14.1) — feedback do utilizador à UI da v0.14.0
+- **Login é SEMPRE o primeiro ecrã** (era "Criar conta" na primeira execução — anti-padrão); criar conta só via link.
+- **Cadastro por e-mail simplificado:** só e-mail + nome de utilizador + senha+confirmação. Nome/apelido REMOVIDOS do formulário (redundantes — no fluxo OAuth vêm do provedor e aparecem como resumo no pré-cadastro; edição de perfil fica para as Definições).
+- **Nome de utilizador normaliza enquanto se escreve** (minúsculas, sem espaços/símbolos) — o que vês é o que fica registado (antes: "Leonardo Cunha" mostrava "Disponível ✓" mas registava "leonardocunha").
+- **Decisão de rumo confirmada em discussão (para a Fase 1b):** identidade e elevação convergem — login por qualquer método + máquina com credenciais da VPS ⇒ conta elevada a `role=admin` na tabela users (o link "Entrar como administrador" desaparece/integra-se); na Fase 2 a API reconhece o provider_id do dono ⇒ admin em qualquer máquina.
+
 ### Registro — 2026-07-18: login padrão de mercado (redesenho pós-feedback) — v0.13.0
 
 ### O que mudou

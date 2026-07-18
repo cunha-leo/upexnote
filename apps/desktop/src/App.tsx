@@ -1058,9 +1058,8 @@ const GoogleG = () => (
 
 function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   const { t } = useLang();
-  const [screen, setScreen] = useState<"login" | "create" | "reset" | "precad">(
-    () => (localStorage.getItem("upexnote-last-email") ? "login" : "create")
-  );
+  // Login é SEMPRE o primeiro ecrã (padrão de mercado); criar conta é via link
+  const [screen, setScreen] = useState<"login" | "create" | "reset" | "precad">("login");
   const [email, setEmail] = useState(() => localStorage.getItem("upexnote-last-email") || "");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
@@ -1261,40 +1260,33 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           />
         </div>
         {(screen === "create" || screen === "precad") && (
-          <>
-            <div className="field" style={{ marginBottom: 10 }}>
-              <label>{t("loginUserId")}</label>
-              <input
-                type="text" autoComplete="off" spellCheck={false}
-                value={userId}
-                onChange={(e) => setUserId(e.currentTarget.value)}
-              />
-              {avail && (
-                <div className="engine-info">
-                  {avail.available ? t("loginUserIdOk") : (
-                    <>
-                      {t("loginUserIdTaken")}{" "}
-                      {avail.suggestions.map((s) => (
-                        <button key={s} className="link-btn" onClick={() => setUserId(s)}>{s}</button>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="row" style={{ marginBottom: 10 }}>
-              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                <label>{t("loginFirstName")}</label>
-                <input type="text" autoComplete="off" spellCheck={false} value={firstName}
-                  onChange={(e) => setFirstName(e.currentTarget.value)} />
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>{t("loginUserId")}</label>
+            <input
+              type="text" autoComplete="off" spellCheck={false}
+              value={userId}
+              onChange={(e) =>
+                setUserId(e.currentTarget.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))
+              }
+            />
+            {avail && (
+              <div className="engine-info">
+                {avail.available ? t("loginUserIdOk") : (
+                  <>
+                    {t("loginUserIdTaken")}{" "}
+                    {avail.suggestions.map((s) => (
+                      <button key={s} className="link-btn" onClick={() => setUserId(s)}>{s}</button>
+                    ))}
+                  </>
+                )}
               </div>
-              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-                <label>{t("loginLastName")}</label>
-                <input type="text" autoComplete="off" spellCheck={false} value={lastName}
-                  onChange={(e) => setLastName(e.currentTarget.value)} />
-              </div>
-            </div>
-          </>
+            )}
+          </div>
+        )}
+        {screen === "precad" && (firstName || lastName) && (
+          <div className="engine-info" style={{ marginBottom: 10 }}>
+            {[firstName, lastName].filter(Boolean).join(" ")}
+          </div>
         )}
         {screen !== "precad" && (
           <div className="field" style={{ marginBottom: 10 }}>
