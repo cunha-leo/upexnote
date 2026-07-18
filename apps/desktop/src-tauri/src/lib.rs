@@ -221,6 +221,71 @@ async fn library_item(id: i64) -> Result<String, String> {
     run_cli_async(vec!["library-item".into(), "--id".into(), id.to_string()]).await
 }
 
+/// Operações de conta (item 13-C): payload JSON via STDIN (nunca argv, que é
+/// visível na lista de processos). `op` é validado contra a whitelist.
+#[tauri::command]
+async fn account(op: String, payload: String) -> Result<String, String> {
+    const OPS: [&str; 5] = ["register", "login", "oauth-login", "update", "reset"];
+    if !OPS.contains(&op.as_str()) {
+        return Err(format!("operação desconhecida: {op}"));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        let cmd_name = format!("account-{op}");
+        let mut cmd = worker_command(&[&cmd_name]);
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        with_no_window(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        child
+            .stdin
+            .as_mut()
+            .ok_or("sem stdin")?
+            .write_all(payload.as_bytes())
+            .map_err(|e| e.to_string())?;
+        drop(child.stdin.take());
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if stdout.is_empty() {
+            return Err(String::from_utf8_lossy(&out.stderr).to_string());
+        }
+        Ok(stdout)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn account_suggest(user_id: String) -> Result<String, String> {
+    run_cli_async(vec!["account-suggest".into(), "--user-id".into(), user_id]).await
+}
+
+/// Login social (item 13-C): corre `oauth --provider X` e emite cada linha
+/// NDJSON como `oauth://event` — o device flow do GitHub mostra um código que
+/// o utilizador precisa de ver DURANTE o fluxo. Fecha com `oauth://done`.
+#[tauri::command]
+fn oauth_start(app: AppHandle, provider: String) -> Result<(), String> {
+    if provider != "google" && provider != "github" {
+        return Err("provider inválido".into());
+    }
+    let mut cmd = worker_command(&["oauth", "--provider", &provider]);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+    with_no_window(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    std::thread::spawn(move || {
+        if let Some(stdout) = child.stdout.take() {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                if !line.trim().is_empty() {
+                    let _ = app.emit("oauth://event", line);
+                }
+            }
+        }
+        let _ = child.wait();
+        let _ = app.emit("oauth://done", ());
+    });
+    Ok(())
+}
+
 /// Testa a ligação à base. `mode` opcional ("local"/"vps") testa um modo
 /// específico SEM o gravar — o ecrã de perfis valida a config de administrador
 /// com isto antes de trocar o modo.
@@ -390,7 +455,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
-            list_system_fonts, db_check, transcribe
+            list_system_fonts, db_check, account, account_suggest, oauth_start, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
