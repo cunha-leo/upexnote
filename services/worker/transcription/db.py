@@ -161,12 +161,90 @@ def is_configured():
 _active_tunnel = None
 
 
+# --------------------------------------------------------------------------
+# Túnel persistente (item 10 do backlog, 2026-07-16): a app lança um processo
+# "guardião" (comando tunnel-keep) que abre o túnel SSH UMA vez e o mantém
+# vivo; cada chamada do worker deteta-o pelo ficheiro de estado + probe TCP e
+# liga direto — sem pagar o handshake SSH (~2-5s) a cada comando. Sem guardião
+# vivo, cai no comportamento antigo (túnel próprio por chamada). O guardião
+# morre sozinho quando a app fecha: o Rust segura o stdin dele; EOF = sair
+# (funciona até em crash da app — sem processos órfãos).
+# --------------------------------------------------------------------------
+
+def _tunnel_state_path() -> Path:
+    if getattr(sys, "frozen", False):
+        base = Path(os.environ.get("APPDATA", str(Path.home()))) / "UpexNote"
+    else:
+        base = Path(__file__).resolve().parent
+    return base / "tunnel_state.json"
+
+
+def _keeper_port():
+    """Porta local do túnel do guardião, se estiver mesmo vivo (probe TCP rápido)."""
+    try:
+        state = json.loads(_tunnel_state_path().read_text(encoding="utf-8"))
+        port = int(state["port"])
+    except Exception:
+        return None
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.4):
+            return port
+    except OSError:
+        return None
+
+
+def run_tunnel_keeper() -> int:
+    """
+    Processo guardião: abre o túnel, publica a porta no ficheiro de estado e
+    bloqueia a ler stdin até EOF (= a app fechou). Nunca imprime segredos.
+    """
+    cfg = load_config()
+    ssh_cfg = (cfg or {}).get("ssh")
+    if not ssh_cfg:
+        print(json.dumps({"type": "info", "message": "sem seccao ssh no config — guardiao desnecessario"}))
+        return 0
+    from sshtunnel import SSHTunnelForwarder
+    key_path = os.path.expanduser(ssh_cfg.get("key", "~/.ssh/upexnote_vps"))
+    if not Path(key_path).exists():
+        print(json.dumps({"type": "error", "message": f"chave SSH nao encontrada em {key_path}"}))
+        return 1
+    tunnel = SSHTunnelForwarder(
+        (ssh_cfg.get("host", cfg["host"]), ssh_cfg.get("port", 22)),
+        ssh_username=ssh_cfg.get("user", "root"),
+        ssh_pkey=key_path,
+        remote_bind_address=(ssh_cfg.get("remote_host", "127.0.0.1"), ssh_cfg.get("remote_port", cfg.get("port", 5432))),
+        local_bind_address=("127.0.0.1", 0),
+    )
+    tunnel.start()
+    state_path = _tunnel_state_path()
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps({"port": tunnel.local_bind_port, "pid": os.getpid()}), encoding="utf-8"
+    )
+    print(json.dumps({"type": "ready", "port": tunnel.local_bind_port}), flush=True)
+    try:
+        sys.stdin.read()  # bloqueia até a app fechar (EOF no pipe)
+    except Exception:
+        pass
+    finally:
+        try:
+            tunnel.stop()
+        except Exception:
+            pass
+        try:
+            state_path.unlink()
+        except OSError:
+            pass
+    return 0
+
+
 def connect(cfg=None):
     """
     Liga ao Postgres. Se o db_config.json tiver a secção "ssh", a ligação
     passa por um TÚNEL SSH (porta do Postgres fechada ao público; a chave SSH
-    da máquina é a credencial — funciona de qualquer rede/IP/VPN). Sem "ssh",
-    liga por TCP direto. Fechar SEMPRE com close_connection(conn).
+    da máquina é a credencial — funciona de qualquer rede/IP/VPN). Preferência:
+    túnel do guardião persistente (rápido); fallback: túnel próprio por
+    chamada. Sem "ssh", liga por TCP direto. Fechar SEMPRE com close_connection().
     """
     global _active_tunnel
     import psycopg2
@@ -177,26 +255,7 @@ def connect(cfg=None):
     if not pw:
         raise RuntimeError(f"password do Postgres não configurada ({PG_PASSWORD_KEY})")
 
-    host = cfg["host"]
-    port = cfg.get("port", 5432)
-    ssh_cfg = cfg.get("ssh")
-    if ssh_cfg:
-        from sshtunnel import SSHTunnelForwarder
-        key_path = os.path.expanduser(ssh_cfg.get("key", "~/.ssh/upexnote_vps"))
-        if not Path(key_path).exists():
-            raise RuntimeError(
-                f"chave SSH não encontrada em {key_path} — ver runbook no PROJECT_CONTEXT.md"
-            )
-        _active_tunnel = SSHTunnelForwarder(
-            (ssh_cfg.get("host", host), ssh_cfg.get("port", 22)),
-            ssh_username=ssh_cfg.get("user", "root"),
-            ssh_pkey=key_path,
-            remote_bind_address=(ssh_cfg.get("remote_host", "127.0.0.1"), ssh_cfg.get("remote_port", port)),
-        )
-        _active_tunnel.start()
-        host, port = "127.0.0.1", _active_tunnel.local_bind_port
-
-    try:
+    def _pg(host, port):
         return psycopg2.connect(
             host=host,
             port=port,
@@ -206,6 +265,36 @@ def connect(cfg=None):
             sslmode=cfg.get("sslmode", "prefer"),
             connect_timeout=cfg.get("connect_timeout", 8),
         )
+
+    host = cfg["host"]
+    port = cfg.get("port", 5432)
+    ssh_cfg = cfg.get("ssh")
+    if not ssh_cfg:
+        return _pg(host, port)
+
+    # Caminho rápido: túnel do guardião já aberto
+    keeper = _keeper_port()
+    if keeper:
+        try:
+            return _pg("127.0.0.1", keeper)
+        except Exception:
+            pass  # guardião meio-morto → cai no túnel próprio
+
+    from sshtunnel import SSHTunnelForwarder
+    key_path = os.path.expanduser(ssh_cfg.get("key", "~/.ssh/upexnote_vps"))
+    if not Path(key_path).exists():
+        raise RuntimeError(
+            f"chave SSH não encontrada em {key_path} — ver runbook no PROJECT_CONTEXT.md"
+        )
+    _active_tunnel = SSHTunnelForwarder(
+        (ssh_cfg.get("host", host), ssh_cfg.get("port", 22)),
+        ssh_username=ssh_cfg.get("user", "root"),
+        ssh_pkey=key_path,
+        remote_bind_address=(ssh_cfg.get("remote_host", "127.0.0.1"), ssh_cfg.get("remote_port", port)),
+    )
+    _active_tunnel.start()
+    try:
+        return _pg("127.0.0.1", _active_tunnel.local_bind_port)
     except Exception:
         _stop_tunnel()
         raise

@@ -340,11 +340,35 @@ fn transcribe(app: AppHandle, engine: String, file: String, dest: Option<String>
     Ok(())
 }
 
+/// Guardião do túnel SSH (item 10): processo `tunnel-keep` lançado no arranque
+/// que abre o túnel UMA vez e o mantém vivo — as chamadas do worker detetam-no
+/// e ligam direto, sem pagar o handshake SSH a cada comando. O stdin dele fica
+/// preso a este processo: quando a app morre (até em crash), o pipe fecha e o
+/// guardião termina sozinho — sem processos órfãos. O Child fica guardado num
+/// static para o stdin não ser largado (drop = EOF = guardião sai).
+static TUNNEL_KEEPER: std::sync::Mutex<Option<std::process::Child>> = std::sync::Mutex::new(None);
+
+fn spawn_tunnel_keeper() {
+    let mut cmd = worker_command(&["tunnel-keep"]);
+    cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null());
+    with_no_window(&mut cmd);
+    if let Ok(child) = cmd.spawn() {
+        *TUNNEL_KEEPER.lock().unwrap() = Some(child);
+    }
+    // Falhou? Sem drama: cada chamada volta ao túnel próprio (comportamento antigo).
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|_app| {
+            // Em thread própria: o spawn é barato, mas não queremos NADA a
+            // competir com a inicialização da janela (lição da v0.4.5).
+            std::thread::spawn(spawn_tunnel_keeper);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,

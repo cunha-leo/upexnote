@@ -197,6 +197,11 @@ def cmd_transcribe(args):
     return 0 if result["ok"] else 2
 
 
+def cmd_tunnel_keep(args):
+    from . import db
+    return db.run_tunnel_keeper()
+
+
 def cmd_db_check(args):
     from . import db
     if not db.load_config():
@@ -472,6 +477,8 @@ def build_parser():
     p_lack.add_argument("--id", type=int, required=True, help="ID da transcricao.")
     p_lack.add_argument("--reopen", action="store_true", help="Reabre o aviso (em vez de marcar como revisto).")
 
+    sub.add_parser("tunnel-keep", help="(interno) Guardiao do tunel SSH persistente; termina no EOF do stdin.")
+
     return parser
 
 
@@ -494,6 +501,7 @@ def main(argv=None):
         "library-update": cmd_library_update,
         "library-delete": cmd_library_delete,
         "library-ack": cmd_library_ack,
+        "tunnel-keep": cmd_tunnel_keep,
     }
     return handlers[args.command](args)
 

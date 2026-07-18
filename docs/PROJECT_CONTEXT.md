@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 16 de julho de 2026 (v0.10.1 — versão visível na titlebar + © UpexFlow na sidebar)  
+**Última atualização:** 16 de julho de 2026 (v0.11.0 — túnel SSH persistente via processo guardião, item 10 do backlog)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -290,7 +290,7 @@ Os comandos Tauri `library*` eram síncronos com IO bloqueante (spawn do worker 
 
 ### Backlog (continuação)
 
-10. **Túnel SSH reaberto a cada chamada (bug encontrado, não a implementação em si).** Cada `invoke` que toca no Postgres (`library`, `db-check`, etc.) abre um `SSHTunnelForwarder` novo e fecha-o no fim (`db.connect()`/`close_connection()` em `db.py`) — handshake SSH completo por comando. É a causa raiz de a Biblioteca (e qualquer chamada à DB) parecer lenta, especialmente na primeira vez. Distinto do bug do item 11 (que já foi corrigido): aquele era o React a re-montar a vista; este é o próprio custo de rede por chamada. Possível solução futura: túnel persistente reutilizado entre chamadas (processo do worker teria de ficar vivo entre invokes, ou um pool de ligação) — mudança de arquitetura mais pesada, não trivial. Não agendado.
+10. ~~Túnel SSH reaberto a cada chamada.~~ **FEITO em v0.11.0 (2026-07-16, ver Registro).** Processo guardião `tunnel-keep` lançado pela app no arranque mantém o túnel vivo; `db.py` deteta-o (state file + probe TCP) e liga direto; fallback automático para o túnel por chamada se o guardião não estiver vivo. Ciclo de vida pelo truque do stdin (EOF quando a app morre → sem órfãos). Handshake SSH removido do custo por comando (41.9s→7-10s em rede degradada; ≈1-2s em rede normal).
 
 11. ~~Trocar de aba reiniciava a Biblioteca do zero.~~ **FEITO em v0.4.4 (2026-07-15).** As 3 vistas (Transcrever/Biblioteca/Definições) ficavam montadas/desmontadas condicionalmente — o React destruía o estado da Biblioteca (lista, resumo, detalhe aberto) sempre que trocavas de aba, obrigando a recarregar tudo pelo túnel SSH outra vez. Corrigido: as 3 vistas ficam sempre montadas, só escondidas via CSS (`.view-pane.hidden`).
 
@@ -361,6 +361,25 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-16: túnel SSH persistente (item 10 do backlog) — v0.11.0
+
+### O que mudou
+- **Causa raiz atacada:** cada invoke que tocava no Postgres abria um `SSHTunnelForwarder` novo (handshake completo por comando — a razão de a Biblioteca custar 2-5s por clique).
+- **Processo guardião:** novo comando interno do worker `tunnel-keep` — abre o túnel UMA vez (porta local efémera), publica `{port, pid}` em `tunnel_state.json` (dev: junto ao código; congelado: `%APPDATA%\UpexNote`) e bloqueia a ler stdin até EOF.
+- **Ciclo de vida sem órfãos (truque do stdin):** o Rust lança o guardião no arranque (`.setup()`, em thread própria — lição da v0.4.5: nada compete com a inicialização da janela) e guarda o `Child` num static para o stdin ficar preso ao processo da app. App fecha (até em CRASH) → pipe fecha → EOF → guardião termina e limpa o state file. Zero gestão manual de processos.
+- **Caminho rápido no `db.py`:** `connect()` deteta o guardião (state file + probe TCP 0.4s) e liga direto a `127.0.0.1:<porta>`; qualquer falha cai no túnel próprio por chamada (comportamento antigo intacto — NUNCA fica pior que antes). Guardião falhou ao arrancar? Cada chamada usa o fallback.
+- Worker re-empacotado (PyInstaller). Versão: **0.11.0**.
+
+### Evidência / teste
+- Medições em rede DEGRADADA (pior caso real): baseline sem guardião 41.9s (db-check); com guardião: dev 10.0s / library 15.2s; **worker congelado 7.3s / 10.8s** — o handshake SSH desapareceu do custo por chamada; o que resta é latência de rede das queries + arranque do Python (em rede normal ≈1-2s). `library` devolve JSON correto (7 transcrições, agregados certos) pelo caminho rápido, dev e congelado.
+- Pendente: validação do utilizador na app instalada (sentir a Biblioteca fluida a partir do 2º acesso).
+
+### Impacto em dados, custo ou privacidade
+- Nenhum dado novo; o túnel continua com bind só em 127.0.0.1 e a mesma chave SSH. Sem custo.
+
+### Próximo passo
+- Validação do utilizador. Item 10 fecha o grupo de performance da Biblioteca (com a cache v0.8.1).
 
 ### Registro — 2026-07-16: identidade profissional no front — versão visível + direitos — v0.10.1
 
