@@ -203,17 +203,30 @@ def cmd_tunnel_keep(args):
 
 
 def cmd_db_check(args):
+    # --mode permite testar um modo ESPECÍFICO sem o gravar (o ecrã de perfis
+    # usa --mode vps para validar a config de administrador antes de trocar).
     from . import db
-    if not db.load_config():
-        _emit(sys.stdout, {"type": "error", "message": "db_config.json não encontrado — copia db_config.example.json para db_config.json."})
-        return 1
-    if not get_key(db.PG_PASSWORD_KEY):
-        _emit(sys.stdout, {"type": "error", "message": f"Password não configurada. Corre: set-key --name {db.PG_PASSWORD_KEY}"})
-        return 1
+    mode = getattr(args, "mode", None) or db.storage_mode()
+    if mode == "vps":
+        if not db.load_config():
+            _emit(sys.stdout, {"type": "error", "message": "db_config.json não encontrado — copia db_config.example.json para db_config.json."})
+            return 1
+        if not get_key(db.PG_PASSWORD_KEY):
+            _emit(sys.stdout, {"type": "error", "message": f"Password não configurada. Corre: set-key --name {db.PG_PASSWORD_KEY}"})
+            return 1
     try:
-        res = db.check()
-        _emit(sys.stdout, {"type": "db", "ok": True, "rows": res["rows"],
-                           "message": f"Ligação OK. Tabela 'transcriptions' pronta. Linhas atuais: {res['rows']}."})
+        if getattr(args, "mode", None):
+            # força o modo pedido só durante este teste
+            original = db.storage_mode
+            db.storage_mode = lambda: args.mode
+            try:
+                res = db.check()
+            finally:
+                db.storage_mode = original
+        else:
+            res = db.check()
+        _emit(sys.stdout, {"type": "db", "ok": True, "rows": res["rows"], "mode": mode,
+                           "message": f"Ligação OK ({mode}). Linhas atuais: {res['rows']}."})
         return 0
     except Exception as e:  # noqa: BLE001
         _emit(sys.stdout, {"type": "error", "message": f"Falha na ligação/tabela: {e}"})
@@ -389,6 +402,7 @@ def cmd_library_delete(args):
 def cmd_get_settings(args):
     # Definicoes de armazenamento (para o ecra de Definicoes): pasta padrao
     # em vigor, se e personalizada, e a organizacao por dia/motor.
+    from . import db
     s = paths.load_settings()
     _emit(sys.stdout, {
         "type": "settings",
@@ -396,6 +410,8 @@ def cmd_get_settings(args):
         "storage_dir_custom": bool(s.get("storage_dir")),
         "default_storage_dir": str(paths.TRANSCRIPTS_DIR),
         "organize_by_day_engine": paths.organize_by_day_engine(),
+        "storage_mode": db.storage_mode(),
+        "vps_configured": db.is_configured(),
     })
     return 0
 
@@ -414,6 +430,8 @@ def cmd_set_settings(args):
         s["storage_dir"] = str(d)
     if getattr(args, "organize", None) in ("on", "off"):
         s["organize_by_day_engine"] = args.organize == "on"
+    if getattr(args, "storage_mode", None) in ("local", "vps"):
+        s["storage_mode"] = args.storage_mode
     paths.save_settings(s)
     return cmd_get_settings(args)
 
@@ -440,6 +458,7 @@ def build_parser():
     sub.add_parser("get-settings", help="Definicoes de armazenamento em vigor (JSON).")
 
     p_ss = sub.add_parser("set-settings", help="Altera as definicoes de armazenamento.")
+    p_ss.add_argument("--storage-mode", choices=["local", "vps"], help="Modo de armazenamento: SQLite local ou Postgres/VPS.")
     p_ss.add_argument("--storage-dir", help="Pasta padrao dos transcripts.")
     p_ss.add_argument("--clear-storage-dir", action="store_true", help="Volta a pasta padrao de fabrica.")
     p_ss.add_argument("--organize", choices=["on", "off"], help="Organizar em subpastas dia/motor.")
@@ -456,7 +475,8 @@ def build_parser():
 
     sub.add_parser("list-keys", help="Estado de todas as chaves numa so chamada (JSON).")
 
-    sub.add_parser("db-check", help="Testa a ligacao ao Postgres da VPS e garante a tabela.")
+    p_dbc = sub.add_parser("db-check", help="Testa a ligacao a base (modo em vigor, ou --mode especifico) e garante o schema.")
+    p_dbc.add_argument("--mode", choices=["local", "vps"], help="Testa um modo especifico SEM o gravar.")
 
     sub.add_parser("db-migrate", help="Migra o schema flat (v1) para hub-and-spoke (v2). Uma vez.")
 

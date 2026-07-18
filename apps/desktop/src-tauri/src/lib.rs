@@ -221,6 +221,19 @@ async fn library_item(id: i64) -> Result<String, String> {
     run_cli_async(vec!["library-item".into(), "--id".into(), id.to_string()]).await
 }
 
+/// Testa a ligação à base. `mode` opcional ("local"/"vps") testa um modo
+/// específico SEM o gravar — o ecrã de perfis valida a config de administrador
+/// com isto antes de trocar o modo.
+#[tauri::command]
+async fn db_check(mode: Option<String>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["db-check".into()];
+    if let Some(m) = mode {
+        args.push("--mode".into());
+        args.push(m);
+    }
+    run_cli_async(args).await
+}
+
 /// Edita o texto clean de uma transcrição. O texto vai por STDIN (pode ser
 /// grande e ter caracteres especiais), nunca por argumentos. A raw é intacta.
 /// Corre numa thread de bloqueio (não congela a UI).
@@ -281,6 +294,7 @@ fn set_settings(
     storage_dir: Option<String>,
     clear_storage_dir: Option<bool>,
     organize: Option<bool>,
+    storage_mode: Option<String>,
 ) -> Result<String, String> {
     let mut args: Vec<String> = vec!["set-settings".into()];
     if clear_storage_dir.unwrap_or(false) {
@@ -292,6 +306,10 @@ fn set_settings(
     if let Some(org) = organize {
         args.push("--organize".into());
         args.push(if org { "on".into() } else { "off".into() });
+    }
+    if let Some(mode) = storage_mode {
+        args.push("--storage-mode".into());
+        args.push(mode);
     }
     let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     run_cli(&refs)
@@ -372,7 +390,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
-            list_system_fonts, transcribe
+            list_system_fonts, db_check, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

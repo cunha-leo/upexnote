@@ -201,6 +201,20 @@ const pt = {
   typShadow: "Sombra no texto (profundidade subtil)",
   typPreview: "A raposa ágil salta sobre o cão preguiçoso. 0123456789 — AaBbCc àéõç",
   typReset: "Repor tipografia",
+
+  // Ecrã de perfis (item 13, Fase 1)
+  pgTitle: "Como queres usar o UpexNote nesta máquina?",
+  pgUserTitle: "Utilizador",
+  pgUserDesc: "Tudo fica guardado nesta máquina, num banco interno automático — zero configuração, zero manutenção. Só precisas das tuas chaves de API.",
+  pgAdminTitle: "Administrador",
+  pgAdminDesc: "Liga à base central na VPS (Postgres por túnel SSH). Requer a configuração e as credenciais do dono nesta máquina.",
+  pgChecking: "A validar a ligação à VPS…",
+  pgAdminFail: "Esta máquina não tem configuração de administrador válida (db_config, chave SSH e password). O assistente de configuração chega numa próxima versão — por agora, entra como Utilizador.",
+  pgHint: "Podes trocar de perfil mais tarde, nas Definições.",
+  stoModeLabel: "Armazenamento ativo",
+  stoModeLocal: "Local nesta máquina (SQLite)",
+  stoModeVps: "VPS (Postgres)",
+  stoSwitchProfile: "Trocar de perfil…",
 } as const;
 
 export type Key = keyof typeof pt;
@@ -376,6 +390,19 @@ const en: Record<Key, string> = {
   typShadow: "Text shadow (subtle depth)",
   typPreview: "The quick brown fox jumps over the lazy dog. 0123456789 — AaBbCc",
   typReset: "Reset typography",
+
+  pgTitle: "How do you want to use UpexNote on this machine?",
+  pgUserTitle: "User",
+  pgUserDesc: "Everything is stored on this machine in an automatic internal database — zero setup, zero maintenance. You only need your API keys.",
+  pgAdminTitle: "Administrator",
+  pgAdminDesc: "Connects to the central database on the VPS (Postgres over SSH tunnel). Requires the owner's configuration and credentials on this machine.",
+  pgChecking: "Validating the VPS connection…",
+  pgAdminFail: "This machine has no valid administrator configuration (db_config, SSH key and password). The setup wizard arrives in a future version — for now, enter as User.",
+  pgHint: "You can switch profiles later in Settings.",
+  stoModeLabel: "Active storage",
+  stoModeLocal: "Local on this machine (SQLite)",
+  stoModeVps: "VPS (Postgres)",
+  stoSwitchProfile: "Switch profile…",
 };
 
 const es: Record<Key, string> = {
@@ -549,6 +576,19 @@ const es: Record<Key, string> = {
   typShadow: "Sombra en el texto (profundidad sutil)",
   typPreview: "El veloz murciélago hindú comía feliz cardillo y kiwi. 0123456789 — AaBbCc ñáü",
   typReset: "Restaurar tipografía",
+
+  pgTitle: "¿Cómo quieres usar UpexNote en esta máquina?",
+  pgUserTitle: "Usuario",
+  pgUserDesc: "Todo queda guardado en esta máquina, en una base de datos interna automática — cero configuración, cero mantenimiento. Solo necesitas tus claves de API.",
+  pgAdminTitle: "Administrador",
+  pgAdminDesc: "Conecta con la base central en la VPS (Postgres por túnel SSH). Requiere la configuración y las credenciales del dueño en esta máquina.",
+  pgChecking: "Validando la conexión con la VPS…",
+  pgAdminFail: "Esta máquina no tiene configuración de administrador válida (db_config, clave SSH y contraseña). El asistente llega en una próxima versión — por ahora, entra como Usuario.",
+  pgHint: "Puedes cambiar de perfil más tarde, en Ajustes.",
+  stoModeLabel: "Almacenamiento activo",
+  stoModeLocal: "Local en esta máquina (SQLite)",
+  stoModeVps: "VPS (Postgres)",
+  stoSwitchProfile: "Cambiar de perfil…",
 };
 
 const DICTS: Record<Lang, Record<Key, string>> = { pt, en, es };

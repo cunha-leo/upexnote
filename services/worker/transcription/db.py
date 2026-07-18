@@ -144,6 +144,35 @@ LEFT JOIN transcript_texts x ON x.transcription_id = t.id
 WHERE t.id = %s
 """
 
+# Variante SQLite: jsonb_agg não existe; json_group_array + subquery ordenada.
+SNAPSHOT_JOIN_SQLITE = """
+INSERT INTO transcriptions_history
+(change_type, original_id, created_at, engine, source_filename, source_path,
+ language, duration_s, cost_usd, processing_s, validation_ok, problems,
+ clean_text, raw_text, clean_path, host)
+SELECT %s, t.id, t.created_at, e.code, t.source_filename, t.source_path,
+ t.language, m.duration_s, m.cost_usd, m.processing_s, t.validation_ok,
+ (SELECT json_group_array(detail) FROM (
+    SELECT detail FROM transcription_problems WHERE transcription_id = t.id ORDER BY id)),
+ x.clean_text, x.raw_text, x.clean_path, t.host
+FROM transcriptions t
+LEFT JOIN engines e ON e.id = t.engine_id
+LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
+LEFT JOIN transcript_texts x ON x.transcription_id = t.id
+WHERE t.id = %s
+"""
+
+
+def _snapshot_sql():
+    return SNAPSHOT_JOIN_SQLITE if storage_mode() == "local" else SNAPSHOT_JOIN
+
+
+def _iso(v):
+    """created_at vem como datetime (psycopg2) ou string ISO (sqlite)."""
+    if v is None:
+        return None
+    return v if isinstance(v, str) else v.isoformat()
+
 
 def load_config():
     if not CONFIG_PATH.exists():
@@ -156,6 +185,114 @@ def load_config():
 
 def is_configured():
     return bool(load_config()) and bool(get_key(PG_PASSWORD_KEY))
+
+
+# --------------------------------------------------------------------------
+# Modo de armazenamento (item 13, Fase 1 — 2026-07-16):
+#   "vps"   → Postgres na VPS por túnel SSH (modo administrador/power user)
+#   "local" → SQLite embutido nesta máquina (modo utilizador: zero instalação,
+#             zero manutenção — o "banco interno" invisível de toda app desktop)
+# A escolha vem do ecrã de perfis (settings.json); sem escolha explícita, o
+# default preserva o comportamento antigo: vps se houver config+password,
+# local caso contrário (instalação virgem de um amigo → SQLite automático).
+# --------------------------------------------------------------------------
+
+def storage_mode() -> str:
+    from . import paths
+    mode = (paths.load_settings() or {}).get("storage_mode")
+    if mode in ("local", "vps"):
+        return mode
+    return "vps" if is_configured() else "local"
+
+
+def _sqlite_path() -> Path:
+    if getattr(sys, "frozen", False):
+        base = Path(os.environ.get("APPDATA", str(Path.home()))) / "UpexNote"
+    else:
+        base = Path(__file__).resolve().parent
+    return base / "upexnote.db"
+
+
+# Tradução do SQL Postgres → SQLite. As queries do módulo ficam escritas UMA
+# vez (dialeto Postgres); o adaptador converte o que difere. Regras cobertas:
+# placeholders, ILIKE, now(), e os tipos/DEFAULTs do DDL.
+_SQLITE_DDL_RULES = [
+    ("bigserial PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+    ("smallserial PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT"),
+    ("timestamptz NOT NULL DEFAULT now()", "TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))"),
+    ("timestamptz", "TEXT"),
+    ("boolean NOT NULL DEFAULT false", "INTEGER NOT NULL DEFAULT 0"),
+    ("boolean", "INTEGER"),
+    ("jsonb", "TEXT"),
+    ("numeric", "REAL"),
+    ("smallint", "INTEGER"),
+    ("bigint", "INTEGER"),
+]
+
+
+def _to_sqlite_sql(sql: str) -> str:
+    for a, b in _SQLITE_DDL_RULES:
+        sql = sql.replace(a, b)
+    sql = sql.replace(" ILIKE ", " LIKE ")
+    sql = sql.replace("now()", "strftime('%Y-%m-%dT%H:%M:%fZ','now')")
+    return sql.replace("%s", "?")
+
+
+class _SqliteCursor:
+    """Adaptador mínimo: dá ao sqlite3.Cursor a cara do cursor psycopg2 que o
+    resto do módulo usa (context manager + tradução do SQL)."""
+
+    def __init__(self, cur):
+        self._c = cur
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._c.close()
+
+    def execute(self, sql, params=()):
+        self._c.execute(_to_sqlite_sql(sql), params)
+        return self
+
+    def fetchone(self):
+        return self._c.fetchone()
+
+    def fetchall(self):
+        return self._c.fetchall()
+
+    @property
+    def description(self):
+        return self._c.description
+
+
+class _SqliteConn:
+    def __init__(self, con):
+        self._con = con
+
+    def cursor(self):
+        return _SqliteCursor(self._con.cursor())
+
+    def commit(self):
+        self._con.commit()
+
+    def rollback(self):
+        self._con.rollback()
+
+    def close(self):
+        self._con.close()
+
+
+def _connect_sqlite():
+    import sqlite3
+    if sqlite3.sqlite_version_info < (3, 35):
+        raise RuntimeError(f"SQLite demasiado antigo ({sqlite3.sqlite_version}) — precisa de >=3.35 (RETURNING)")
+    path = _sqlite_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(str(path))
+    con.execute("PRAGMA foreign_keys = ON")
+    con.execute("PRAGMA journal_mode = WAL")
+    return _SqliteConn(con)
 
 
 _active_tunnel = None
@@ -198,6 +335,9 @@ def run_tunnel_keeper() -> int:
     Processo guardião: abre o túnel, publica a porta no ficheiro de estado e
     bloqueia a ler stdin até EOF (= a app fechou). Nunca imprime segredos.
     """
+    if storage_mode() == "local":
+        print(json.dumps({"type": "info", "message": "modo local (SQLite) — guardiao desnecessario"}))
+        return 0
     cfg = load_config()
     ssh_cfg = (cfg or {}).get("ssh")
     if not ssh_cfg:
@@ -248,6 +388,9 @@ def connect(cfg=None):
     """
     global _active_tunnel
     import psycopg2
+    if storage_mode() == "local":
+        return _connect_sqlite()
+
     cfg = cfg or load_config()
     if not cfg:
         raise RuntimeError("db_config.json não encontrado")
@@ -430,8 +573,8 @@ def library_summary():
             "cost_total": float(t["cost_total"]),
             "duration_total": float(t["duration_total"]),
             "proc_avg": float(t["proc_avg"]),
-            "first_at": t["first_at"].isoformat() if t["first_at"] else None,
-            "last_at": t["last_at"].isoformat() if t["last_at"] else None,
+            "first_at": _iso(t["first_at"]),
+            "last_at": _iso(t["last_at"]),
             "by_engine": [
                 {
                     "engine": r["engine"],
@@ -472,7 +615,7 @@ def library_list(limit=200, search=None):
             """, params)
             items = _rows_to_dicts(cur)
         for it in items:
-            it["created_at"] = it["created_at"].isoformat() if it["created_at"] else None
+            it["created_at"] = _iso(it["created_at"])
             for k in ("duration_s", "cost_usd", "processing_s"):
                 it[k] = float(it[k]) if it[k] is not None else None
         return items
@@ -504,8 +647,8 @@ def library_item(item_id):
                 (int(item_id),),
             )
             it["problems"] = [r[0] for r in cur.fetchall()]
-        it["created_at"] = it["created_at"].isoformat() if it["created_at"] else None
-        it["edited_at"] = it["edited_at"].isoformat() if it["edited_at"] else None
+        it["created_at"] = _iso(it["created_at"])
+        it["edited_at"] = _iso(it["edited_at"])
         for k in ("duration_s", "cost_usd", "processing_s"):
             it[k] = float(it[k]) if it[k] is not None else None
         return it
@@ -530,7 +673,7 @@ def update_transcription(item_id, new_clean_text):
             if not row:
                 return {"ok": False, "error": "not_found"}
             clean_path = row[0]
-            cur.execute(SNAPSHOT_JOIN, ("update", int(item_id)))
+            cur.execute(_snapshot_sql(), ("update", int(item_id)))
             cur.execute(
                 "UPDATE transcript_texts SET clean_text = %s WHERE transcription_id = %s",
                 (new_clean_text, int(item_id)),
@@ -576,7 +719,7 @@ def delete_transcription(item_id):
             cur.execute("SELECT 1 FROM transcriptions WHERE id = %s AND deleted_at IS NULL", (int(item_id),))
             if not cur.fetchone():
                 return {"ok": False, "error": "not_found"}
-            cur.execute(SNAPSHOT_JOIN, ("delete", int(item_id)))
+            cur.execute(_snapshot_sql(), ("delete", int(item_id)))
             cur.execute("UPDATE transcriptions SET deleted_at = now() WHERE id = %s", (int(item_id),))
         conn.commit()
         return {"ok": True}
@@ -586,12 +729,13 @@ def delete_transcription(item_id):
 
 def insert_transcription(record, log=print):
     """best-effort: devolve o id inserido ou None; nunca levanta exceção."""
-    if not load_config():
-        log("DB: db_config.json ausente — só ficheiro local (sem escrita na VPS).")
-        return None
-    if not get_key(PG_PASSWORD_KEY):
-        log("DB: password do Postgres não configurada — só ficheiro local.")
-        return None
+    if storage_mode() == "vps":
+        if not load_config():
+            log("DB: db_config.json ausente — só ficheiro local (sem escrita na VPS).")
+            return None
+        if not get_key(PG_PASSWORD_KEY):
+            log("DB: password do Postgres não configurada — só ficheiro local.")
+            return None
     conn = None
     try:
         conn = connect()
@@ -622,10 +766,11 @@ def insert_transcription(record, log=print):
                     (new_id, _classify_problem(p), p),
                 )
         conn.commit()
-        log(f"DB: linha #{new_id} gravada no Postgres da VPS.")
+        where = "na base local (SQLite)" if storage_mode() == "local" else "no Postgres da VPS"
+        log(f"DB: linha #{new_id} gravada {where}.")
         return new_id
     except Exception as e:  # noqa: BLE001 - best-effort, reportar e seguir
-        log(f"DB: não gravou na VPS ({e}) — ficheiro local está seguro; sincroniza depois.")
+        log(f"DB: não gravou na base ({e}) — ficheiro local está seguro; sincroniza depois.")
         return None
     finally:
         close_connection(conn)
@@ -639,8 +784,12 @@ def migrate_v1_to_v2(log=print):
     - cria o schema novo e copia os dados PRESERVANDO os ids;
     - tudo numa transação, com verificação de contagens ANTES do commit;
     - `transcriptions_history` fica intacta.
-    Idempotente: se já for v2, não faz nada.
+    Idempotente: se já for v2, não faz nada. Só se aplica ao modo VPS (o
+    SQLite local nasce já em v2 — não existe legado para migrar).
     """
+    if storage_mode() == "local":
+        log("Migração: modo local (SQLite) nasce em v2 — nada a migrar.")
+        return {"ok": True, "migrated": False}
     conn = connect()
     try:
         conn.autocommit = False

@@ -805,6 +805,8 @@ type StorageSettings = {
   storage_dir_custom: boolean;
   default_storage_dir: string;
   organize_by_day_engine: boolean;
+  storage_mode?: "local" | "vps";
+  vps_configured?: boolean;
 };
 
 function StorageSettingsCard() {
@@ -856,6 +858,25 @@ function StorageSettingsCard() {
       <p className="muted" style={{ marginTop: -6, marginBottom: 16 }}>
         {t("stoIntro")}
       </p>
+      <div className="field">
+        <label>{t("stoModeLabel")}</label>
+        <div className="row wrap">
+          <span className={"badge " + (s?.storage_mode === "vps" ? "ok" : "")}>
+            {s?.storage_mode === "vps" ? "🔒 " + t("stoModeVps") : t("stoModeLocal")}
+          </span>
+          <button
+            className="secondary"
+            onClick={() => {
+              // limpa perfil + cache da Biblioteca (pertence ao modo atual)
+              localStorage.removeItem("upexnote-profile");
+              localStorage.removeItem("upexnote-lib-cache");
+              window.location.reload();
+            }}
+          >
+            {t("stoSwitchProfile")}
+          </button>
+        </div>
+      </div>
       <div className="field">
         <label>{t("stoFolderLabel")}</label>
         <div className="row">
@@ -1005,6 +1026,82 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// Ecrã de perfis (item 13, Fase 1): decide o modo de armazenamento de forma
+// EXPLÍCITA (preferência do utilizador — nada de deteção silenciosa).
+// Utilizador → SQLite local, zero fricção. Administrador → valida uma ligação
+// REAL à VPS antes de trocar (os segredos são a autenticação; sem eles a porta
+// não abre a ninguém). O assistente de máquina virgem chega na Fase 1b.
+// ---------------------------------------------------------------------------
+function ProfileGate({ onDone }: { onDone: (profile: string) => void }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState<"" | "user" | "admin">("");
+  const [err, setErr] = useState("");
+
+  function finish(profile: string) {
+    // cache da Biblioteca pertence ao modo anterior — nunca misturar bases
+    localStorage.removeItem("upexnote-lib-cache");
+    localStorage.setItem("upexnote-profile", profile);
+    onDone(profile);
+  }
+
+  async function chooseUser() {
+    setBusy("user");
+    try {
+      await invoke("set_settings", { storageMode: "local" });
+    } catch { /* settings é best-effort; o worker cai em local por defeito */ }
+    finish("user");
+  }
+
+  async function chooseAdmin() {
+    setBusy("admin");
+    setErr("");
+    try {
+      const raw = await invoke<string>("db_check", { mode: "vps" });
+      const obj = JSON.parse(raw);
+      if (obj.ok) {
+        await invoke("set_settings", { storageMode: "vps" });
+        finish("admin");
+        return;
+      }
+      setErr(obj.message || t("pgAdminFail"));
+    } catch {
+      setErr(t("pgAdminFail"));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div className="profile-gate">
+      <div className="pg-head">
+        <span className="brand-mark"><BrandMark size={30} /></span>
+        <div className="wordmark" style={{ fontSize: 22 }}>
+          <span className="up">Upex</span><span className="ex">Note</span>
+        </div>
+      </div>
+      <h1 className="pg-title">{t("pgTitle")}</h1>
+      <div className="pg-cards">
+        <button className="pg-card" onClick={chooseUser} disabled={busy !== ""}>
+          <span className="pg-ico"><Mic size={22} strokeWidth={1.75} /></span>
+          <span className="pg-name">{t("pgUserTitle")}</span>
+          <span className="pg-desc">{t("pgUserDesc")}</span>
+        </button>
+        <button className="pg-card" onClick={chooseAdmin} disabled={busy !== ""}>
+          <span className="pg-ico"><Settings size={22} strokeWidth={1.75} /></span>
+          <span className="pg-name">{t("pgAdminTitle")}</span>
+          <span className="pg-desc">{t("pgAdminDesc")}</span>
+          {busy === "admin" && (
+            <span className="pg-busy"><span className="spinner" /> {t("pgChecking")}</span>
+          )}
+        </button>
+      </div>
+      {err && <div className="key-warn pg-err">{err}</div>}
+      <div className="muted">{t("pgHint")}</div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Barra de título custom — a janela é criada sem decoração nativa
 // (decorations:false), por isso a tarja do Windows desaparece e esta barra,
 // pintada com as cores do tema, assume arrastar/min/max/fechar.
@@ -1053,6 +1150,10 @@ function App() {
   const { t } = useLang();
   const appearance = useAppearance();
   const font = useFontPrefs();
+  // Perfil escolhido no primeiro arranque (user/admin) — null = mostrar o gate
+  const [profile, setProfile] = useState<string | null>(
+    () => localStorage.getItem("upexnote-profile")
+  );
   const [view, setView] = useState<View>("transcribe");
   // Histórico de vistas para as setas voltar/avançar da barra de título
   const [histBack, setHistBack] = useState<View[]>([]);
@@ -1222,6 +1323,15 @@ function App() {
     { id: "library", icon: <LibraryBig size={16} strokeWidth={1.75} />, label: t("navLibrary") },
     { id: "settings", icon: <Settings size={16} strokeWidth={1.75} />, label: t("navSettings") },
   ];
+
+  if (profile === null) {
+    return (
+      <div className="shell">
+        <Titlebar canBack={false} canFwd={false} onBack={() => {}} onFwd={() => {}} />
+        <ProfileGate onDone={setProfile} />
+      </div>
+    );
+  }
 
   return (
     <div className="shell">

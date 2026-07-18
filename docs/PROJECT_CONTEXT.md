@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 16 de julho de 2026 (v0.11.0 — túnel SSH persistente via processo guardião, item 10 do backlog)  
+**Última atualização:** 18 de julho de 2026 (v0.12.0 — SQLite embutido + ecrã de perfis, item 13 Fase 1a)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -298,7 +298,7 @@ Os comandos Tauri `library*` eram síncronos com IO bloqueante (spawn do worker 
 
 **Nota transversal (itens 5-8):** formam uma superfície coerente de **Preferências/Aparência** nas Definições (tema, densidade, zoom, fonte, idioma) — padrão de app Electron maduro. Motivação do utilizador: vê o UpexNote a crescer muito (edições, formatação, NotebookLM/APIs de resumo, secção de notas pessoais) e quer uma base bonita, moderna e configurável desde já.
 
-13. **Distribuição / arquitetura multi-instalação — DECIDIDA em 3 fases (2026-07-16, discussão utilizador+IA; não agendada).** Contexto: a app é hoje extremamente pessoal, pode vir a ser partilhada amigavelmente; venda NÃO está nos planos (fase 3 é ideia futura, nada definido). Mas o utilizador quer levá-la "o mais profissional possível" desde já. Modelo decidido: **conteúdo local + gestão central por eventos** (o conteúdo da pessoa nunca sai da máquina dela; o admin vê métricas, não material).
+13. **Distribuição / arquitetura multi-instalação — DECIDIDA em 3 fases (2026-07-16). FASE 1a ENTREGUE em v0.12.0 (2026-07-18, ver Registro):** SQLite embutido + ecrã de perfis + indicador/troca nas Definições. Falta da Fase 1: **1b** — assistente de administrador para máquina virgem (formulário VPS validado + geração de chave SSH guiada). Fases 2-3 por agendar. Contexto: a app é hoje extremamente pessoal, pode vir a ser partilhada amigavelmente; venda NÃO está nos planos (fase 3 é ideia futura, nada definido). Mas o utilizador quer levá-la "o mais profissional possível" desde já. Modelo decidido: **conteúdo local + gestão central por eventos** (o conteúdo da pessoa nunca sai da máquina dela; o admin vê métricas, não material).
    - **Fase 1 — SQLite embutido:** biblioteca dentro do executável (não é servidor); a app cria sozinha `%APPDATA%\UpexNote\upexnote.db` no 1º arranque — zero instalação/manutenção para o utilizador, aguenta anos de transcrições/edições/histórico. `db.py` ganha segundo backend + switch no config: a instalação do dono continua na VPS (power user); qualquer outra usa o embutido. Schema hub-and-spoke porta quase 1:1. (A rejeição de SQLite de 2026-07-12 era sobre o setup PESSOAL — durabilidade — e mantém-se; para outras instalações o cálculo inverte.) Sem login: a sessão do Windows é a identidade.
    - **Fase 2 — telemetria administrativa via API:** a app reporta a uma **API fina na VPS** (nunca ligação direta de terceiros ao Postgres; 1ª fase possível via n8n, item 9) eventos SISTÉMICOS: instalação (ID anónimo), versão, região, motor, duração, custo, erros. **Sem conteúdo de transcrições.** No Postgres central: tabela de utilizadores/instalações + eventos — dá consumo, falhas, nº de utilizadores, regiões, comportamento (base para produto/marketing). Encaixa nas FKs/dimensão `actors` reservadas no item 4(c). **Profissionalização incluída nesta fase:** licença/EULA no instalador + aviso de tratamento de dados RGPD/LGPD no 1º arranque (consentimento da telemetria), transporte cifrado. Assinatura digital do instalador e build sem `db_config.json` quando houver partilha real.
    - **Fase 3 — assinatura com APIs do dono (OPCIONAL, futuro indefinido):** a app pediria transcrições à API central (chaves do dono), com consumo faturado por utilizador. Mesma camada da fase 2; só muda quem paga o motor. Só se um dia o produto for vendido.
@@ -361,6 +361,27 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-18: SQLite embutido + ecrã de perfis (item 13, Fase 1a) — v0.12.0
+
+### O que mudou
+- **Banco embutido (modo "local"):** o `db.py` ganhou um segundo backend — SQLite (stdlib, zero dependências novas) em `%APPDATA%\UpexNote\upexnote.db` (dev: junto ao código), criado sozinho no 1º uso. **Mesmo schema hub-and-spoke v2** (DDL traduzido por regras: serial→AUTOINCREMENT, timestamptz→TEXT ISO-8601 UTC, jsonb→TEXT, etc.), mesmas funções, mesmo contrato JSON — a UI não distingue. Adaptador mínimo dá ao sqlite3 a cara do psycopg2 (context manager de cursor + tradução %s→?, ILIKE→LIKE, now()→strftime, jsonb_agg→json_group_array). Requer SQLite ≥3.35 (RETURNING) — o Python empacotado traz muito mais.
+- **Seleção de modo:** `storage_mode` em settings.json ("local"/"vps"). **Default sem chave preserva o comportamento antigo:** vps se houver config+password (instalação do dono intacta), local caso contrário (instalação virgem → SQLite automático).
+- **Ecrã de perfis no 1º arranque** (decisão do item 13 — explícito, não deteção silenciosa): **Utilizador** → modo local, entra direto; **Administrador** → `db-check --mode vps` valida uma ligação REAL à VPS antes de trocar (falha → mensagem + orientação para entrar como Utilizador; o assistente de máquina virgem é a Fase 1b). Perfil guardado em localStorage; a cache da Biblioteca é limpa ao trocar (nunca misturar bases).
+- **Definições → Onde guardar:** indicador do armazenamento ativo ("🔒 VPS (Postgres)" vs "Local nesta máquina (SQLite)") + botão "Trocar de perfil…" (limpa perfil+cache e reabre o gate).
+- **Infra:** CLI `db-check --mode` (testa sem gravar), `set-settings --storage-mode`, get-settings devolve `storage_mode`+`vps_configured`; Rust `db_check(mode)` async; guardião do túnel sai imediatamente em modo local. `migrate_v1_to_v2` guardado (local nasce em v2). `insert_transcription` continua best-effort nos dois modos.
+- Worker re-empacotado. Versão: **0.12.0**.
+
+### Evidência / teste
+- **Ciclo de vida completo no SQLite (dev):** check→insert→summary/list(pesquisa)/item(problemas classificados)→update(+snapshot histórico)→ack→soft-delete(+snapshot)→migrate guard — tudo verde, acentos intactos, datas ISO UTC.
+- **Regressão VPS:** `db-check` sem argumentos → vps, 10 linhas (dados reais do utilizador intactos, incluindo as transcrições novas de 2026-07-17); `get-settings` devolve vps como default na máquina do dono sem mexer em nada.
+- Pendente: validação do utilizador na app instalada (gate → Administrador na máquina dele; simular Utilizador via "Trocar de perfil").
+
+### Impacto em dados, custo ou privacidade
+- Nenhum dado movido; modos são bases SEPARADAS (sem sync — futuro, se fizer sentido). Sem custo. SQLite local = mesmo perfil de privacidade dos transcripts locais.
+
+### Próximo passo
+- Validação do utilizador. **Fase 1b:** assistente de administrador para máquina virgem (formulário VPS + geração de chave SSH guiada + Hostinger). Depois: item 15 (produto) já nasce multi-modo.
 
 ### Registro — 2026-07-16: túnel SSH persistente (item 10 do backlog) — v0.11.0
 
