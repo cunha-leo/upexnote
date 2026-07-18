@@ -1,0 +1,10 @@
+{
+  "_comment": "Copiar para oauth_config.json (ao lado do db_config.json; instalado: %APPDATA%\\UpexNote). Registo único e gratuito: Google Cloud Console > Credentials > OAuth client ID (tipo Desktop app); GitHub > Settings > Developer settings > OAuth Apps (ativar Device Flow). IDs de cliente não são segredos, mas ficam fora do Git na mesma.",
+  "google": {
+    "client_id": "SEU_CLIENT_ID.apps.googleusercontent.com",
+    "client_secret": "SEU_CLIENT_SECRET_DESKTOP"
+  },
+  "github": {
+    "client_id": "SEU_GITHUB_CLIENT_ID"
+  }
+}

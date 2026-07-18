@@ -202,6 +202,48 @@ def cmd_tunnel_keep(args):
     return db.run_tunnel_keeper()
 
 
+def _stdin_json():
+    try:
+        return json.loads(sys.stdin.read())
+    except Exception:
+        return None
+
+
+def cmd_account(args):
+    # Identidade (item 13-C). Dados SEMPRE por stdin (nunca argv — visível na
+    # lista de processos). Um comando por operação; resposta JSON única.
+    from . import accounts
+    op = args.command
+    try:
+        if op == "account-suggest":
+            _emit(sys.stdout, {"type": "account", **accounts.suggest_user_id(args.user_id)})
+            return 0
+        data = _stdin_json()
+        if data is None:
+            _emit(sys.stdout, {"type": "error", "message": "JSON invalido no stdin."})
+            return 1
+        if op == "account-register":
+            res = accounts.register(data)
+        elif op == "account-login":
+            res = accounts.login(data.get("email"), data.get("password"))
+        elif op == "account-oauth-login":
+            res = accounts.oauth_login(data)
+        elif op == "account-update":
+            res = accounts.update_profile(data)
+        else:  # account-reset
+            res = accounts.reset_password(data.get("email"), data.get("password"))
+        _emit(sys.stdout, {"type": "account", **res})
+        return 0 if res.get("ok") else 1
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha de conta: {e}"})
+        return 1
+
+
+def cmd_oauth(args):
+    from . import oauth
+    return oauth.run_oauth(args.provider)
+
+
 def cmd_db_check(args):
     # --mode permite testar um modo ESPECÍFICO sem o gravar (o ecrã de perfis
     # usa --mode vps para validar a config de administrador antes de trocar).
@@ -499,6 +541,14 @@ def build_parser():
 
     sub.add_parser("tunnel-keep", help="(interno) Guardiao do tunel SSH persistente; termina no EOF do stdin.")
 
+    for name in ("account-register", "account-login", "account-oauth-login",
+                 "account-update", "account-reset"):
+        sub.add_parser(name, help="Identidade (dados por stdin, JSON).")
+    p_asg = sub.add_parser("account-suggest", help="Disponibilidade de user_id + sugestoes.")
+    p_asg.add_argument("--user-id", required=True)
+    p_oa = sub.add_parser("oauth", help="Login social (Google loopback+PKCE / GitHub device flow).")
+    p_oa.add_argument("--provider", choices=["google", "github"], required=True)
+
     return parser
 
 
@@ -522,6 +572,13 @@ def main(argv=None):
         "library-delete": cmd_library_delete,
         "library-ack": cmd_library_ack,
         "tunnel-keep": cmd_tunnel_keep,
+        "account-register": cmd_account,
+        "account-login": cmd_account,
+        "account-oauth-login": cmd_account,
+        "account-update": cmd_account,
+        "account-reset": cmd_account,
+        "account-suggest": cmd_account,
+        "oauth": cmd_oauth,
     }
     return handlers[args.command](args)
 

@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 18 de julho de 2026 (v0.13.0 — login padrão de mercado substitui o ecrã de perfis)  
+**Última atualização:** 18 de julho de 2026 (v0.14.0 — identidade completa: tabela users + login social, item 13-C)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -370,6 +370,26 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-18: identidade completa — tabela users + login social (item 13-C) — v0.14.0
+
+### O que mudou
+- **Tabela `users`** no banco do modo ativo (SQLite local / Postgres VPS, mesmo DDL via adaptador de dialeto): `user_id` ÚNICO (username), `email` único, nome/apelido/**telefone** (campo; SMS descartado), **`auth_provider` + `provider_id` + `provider_scopes`** (regista COMO a pessoa entrou e as permissões concedidas), `password_salt`/`password_hash` (**PBKDF2-HMAC-SHA256 120k iterações no worker** — NULL para contas OAuth), `role`, `created_at`/`updated_at`/`last_login_at`. Novo módulo `accounts.py`: register / login / oauth_login / suggest_user_id (disponibilidade + sugestões) / update_profile / reset_password.
+- **Login social REAL** (`oauth.py`, SÓ stdlib — zero dependências novas): **Google** = Authorization Code + PKCE com loopback local (padrão para apps instaladas); **GitHub** = Device Flow (só client_id; a app mostra o código de confirmação em tempo real via eventos `oauth://event`). Config em `oauth_config.json` (ao lado do db_config; example commitado) — **passo único do dono pendente:** criar as OAuth apps (grátis: Google Cloud Console tipo Desktop; GitHub OAuth App com Device Flow ativo). Sem config → erro limpo e genérico na UI.
+- **Fluxo completo na UI:** botões "Continuar com Google/GitHub" + divisor "ou" + formulário e-mail/senha; **pré-cadastro pós-OAuth** (e-mail bloqueado, nomes pré-preenchidos do provedor, user_id com verificação de disponibilidade em tempo real e sugestões clicáveis — também no Criar conta normal); OAuth de conta já existente entra direto e atualiza `last_login_at`+escopos. Sessão guarda user_id; e-mail lembrado para o próximo login.
+- **CLI:** `account-register/-login/-oauth-login/-update/-reset` (payload JSON por STDIN, nunca argv), `account-suggest`, `oauth --provider`. **Rust:** `account(op, payload)` com whitelist, `account_suggest`, `oauth_start` (streaming como o transcribe).
+- Incidente sem consequência: 1 byte nulo apareceu no App.tsx (dentro de função removida nesta versão) — detetado e limpo.
+- Worker re-empacotado. Versão: **0.14.0**.
+
+### Evidência / teste
+- Ciclo completo de contas no SQLite (módulo + CLI por stdin): register→login certo/errado→sugestões de user_id ocupado→OAuth novo→pré-cadastro→register OAuth→retorno OAuth entra direto→reset→login com senha nova→update de perfil (telefone). `oauth` sem config → erro genérico correto. Settings do dono restaurados (default vps intacto). `tsc`/`vite` limpos.
+- **Pendente:** validação visual do utilizador; registo das OAuth apps pelo dono (Google/GitHub) para os botões sociais funcionarem de ponta a ponta; conta admin dele na tabela `users` da VPS (hoje o link de administrador entra por validação de ligação, sem linha em users — juntar na Fase 1b/2).
+
+### Impacto em dados, custo ou privacidade
+- Senhas nunca em claro nem em argv; tabela users no mesmo perfil de privacidade do banco de cada modo. OAuth: só e-mail/nome/escopos do provedor. Sem custo (OAuth apps grátis).
+
+### Próximo passo
+- Utilizador: valida a UI + regista as 2 OAuth apps (guio quando quiseres). Depois: Fase 1b, MFA (Fase 2) e item 15.
 
 ### Registro — 2026-07-18: login padrão de mercado (redesenho pós-feedback) — v0.13.0
 

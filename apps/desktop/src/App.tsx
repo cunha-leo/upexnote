@@ -1033,68 +1033,162 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
 // UMA palavra sobre infraestrutura no ecrã (regra do utilizador).
 // WebView2 desta máquina: type="password" crasha → máscara via CSS.
 // ---------------------------------------------------------------------------
-type LocalAccount = { email: string; salt: string; hash: string };
+// Contas vivem na tabela `users` do banco do modo ativo (worker valida tudo;
+// senhas por stdin, PBKDF2 no worker). O frontend só orquestra os ecrãs.
+type AccountUser = { id: number; user_id: string; email: string; role: string };
+type OauthPayload = {
+  auth_provider: string; provider_id: string; email: string;
+  first_name?: string; last_name?: string; provider_scopes?: string;
+};
 
-async function hashPassword(salt: string, password: string): Promise<string> {
-  const data = new TextEncoder().encode(salt + " " + password);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+const GithubMark = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+  </svg>
+);
 
-function readAccount(): LocalAccount | null {
-  try {
-    const raw = localStorage.getItem("upexnote-account");
-    if (!raw) return null;
-    const a = JSON.parse(raw) as LocalAccount;
-    return a && a.email && a.hash ? a : null;
-  } catch {
-    return null;
-  }
-}
+const GoogleG = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M21.6 12.2c0-.7-.06-1.4-.18-2H12v3.9h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.4z" />
+    <path d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z" opacity=".8" />
+    <path d="M6.4 14a6 6 0 0 1 0-3.8V7.6H3.1a10 10 0 0 0 0 8.9L6.4 14z" opacity=".6" />
+    <path d="M12 6c1.5 0 2.8.5 3.8 1.5L18.7 5A10 10 0 0 0 3.1 7.6L6.4 10c.8-2.3 3-4 5.6-4z" opacity=".9" />
+  </svg>
+);
 
 function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   const { t } = useLang();
-  const account = useMemo(readAccount, []);
-  const [screen, setScreen] = useState<"login" | "create" | "reset">(account ? "login" : "create");
-  const [email, setEmail] = useState(account?.email || "");
+  const [screen, setScreen] = useState<"login" | "create" | "reset" | "precad">(
+    () => (localStorage.getItem("upexnote-last-email") ? "login" : "create")
+  );
+  const [email, setEmail] = useState(() => localStorage.getItem("upexnote-last-email") || "");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
-  const [busy, setBusy] = useState<"" | "form" | "admin">("");
+  const [userId, setUserId] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [avail, setAvail] = useState<{ available: boolean; suggestions: string[] } | null>(null);
+  const [oauthPending, setOauthPending] = useState<OauthPayload | null>(null);
+  const [oauthMsg, setOauthMsg] = useState("");
+  const [ghCode, setGhCode] = useState("");
+  const [busy, setBusy] = useState<"" | "form" | "admin" | "google" | "github">("");
   const [err, setErr] = useState("");
 
-  function finish(profile: "user" | "admin", mail: string) {
+  function finish(profile: "user" | "admin", user?: AccountUser | null) {
     localStorage.removeItem("upexnote-lib-cache"); // cache pertence ao modo anterior
-    localStorage.setItem("upexnote-session", JSON.stringify({ profile, email: mail }));
+    if (user?.email) localStorage.setItem("upexnote-last-email", user.email);
+    localStorage.setItem(
+      "upexnote-session",
+      JSON.stringify({ profile, email: user?.email || email, user_id: user?.user_id || null })
+    );
     onDone(profile);
+  }
+
+  function mapErr(code?: string): string {
+    if (code === "email_taken") return t("loginErrEmailTaken");
+    if (code === "user_id_taken") return t("loginErrUserIdTaken");
+    return t("loginErrWrong");
+  }
+
+  // Disponibilidade do user_id (debounce) — padrão de app moderna
+  useEffect(() => {
+    if ((screen !== "create" && screen !== "precad") || userId.trim().length < 3) {
+      setAvail(null);
+      return;
+    }
+    const id = setTimeout(async () => {
+      try {
+        const raw = await invoke<string>("account_suggest", { userId: userId.trim() });
+        const obj = JSON.parse(raw);
+        setAvail({ available: !!obj.available, suggestions: obj.suggestions || [] });
+      } catch { /* silencioso */ }
+    }, 450);
+    return () => clearTimeout(id);
+  }, [userId, screen]);
+
+  // Eventos do fluxo OAuth (o device flow do GitHub mostra um código)
+  useEffect(() => {
+    const unEvent = listen<string>("oauth://event", async (ev) => {
+      let obj: any;
+      try { obj = JSON.parse(ev.payload); } catch { return; }
+      if (obj.type === "progress") {
+        setOauthMsg(obj.message || t("loginOauthWaiting"));
+        if (obj.user_code) setGhCode(obj.user_code);
+      } else if (obj.type === "oauth") {
+        const raw = await invoke<string>("account", { op: "oauth-login", payload: JSON.stringify(obj) });
+        const res = JSON.parse(raw);
+        if (res.ok && !res.new) { finish("user", res.user); return; }
+        if (res.ok && res.new) {
+          setOauthPending(obj as OauthPayload);
+          setEmail(obj.email || "");
+          setFirstName(obj.first_name || "");
+          setLastName(obj.last_name || "");
+          setUserId((obj.email || "").split("@")[0].replace(/[^a-z0-9._-]/gi, "").toLowerCase());
+          setErr("");
+          setScreen("precad");
+        }
+      } else if (obj.type === "error") {
+        setErr(obj.error === "oauth_not_configured" ? t("loginOauthNotConfigured") : t("loginErrWrong"));
+      }
+    });
+    const unDone = listen("oauth://done", () => { setBusy(""); setOauthMsg(""); setGhCode(""); });
+    return () => { unEvent.then((f) => f()); unDone.then((f) => f()); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t]);
+
+  async function social(provider: "google" | "github") {
+    setErr(""); setOauthMsg(t("loginOauthWaiting")); setBusy(provider);
+    try { await invoke("oauth_start", { provider }); } catch { setBusy(""); setErr(t("loginErrWrong")); }
   }
 
   async function submit() {
     setErr("");
     const mail = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setErr(t("loginErrEmail"));
-    if (screen !== "login") {
+    if (screen === "create" || screen === "reset") {
       if (pw.length < 6) return setErr(t("loginErrPwShort"));
       if (pw !== pw2) return setErr(t("loginErrPwMatch"));
     }
     setBusy("form");
     try {
+      let res: any;
       if (screen === "login") {
-        const acc = readAccount();
-        if (!acc || acc.email !== mail || (await hashPassword(acc.salt, pw)) !== acc.hash) {
-          setErr(t("loginErrWrong"));
-          return;
+        res = JSON.parse(await invoke<string>("account", {
+          op: "login", payload: JSON.stringify({ email: mail, password: pw }),
+        }));
+      } else if (screen === "reset") {
+        res = JSON.parse(await invoke<string>("account", {
+          op: "reset", payload: JSON.stringify({ email: mail, password: pw }),
+        }));
+        if (res.ok) {
+          res = JSON.parse(await invoke<string>("account", {
+            op: "login", payload: JSON.stringify({ email: mail, password: pw }),
+          }));
         }
       } else {
-        // criar conta / repor senha — conta local desta máquina
-        const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-          .map((b) => b.toString(16).padStart(2, "0")).join("");
-        const acc: LocalAccount = { email: mail, salt, hash: await hashPassword(salt, pw) };
-        localStorage.setItem("upexnote-account", JSON.stringify(acc));
+        // create / precad → registo completo na tabela users
+        res = JSON.parse(await invoke<string>("account", {
+          op: "register",
+          payload: JSON.stringify({
+            email: mail,
+            user_id: userId.trim(),
+            first_name: firstName.trim() || null,
+            last_name: lastName.trim() || null,
+            password: screen === "create" ? pw : undefined,
+            auth_provider: oauthPending?.auth_provider || "email",
+            provider_id: oauthPending?.provider_id,
+            provider_scopes: oauthPending?.provider_scopes,
+          }),
+        }));
       }
-      try {
-        await invoke("set_settings", { storageMode: "local" });
-      } catch { /* best-effort; o worker cai em local por defeito */ }
-      finish("user", mail);
+      if (res.ok) {
+        try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
+        finish("user", res.user);
+        return;
+      }
+      setErr(mapErr(res.error));
+    } catch {
+      setErr(t("loginErrWrong"));
     } finally {
       setBusy("");
     }
@@ -1108,7 +1202,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
       const obj = JSON.parse(raw);
       if (obj.ok) {
         await invoke("set_settings", { storageMode: "vps" });
-        finish("admin", email.trim().toLowerCase() || "admin");
+        finish("admin", null);
         return;
       }
       setErr(t("loginAdminFail"));
@@ -1135,28 +1229,86 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         </div>
       </div>
       <div className="login-card">
-        <h1 className="pg-title">{screen === "create" ? t("loginCreateTitle") : t("loginTitle")}</h1>
+        <h1 className="pg-title">
+          {screen === "create" ? t("loginCreateTitle") : screen === "precad" ? t("loginPrecadTitle") : t("loginTitle")}
+        </h1>
+        {screen !== "precad" && (
+          <>
+            <button className="secondary social-btn" onClick={() => social("google")} disabled={busy !== ""}>
+              {busy === "google" ? <span className="spinner" /> : <GoogleG />} {t("loginWithGoogle")}
+            </button>
+            <button className="secondary social-btn" onClick={() => social("github")} disabled={busy !== ""}>
+              {busy === "github" ? <span className="spinner" /> : <GithubMark />} {t("loginWithGithub")}
+            </button>
+            {(busy === "google" || busy === "github") && (
+              <div className="muted" style={{ textAlign: "center" }}>
+                {oauthMsg}
+                {ghCode && <div className="gh-code">{t("loginGithubCode")}: <b>{ghCode}</b></div>}
+              </div>
+            )}
+            <div className="login-divider"><span>{t("loginOr")}</span></div>
+          </>
+        )}
         {screen === "reset" && <div className="muted" style={{ textAlign: "left" }}>{t("loginResetInfo")}</div>}
         <div className="field" style={{ marginBottom: 10 }}>
           <label>{t("loginEmail")}</label>
           <input
             type="text" autoComplete="off" spellCheck={false}
             value={email}
+            readOnly={screen === "precad"}
             onChange={(e) => setEmail(e.currentTarget.value)}
             onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
           />
         </div>
-        <div className="field" style={{ marginBottom: 10 }}>
-          <label>{t("loginPassword")}</label>
-          <input
-            type="text" className="pw-mask" autoComplete="off" spellCheck={false}
-            value={pw}
-            onChange={(e) => setPw(e.currentTarget.value)}
-            onPaste={maskedPaste(setPw)}
-            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          />
-        </div>
-        {screen !== "login" && (
+        {(screen === "create" || screen === "precad") && (
+          <>
+            <div className="field" style={{ marginBottom: 10 }}>
+              <label>{t("loginUserId")}</label>
+              <input
+                type="text" autoComplete="off" spellCheck={false}
+                value={userId}
+                onChange={(e) => setUserId(e.currentTarget.value)}
+              />
+              {avail && (
+                <div className="engine-info">
+                  {avail.available ? t("loginUserIdOk") : (
+                    <>
+                      {t("loginUserIdTaken")}{" "}
+                      {avail.suggestions.map((s) => (
+                        <button key={s} className="link-btn" onClick={() => setUserId(s)}>{s}</button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="row" style={{ marginBottom: 10 }}>
+              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                <label>{t("loginFirstName")}</label>
+                <input type="text" autoComplete="off" spellCheck={false} value={firstName}
+                  onChange={(e) => setFirstName(e.currentTarget.value)} />
+              </div>
+              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                <label>{t("loginLastName")}</label>
+                <input type="text" autoComplete="off" spellCheck={false} value={lastName}
+                  onChange={(e) => setLastName(e.currentTarget.value)} />
+              </div>
+            </div>
+          </>
+        )}
+        {screen !== "precad" && (
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>{t("loginPassword")}</label>
+            <input
+              type="text" className="pw-mask" autoComplete="off" spellCheck={false}
+              value={pw}
+              onChange={(e) => setPw(e.currentTarget.value)}
+              onPaste={maskedPaste(setPw)}
+              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+            />
+          </div>
+        )}
+        {(screen === "create" || screen === "reset") && (
           <div className="field" style={{ marginBottom: 10 }}>
             <label>{t("loginPasswordConfirm")}</label>
             <input
@@ -1171,7 +1323,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         {err && <div className="key-warn" style={{ marginBottom: 8 }}>{err}</div>}
         <button style={{ width: "100%" }} onClick={submit} disabled={busy !== ""}>
           {busy === "form" ? t("loginChecking") : screen === "login" ? t("loginBtn")
-            : screen === "reset" ? t("loginResetBtn") : t("loginCreateBtn")}
+            : screen === "reset" ? t("loginResetBtn") : screen === "precad" ? t("loginFinish") : t("loginCreateBtn")}
         </button>
         <div className="login-links">
           {screen === "login" ? (
@@ -1180,9 +1332,9 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
               <span>·</span>
               <button className="link-btn" onClick={() => { setErr(""); setScreen("create"); }}>{t("loginNoAccount")}</button>
             </>
-          ) : (
+          ) : screen !== "precad" ? (
             <button className="link-btn" onClick={() => { setErr(""); setScreen("login"); }}>{t("loginHaveAccount")}</button>
-          )}
+          ) : null}
         </div>
       </div>
       <button className="link-btn login-admin" onClick={adminEnter} disabled={busy !== ""}>

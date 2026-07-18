@@ -922,6 +922,33 @@ textarea.edit-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px va
   margin-top: 4px;
   opacity: 0.85;
 }
+.social-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  margin: 6px 0 10px;
+}
+.login-divider::before, .login-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+.gh-code {
+  margin-top: 6px;
+  font-size: var(--fs-base);
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Segmentado (densidade) */
 .seg {
