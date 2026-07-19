@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
-  Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut,
+  Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
@@ -69,7 +69,7 @@ type ResultData = {
   language: string | null;
 };
 
-type View = "transcribe" | "library" | "settings";
+type View = "transcribe" | "library" | "settings" | "admin";
 
 // ---------------------------------------------------------------------------
 // Aparência — tema (galeria) + densidade. Cada tema é um bloco de variáveis
@@ -1478,6 +1478,347 @@ function SidebarProfile({ collapsed }: { collapsed: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
+// Administração (2026-07-19, só role=admin): utilizadores (CRUD auditado),
+// atividade (access_events com filtros) e auditoria (audit_log). O worker
+// revalida o ator na base em TODAS as operações — a aba é só a janela.
+// ---------------------------------------------------------------------------
+type AdmUser = {
+  id: number; user_id: string; email: string; first_name: string | null; last_name: string | null;
+  auth_provider: string; role: string; created_at: string | null; last_login_at: string | null;
+  deleted_at: string | null; transcription_count: number;
+};
+type AdmEvent = {
+  id: number; occurred_at: string | null; event: string; ok: boolean | number | null;
+  email: string | null; user_id: number | null; detail: string | null; app_version: string | null; host: string | null;
+};
+type AdmAudit = {
+  id: number; occurred_at: string | null; actor_user_id: number | null; action: string;
+  table_name: string; record_id: number | null; snapshot: Record<string, unknown> | null;
+};
+
+function AdminView({ active }: { active: boolean }) {
+  const { t, locale } = useLang();
+  const sess = getSession();
+  const [tab, setTab] = useState<"users" | "activity" | "audit">("users");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+
+  const [users, setUsers] = useState<AdmUser[]>([]);
+  const [uSearch, setUSearch] = useState("");
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [emailEdit, setEmailEdit] = useState<{ id: number; value: string } | null>(null);
+  const [confirmDel, setConfirmDel] = useState<{ id: number; purge: boolean } | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [cEmail, setCEmail] = useState("");
+  const [cUser, setCUser] = useState("");
+  const [cPw, setCPw] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const [period, setPeriod] = useState<"day" | "week" | "month" | "all">("week");
+  const [events, setEvents] = useState<AdmEvent[]>([]);
+  const [counts, setCounts] = useState<{ event: string; ok: boolean | number | null; n: number }[]>([]);
+
+  const [aTable, setATable] = useState("");
+  const [aId, setAId] = useState("");
+  const [audit, setAudit] = useState<AdmAudit[]>([]);
+  const [openSnap, setOpenSnap] = useState<number | null>(null);
+
+  async function call(op: string, payload: Record<string, unknown>) {
+    const raw = await invoke<string>("admin", {
+      op, mode: sess?.mode ?? null,
+      payload: JSON.stringify({ actor: sess?.id ?? null, ...payload }),
+    });
+    return JSON.parse(raw);
+  }
+
+  function sinceFor(p: typeof period): string | null {
+    if (p === "all") return null;
+    const days = p === "day" ? 1 : p === "week" ? 7 : 30;
+    return new Date(Date.now() - days * 86400000).toISOString();
+  }
+
+  async function loadUsers(searchTerm?: string, withDeleted?: boolean) {
+    setBusy(true); setErr("");
+    try {
+      const r = await call("users", {
+        search: (searchTerm ?? uSearch).trim() || null,
+        include_deleted: withDeleted ?? showDeleted,
+      });
+      if (r.ok) setUsers(r.items || []); else setErr(r.error || r.message || "");
+    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+
+  async function loadEvents(p?: typeof period) {
+    setBusy(true); setErr("");
+    try {
+      const r = await call("events", { since: sinceFor(p ?? period) });
+      if (r.ok) { setEvents(r.items || []); setCounts(r.counts || []); }
+      else setErr(r.error || r.message || "");
+    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+
+  async function loadAudit() {
+    setBusy(true); setErr("");
+    try {
+      const r = await call("audit", {
+        table: aTable.trim() || null,
+        record_id: aId.trim() ? Number(aId.trim()) : null,
+      });
+      if (r.ok) setAudit(r.items || []); else setErr(r.error || r.message || "");
+    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+
+  useEffect(() => {
+    if (active && !loadedOnce) {
+      setLoadedOnce(true);
+      loadUsers();
+      loadEvents();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, loadedOnce]);
+
+  async function saveEmail() {
+    if (!emailEdit) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const r = await call("change-email", { id: emailEdit.id, email: emailEdit.value.trim() });
+      if (r.ok) { setEmailEdit(null); setNotice(t("admSaved")); loadUsers(); }
+      else setErr(r.error === "email_taken" ? t("loginErrEmailTaken") : t("errPrefix") + (r.error || ""));
+    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+
+  async function doDelete() {
+    if (!confirmDel) return;
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const r = await call("delete-user", { id: confirmDel.id, purge: confirmDel.purge });
+      if (r.ok) {
+        setNotice(t(confirmDel.purge ? "admPurged" : "admDeletedOk", { n: r.cascade ?? 0 }));
+        setConfirmDel(null);
+        loadUsers();
+      } else {
+        setErr(r.error === "cannot_delete_self" ? t("admNoSelfDelete") : t("errPrefix") + (r.error || ""));
+        setConfirmDel(null);
+      }
+    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+
+  async function createUser() {
+    setBusy(true); setErr(""); setNotice("");
+    try {
+      const r = await call("create-user", {
+        user: { email: cEmail.trim(), user_id: cUser.trim(), password: cPw, auth_provider: "email" },
+      });
+      if (r.ok) { setNotice(t("admCreated")); setShowCreate(false); setCEmail(""); setCUser(""); setCPw(""); loadUsers(); }
+      else setErr(r.error === "email_taken" ? t("loginErrEmailTaken")
+        : r.error === "user_id_taken" ? t("loginErrUserIdTaken")
+        : r.error === "password_required" ? t("loginErrPwShort") : t("errPrefix") + (r.error || ""));
+    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+
+  const evOk = (v: boolean | number | null) => v === true || v === 1;
+
+  return (
+    <section className="card">
+      <h2>{t("navAdmin")}</h2>
+      <div className="row" style={{ marginBottom: 14, gap: 6 }}>
+        {(["users", "activity", "audit"] as const).map((tb) => (
+          <button key={tb} className={tab === tb ? "" : "secondary"} onClick={() => {
+            setTab(tb); setErr(""); setNotice("");
+            if (tb === "activity") loadEvents();
+            if (tb === "audit") loadAudit();
+          }}>
+            {t(tb === "users" ? "admTabUsers" : tb === "activity" ? "admTabActivity" : "admTabAudit")}
+          </button>
+        ))}
+      </div>
+      {err && <div className="key-warn" style={{ marginBottom: 10 }}>{err}</div>}
+      {notice && <div className="engine-info" style={{ marginBottom: 10 }}>{notice}</div>}
+
+      {tab === "users" && (
+        <>
+          <div className="row wrap" style={{ marginBottom: 10 }}>
+            <input
+              type="text" style={{ flex: 1, minWidth: 220 }} placeholder={t("admSearchPh")}
+              value={uSearch}
+              onChange={(e) => setUSearch(e.currentTarget.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") loadUsers(); }}
+            />
+            <button className="secondary" onClick={() => loadUsers()} disabled={busy}>{t("admFilter")}</button>
+            <label className="row" style={{ gap: 6, alignItems: "center" }}>
+              <input type="checkbox" checked={showDeleted}
+                onChange={(e) => { setShowDeleted(e.currentTarget.checked); loadUsers(undefined, e.currentTarget.checked); }} />
+              {t("admShowDeleted")}
+            </label>
+            <button className="secondary" onClick={() => setShowCreate((s) => !s)}>{t("admNewUser")}</button>
+          </div>
+          {showCreate && (
+            <div className="row wrap" style={{ marginBottom: 12, alignItems: "flex-end" }}>
+              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                <label>{t("loginEmail")}</label>
+                <input type="text" value={cEmail} onChange={(e) => setCEmail(e.currentTarget.value)} />
+              </div>
+              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                <label>{t("loginUserId")}</label>
+                <input type="text" value={cUser}
+                  onChange={(e) => setCUser(e.currentTarget.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))} />
+              </div>
+              <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                <label>{t("loginPassword")}</label>
+                <input type="text" className="pw-mask" value={cPw} onChange={(e) => setCPw(e.currentTarget.value)} />
+              </div>
+              <button onClick={createUser} disabled={busy}>{t("admCreateBtn")}</button>
+            </div>
+          )}
+          <div className="table-scroll">
+            <table className="eng-table">
+              <thead>
+                <tr>
+                  <th>ID</th><th>{t("loginUserId")}</th><th>{t("loginEmail")}</th>
+                  <th>{t("admColProvider")}</th><th>{t("admColRole")}</th>
+                  <th>{t("admColTx")}</th><th>{t("admColLast")}</th><th>{t("admColActions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id} style={u.deleted_at ? { opacity: 0.55 } : undefined}>
+                    <td>#{u.id}</td>
+                    <td>{u.user_id}</td>
+                    <td>
+                      {emailEdit?.id === u.id ? (
+                        <span className="row" style={{ gap: 6 }}>
+                          <input type="text" value={emailEdit.value}
+                            onChange={(e) => setEmailEdit({ id: u.id, value: e.currentTarget.value })}
+                            onKeyDown={(e) => { if (e.key === "Enter") saveEmail(); }} />
+                          <button onClick={saveEmail} disabled={busy}>{t("save")}</button>
+                          <button className="secondary" onClick={() => setEmailEdit(null)}>{t("cancel")}</button>
+                        </span>
+                      ) : (
+                        <>{u.email}{u.deleted_at && <span className="badge" style={{ marginLeft: 6 }}>{t("admDeletedBadge")}</span>}</>
+                      )}
+                    </td>
+                    <td>{u.auth_provider}</td>
+                    <td>{u.role}</td>
+                    <td>{u.transcription_count}</td>
+                    <td>{fmtDate(u.last_login_at, locale)}</td>
+                    <td>
+                      {confirmDel?.id === u.id ? (
+                        <span className="row" style={{ gap: 6 }}>
+                          <span className="muted">{t(confirmDel.purge ? "admPurgeConfirm" : "admDeleteConfirm")}</span>
+                          <button onClick={doDelete} disabled={busy}>{t("admConfirm")}</button>
+                          <button className="secondary" onClick={() => setConfirmDel(null)}>{t("cancel")}</button>
+                        </span>
+                      ) : !u.deleted_at ? (
+                        <span className="row" style={{ gap: 6 }}>
+                          <button className="secondary" onClick={() => { setEmailEdit({ id: u.id, value: u.email }); setErr(""); }}>
+                            {t("admChangeEmail")}
+                          </button>
+                          <button className="secondary" onClick={() => setConfirmDel({ id: u.id, purge: false })}>{t("admDelete")}</button>
+                          <button className="secondary" onClick={() => setConfirmDel({ id: u.id, purge: true })}>{t("admPurge")}</button>
+                        </span>
+                      ) : (
+                        <button className="secondary" onClick={() => setConfirmDel({ id: u.id, purge: true })}>{t("admPurge")}</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="engine-info" style={{ marginTop: 8 }}>{t("admCascadeNote")}</div>
+        </>
+      )}
+
+      {tab === "activity" && (
+        <>
+          <div className="row wrap" style={{ marginBottom: 10 }}>
+            {(["day", "week", "month", "all"] as const).map((p) => (
+              <button key={p} className={period === p ? "" : "secondary"}
+                onClick={() => { setPeriod(p); loadEvents(p); }}>
+                {t(p === "day" ? "admPeriodDay" : p === "week" ? "admPeriodWeek" : p === "month" ? "admPeriodMonth" : "admPeriodAll")}
+              </button>
+            ))}
+          </div>
+          <div className="row wrap" style={{ marginBottom: 12 }}>
+            {counts.map((c, i) => (
+              <span key={i} className={"badge " + (evOk(c.ok) ? "ok" : "warn")}>
+                {c.event} · {evOk(c.ok) ? t("admOk") : t("admFail")} · {c.n}
+              </span>
+            ))}
+            {counts.length === 0 && <span className="muted">{t("admNoEvents")}</span>}
+          </div>
+          <div className="table-scroll">
+            <table className="eng-table">
+              <thead>
+                <tr><th>{t("admColWhen")}</th><th>{t("admColEvent")}</th><th>{t("loginEmail")}</th><th>{t("admColDetail")}</th></tr>
+              </thead>
+              <tbody>
+                {events.map((ev) => (
+                  <tr key={ev.id}>
+                    <td>{fmtDate(ev.occurred_at, locale)}</td>
+                    <td><span className={"badge " + (evOk(ev.ok) ? "ok" : "warn")}>{ev.event}</span></td>
+                    <td>{ev.email || "—"}</td>
+                    <td>{ev.detail || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === "audit" && (
+        <>
+          <div className="row wrap" style={{ marginBottom: 10 }}>
+            <input type="text" style={{ width: 180 }} placeholder={t("admAuditTable")}
+              value={aTable} onChange={(e) => setATable(e.currentTarget.value)} />
+            <input type="text" style={{ width: 120 }} placeholder={t("admAuditId")}
+              value={aId} onChange={(e) => setAId(e.currentTarget.value.replace(/\D/g, ""))} />
+            <button className="secondary" onClick={loadAudit} disabled={busy}>{t("admFilter")}</button>
+          </div>
+          <div className="table-scroll">
+            <table className="eng-table">
+              <thead>
+                <tr><th>{t("admColWhen")}</th><th>{t("admColAction")}</th><th>{t("admAuditTable")}</th><th>ID</th><th>{t("admColActor")}</th><th></th></tr>
+              </thead>
+              <tbody>
+                {audit.map((a) => (
+                  <Fragment key={a.id}>
+                    <tr>
+                      <td>{fmtDate(a.occurred_at, locale)}</td>
+                      <td><span className="badge">{a.action}</span></td>
+                      <td>{a.table_name}</td>
+                      <td>#{a.record_id}</td>
+                      <td>{a.actor_user_id != null ? `#${a.actor_user_id}` : "—"}</td>
+                      <td>
+                        <button className="secondary" onClick={() => setOpenSnap(openSnap === a.id ? null : a.id)}>
+                          {t("admSnapshot")}
+                        </button>
+                      </td>
+                    </tr>
+                    {openSnap === a.id && (
+                      <tr>
+                        <td colSpan={6}>
+                          <pre style={{ whiteSpace: "pre-wrap", fontSize: "var(--fs-sm)", margin: 0 }}>
+                            {JSON.stringify(a.snapshot, null, 2)}
+                          </pre>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {audit.length === 0 && <div className="muted" style={{ marginTop: 8 }}>{t("admNoAudit")}</div>}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Barra de título custom — a janela é criada sem decoração nativa
 // (decorations:false), por isso a tarja do Windows desaparece e esta barra,
 // pintada com as cores do tema, assume arrastar/min/max/fechar.
@@ -1704,6 +2045,11 @@ function App() {
     { id: "library", icon: <LibraryBig size={16} strokeWidth={1.75} />, label: t("navLibrary") },
     { id: "settings", icon: <Settings size={16} strokeWidth={1.75} />, label: t("navSettings") },
   ];
+  // A aba de Administração só existe para sessões admin (o worker revalida na
+  // base de qualquer forma — isto é apresentação, não segurança).
+  if (getSession()?.role === "admin") {
+    navItems.push({ id: "admin", icon: <ShieldCheck size={16} strokeWidth={1.75} />, label: t("navAdmin") });
+  }
 
   if (session === null) {
     return (
@@ -1887,6 +2233,12 @@ function App() {
           <div className={"view-pane" + (view === "library" ? "" : " hidden")}>
             <LibraryView active={view === "library"} />
           </div>
+
+          {getSession()?.role === "admin" && (
+            <div className={"view-pane" + (view === "admin" ? "" : " hidden")}>
+              <AdminView active={view === "admin"} />
+            </div>
+          )}
 
           <div className={"view-pane" + (view === "settings" ? "" : " hidden")}>
             <AppearanceCard {...appearance} />

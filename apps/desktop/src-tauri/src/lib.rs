@@ -275,6 +275,49 @@ async fn account(op: String, payload: String, mode: Option<String>) -> Result<St
     .map_err(|e| e.to_string())?
 }
 
+/// Operações da aba de Administração: payload JSON por stdin (contém o ator,
+/// que o worker REVALIDA na base — o cliente não consegue afirmar-se admin).
+#[tauri::command]
+async fn admin(op: String, payload: String, mode: Option<String>) -> Result<String, String> {
+    const OPS: [&str; 6] = ["users", "create-user", "change-email", "delete-user", "events", "audit"];
+    if !OPS.contains(&op.as_str()) {
+        return Err(format!("operação desconhecida: {op}"));
+    }
+    if let Some(m) = mode.as_deref() {
+        if m != "local" && m != "vps" {
+            return Err(format!("modo desconhecido: {m}"));
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        let cmd_name = format!("admin-{op}");
+        let mut cli: Vec<&str> = vec![&cmd_name];
+        if let Some(m) = mode.as_deref() {
+            cli.push("--mode");
+            cli.push(m);
+        }
+        let mut cmd = worker_command(&cli);
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        with_no_window(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        child
+            .stdin
+            .as_mut()
+            .ok_or("sem stdin")?
+            .write_all(payload.as_bytes())
+            .map_err(|e| e.to_string())?;
+        drop(child.stdin.take());
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if stdout.is_empty() {
+            return Err(String::from_utf8_lossy(&out.stderr).to_string());
+        }
+        Ok(stdout)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn account_suggest(user_id: String, mode: Option<String>) -> Result<String, String> {
     let mut args: Vec<String> = vec!["account-suggest".into(), "--user-id".into(), user_id];
@@ -536,7 +579,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
-            list_system_fonts, db_check, db_check_secret, account, account_suggest, oauth_start, transcribe
+            list_system_fonts, db_check, db_check_secret, account, account_suggest, admin, oauth_start, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

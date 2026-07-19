@@ -78,7 +78,42 @@ USERS_DDL = """CREATE TABLE IF NOT EXISTS users (
     role text NOT NULL DEFAULT 'user',
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz,
+    deleted_at timestamptz,
     last_login_at timestamptz
+)"""
+
+# ---------------------------------------------------------------------------
+# Padrão de dados (definido pelo utilizador, 2026-07-19):
+# - Tabelas vivas guardam SEMPRE o valor atual + trio de datas
+#   created_at (dt_issue) / updated_at (dt_change) / deleted_at (dt_ret).
+# - Editar = update no lugar + updated_at. EXCEÇÃO: conteúdo de transcrição
+#   (transcript_texts) continua a versionar em edição (decisão v0.4.0 — obra).
+# - Apagar = soft-delete + snapshot integral na audit_log. deleted_at
+#   preenchido é a pista para procurar o rasto na auditoria.
+# - audit_log é GENÉRICA (snapshot JSON por linha): nem tabela gigante de
+#   colunas, nem um histórico-espelho por tabela. Hard delete (dados de teste)
+#   também deixa snapshot ANTES de destruir — deleção sem rasto não existe.
+# ---------------------------------------------------------------------------
+AUDIT_DDL = """CREATE TABLE IF NOT EXISTS audit_log (
+    id bigserial PRIMARY KEY,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    actor_user_id bigint,
+    action text NOT NULL,
+    table_name text NOT NULL,
+    record_id bigint,
+    snapshot jsonb
+)"""
+
+EVENTS_DDL = """CREATE TABLE IF NOT EXISTS access_events (
+    id bigserial PRIMARY KEY,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    event text NOT NULL,
+    ok boolean,
+    email text,
+    user_id bigint,
+    detail text,
+    app_version text,
+    host text
 )"""
 
 SCHEMA_SQL = [
@@ -99,6 +134,8 @@ SCHEMA_SQL = [
            severity text NOT NULL DEFAULT 'warning'
        )""",
     USERS_DDL,
+    AUDIT_DDL,
+    EVENTS_DDL,
     """CREATE TABLE IF NOT EXISTS transcriptions (
            id bigserial PRIMARY KEY,
            created_at timestamptz NOT NULL DEFAULT now(),
@@ -498,19 +535,24 @@ def close_connection(conn):
         _stop_tunnel()
 
 
+def _has_column(cur, table, column):
+    if storage_mode() == "local":
+        cur.execute(f"SELECT name FROM pragma_table_info('{table}') WHERE name=%s", (column,))
+    else:
+        cur.execute("""SELECT 1 FROM information_schema.columns
+                       WHERE table_name=%s AND column_name=%s""", (table, column))
+    return cur.fetchone() is not None
+
+
 def _ensure_owner_column(conn):
-    """Bases criadas antes do isolamento por utilizador (2026-07-19) não têm
-    a coluna user_id no hub — acrescenta-a sem tocar em dados. Idempotente."""
+    """Migrações idempotentes de colunas em bases pré-existentes:
+    - user_id no hub (isolamento por utilizador, 2026-07-19);
+    - trio de datas (padrão de dados, 2026-07-19) onde falta."""
     with conn.cursor() as cur:
-        if storage_mode() == "local":
-            cur.execute("SELECT name FROM pragma_table_info('transcriptions') WHERE name='user_id'")
-            has = cur.fetchone() is not None
-        else:
-            cur.execute("""SELECT 1 FROM information_schema.columns
-                           WHERE table_name='transcriptions' AND column_name='user_id'""")
-            has = cur.fetchone() is not None
-        if not has:
+        if not _has_column(cur, "transcriptions", "user_id"):
             cur.execute("ALTER TABLE transcriptions ADD COLUMN user_id bigint REFERENCES users(id)")
+        if not _has_column(cur, "users", "deleted_at"):
+            cur.execute("ALTER TABLE users ADD COLUMN deleted_at timestamptz")
 
 
 def ensure_schema(conn):
@@ -603,11 +645,123 @@ def _actor(cur, user_id):
     """Devolve (filtro_sql, params, is_admin) para o utilizador da sessão."""
     if user_id is None:
         return "", [], True
-    cur.execute("SELECT role FROM users WHERE id = %s", (int(user_id),))
+    cur.execute("SELECT role FROM users WHERE id = %s AND deleted_at IS NULL", (int(user_id),))
     row = cur.fetchone()
     if row and (row[0] or "").lower() == "admin":
         return "", [], True
     return " AND t.user_id = %s", [int(user_id)], False
+
+
+def is_admin_user(cur, user_id) -> bool:
+    """Guard server-side das operações administrativas: o role vem da BASE."""
+    if user_id is None:
+        return False
+    cur.execute("SELECT role FROM users WHERE id = %s AND deleted_at IS NULL", (int(user_id),))
+    row = cur.fetchone()
+    return bool(row and (row[0] or "").lower() == "admin")
+
+
+def audit(conn, actor_user_id, action, table_name, record_id, snapshot):
+    """Entrada na auditoria, na MESMA transação do chamador (commit é dele).
+    snapshot = dict com o retrato da linha ANTES da operação."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO audit_log (actor_user_id, action, table_name, record_id, snapshot)"
+            " VALUES (%s,%s,%s,%s,%s)",
+            (int(actor_user_id) if actor_user_id is not None else None, action, table_name,
+             int(record_id) if record_id is not None else None,
+             json.dumps(snapshot, ensure_ascii=False, default=str)),
+        )
+
+
+def log_event(event, ok=None, email=None, user_id=None, detail=None, app_version=None):
+    """Evento de acesso (login/reset/elevação/…) — best-effort, nunca levanta.
+    Grava na base do MODO ATIVO (eventos de instalações remotas chegam ao
+    central via API na Fase 2)."""
+    conn = None
+    try:
+        conn = connect()
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO access_events (event, ok, email, user_id, detail, app_version, host)"
+                " VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (event, ok, (email or "").strip().lower() or None,
+                 int(user_id) if user_id is not None else None, detail, app_version,
+                 socket.gethostname()),
+            )
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        close_connection(conn)
+
+
+def list_access_events(actor_id, since=None, event=None, search=None, limit=500):
+    """Painel de Atividade (só admin): eventos recentes + agregados por tipo."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            if not is_admin_user(cur, actor_id):
+                return {"ok": False, "error": "forbidden"}
+            where, params = "WHERE 1=1", []
+            if since:
+                where += " AND occurred_at >= %s"
+                params.append(since)
+            if event:
+                where += " AND event = %s"
+                params.append(event)
+            if search:
+                where += " AND email ILIKE %s"
+                params.append(f"%{search}%")
+            cur.execute(f"""SELECT event, ok, count(*) AS n FROM access_events {where}
+                            GROUP BY event, ok ORDER BY event""", params)
+            counts = [{"event": r[0], "ok": r[1], "n": int(r[2])} for r in cur.fetchall()]
+            cur.execute(f"""SELECT id, occurred_at, event, ok, email, user_id, detail, app_version, host
+                            FROM access_events {where}
+                            ORDER BY occurred_at DESC, id DESC LIMIT %s""", params + [int(limit)])
+            items = _rows_to_dicts(cur)
+        for it in items:
+            it["occurred_at"] = _iso(it["occurred_at"])
+            it["ok"] = bool(it["ok"]) if it["ok"] is not None else None
+        return {"ok": True, "counts": counts, "items": items}
+    finally:
+        close_connection(conn)
+
+
+def list_audit(actor_id, table=None, record_id=None, since=None, limit=300):
+    """Consulta da auditoria (só admin), por tabela/id/data."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            if not is_admin_user(cur, actor_id):
+                return {"ok": False, "error": "forbidden"}
+            where, params = "WHERE 1=1", []
+            if table:
+                where += " AND table_name = %s"
+                params.append(table)
+            if record_id is not None:
+                where += " AND record_id = %s"
+                params.append(int(record_id))
+            if since:
+                where += " AND occurred_at >= %s"
+                params.append(since)
+            cur.execute(f"""SELECT id, occurred_at, actor_user_id, action, table_name, record_id, snapshot
+                            FROM audit_log {where}
+                            ORDER BY occurred_at DESC, id DESC LIMIT %s""", params + [int(limit)])
+            items = _rows_to_dicts(cur)
+        for it in items:
+            it["occurred_at"] = _iso(it["occurred_at"])
+            if isinstance(it.get("snapshot"), str):
+                try:
+                    it["snapshot"] = json.loads(it["snapshot"])
+                except Exception:
+                    pass
+        return {"ok": True, "items": items}
+    finally:
+        close_connection(conn)
 
 
 def library_summary(user_id=None):

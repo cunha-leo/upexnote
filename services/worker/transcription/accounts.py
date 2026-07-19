@@ -113,9 +113,10 @@ def register(data: dict):
         conn.commit()
         with conn.cursor() as cur:
             user = _fetch_user(cur, "WHERE email = %s", (email,))
-        return {"ok": True, "user": _public(user)}
     finally:
         db.close_connection(conn)
+    db.log_event("register", ok=True, email=email, user_id=user["id"], detail=provider)
+    return {"ok": True, "user": _public(user)}
 
 
 def login(email: str, password: str):
@@ -124,16 +125,21 @@ def login(email: str, password: str):
     try:
         _ensure(conn)
         with conn.cursor() as cur:
-            user = _fetch_user(cur, "WHERE email = %s", (email,))
+            user = _fetch_user(cur, "WHERE email = %s AND deleted_at IS NULL", (email,))
             if not user or not user.get("password_hash"):
-                return {"ok": False, "error": "invalid_credentials"}
-            if _hash_password(password or "", user["password_salt"]) != user["password_hash"]:
-                return {"ok": False, "error": "invalid_credentials"}
-            cur.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user["id"],))
+                result = {"ok": False, "error": "invalid_credentials"}
+            elif _hash_password(password or "", user["password_salt"]) != user["password_hash"]:
+                result = {"ok": False, "error": "invalid_credentials"}
+            else:
+                cur.execute("UPDATE users SET last_login_at = now() WHERE id = %s", (user["id"],))
+                result = {"ok": True, "user": _public(user)}
         conn.commit()
-        return {"ok": True, "user": _public(user)}
     finally:
         db.close_connection(conn)
+    db.log_event("login", ok=result["ok"], email=email,
+                 user_id=result.get("user", {}).get("id") if result["ok"] else None,
+                 detail="email")
+    return result
 
 
 def oauth_login(data: dict):
@@ -144,20 +150,25 @@ def oauth_login(data: dict):
     try:
         _ensure(conn)
         with conn.cursor() as cur:
-            user = _fetch_user(cur, "WHERE auth_provider = %s AND provider_id = %s",
+            user = _fetch_user(cur, "WHERE auth_provider = %s AND provider_id = %s AND deleted_at IS NULL",
                                (provider, str(data.get("provider_id"))))
             if not user and email:
-                user = _fetch_user(cur, "WHERE email = %s", (email,))
+                user = _fetch_user(cur, "WHERE email = %s AND deleted_at IS NULL", (email,))
             if user:
                 cur.execute(
                     "UPDATE users SET last_login_at = now(), provider_scopes = %s WHERE id = %s",
                     (data.get("provider_scopes"), user["id"]),
                 )
                 conn.commit()
-                return {"ok": True, "new": False, "user": _public(user)}
-        return {"ok": True, "new": True}
+                result = {"ok": True, "new": False, "user": _public(user)}
+            else:
+                result = {"ok": True, "new": True}
     finally:
         db.close_connection(conn)
+    if not result.get("new"):
+        db.log_event("login", ok=True, email=email,
+                     user_id=result["user"]["id"], detail=provider)
+    return result
 
 
 def update_profile(data: dict):
@@ -180,6 +191,121 @@ def update_profile(data: dict):
         db.close_connection(conn)
 
 
+# ---------------------------------------------------------------------------
+# Operações de ADMINISTRAÇÃO (aba admin, 2026-07-19). Guard server-side: o
+# ator tem de ser role=admin NA BASE (nunca confiado do cliente). Toda a
+# mutação deixa snapshot na audit_log ANTES de tocar nos dados.
+# ---------------------------------------------------------------------------
+
+def _row_snapshot(cur, table, pk):
+    cur.execute(f"SELECT * FROM {table} WHERE id = %s", (int(pk),))
+    rows = cur.fetchall()
+    if not rows:
+        return None
+    cols = [c[0] for c in cur.description]
+    snap = dict(zip(cols, rows[0]))
+    snap.pop("password_salt", None)  # segredos NUNCA entram na auditoria
+    snap.pop("password_hash", None)
+    return snap
+
+
+def admin_list_users(actor_id, search=None, include_deleted=False):
+    conn = db.connect()
+    try:
+        _ensure(conn)
+        with conn.cursor() as cur:
+            if not db.is_admin_user(cur, actor_id):
+                return {"ok": False, "error": "forbidden"}
+            where, params = "WHERE 1=1", []
+            if not include_deleted:
+                where += " AND deleted_at IS NULL"
+            if search:
+                where += " AND (email ILIKE %s OR user_id ILIKE %s)"
+                params += [f"%{search}%", f"%{search}%"]
+            cur.execute(f"""SELECT u.id, u.user_id, u.email, u.first_name, u.last_name,
+                                   u.auth_provider, u.role, u.created_at, u.last_login_at, u.deleted_at,
+                                   (SELECT count(*) FROM transcriptions t
+                                    WHERE t.user_id = u.id AND t.deleted_at IS NULL) AS transcription_count
+                            FROM users u {where} ORDER BY u.id""", params)
+            cols = [c[0] for c in cur.description]
+            items = [dict(zip(cols, r)) for r in cur.fetchall()]
+        for it in items:
+            for k in ("created_at", "last_login_at", "deleted_at"):
+                it[k] = db._iso(it.get(k))
+            it["transcription_count"] = int(it["transcription_count"] or 0)
+        return {"ok": True, "items": items}
+    finally:
+        db.close_connection(conn)
+
+
+def admin_change_email(actor_id, user_pk, new_email):
+    """Re-vincula a conta a um e-mail novo. O id imutável arrasta tudo o resto
+    (transcrições, eventos futuros) — nada mais precisa de mudar."""
+    new_email = (new_email or "").strip().lower()
+    if "@" not in new_email:
+        return {"ok": False, "error": "invalid_email"}
+    conn = db.connect()
+    try:
+        _ensure(conn)
+        with conn.cursor() as cur:
+            if not db.is_admin_user(cur, actor_id):
+                return {"ok": False, "error": "forbidden"}
+            before = _row_snapshot(cur, "users", user_pk)
+            if not before or before.get("deleted_at"):
+                return {"ok": False, "error": "not_found"}
+            if _fetch_user(cur, "WHERE email = %s", (new_email,)):
+                return {"ok": False, "error": "email_taken"}
+            db.audit(conn, actor_id, "change_email", "users", user_pk, before)
+            cur.execute("UPDATE users SET email = %s, updated_at = now() WHERE id = %s",
+                        (new_email, int(user_pk)))
+        conn.commit()
+        with conn.cursor() as cur:
+            user = _fetch_user(cur, "WHERE id = %s", (int(user_pk),))
+        return {"ok": True, "user": _public(user)}
+    finally:
+        db.close_connection(conn)
+
+
+def admin_delete_user(actor_id, user_pk, purge=False):
+    """Apaga uma conta com CASCATA AUDITADA.
+    - soft (default): deleted_at na conta + em cada transcrição dela; cada
+      linha fica com snapshot na audit_log; tudo recuperável.
+    - purge=True (dados de teste / pedido definitivo): snapshots primeiro,
+      DELETE depois (satélites caem por ON DELETE CASCADE). Sem rasto, nunca."""
+    conn = db.connect()
+    try:
+        _ensure(conn)
+        with conn.cursor() as cur:
+            if not db.is_admin_user(cur, actor_id):
+                return {"ok": False, "error": "forbidden"}
+            if int(user_pk) == int(actor_id):
+                return {"ok": False, "error": "cannot_delete_self"}
+            before = _row_snapshot(cur, "users", user_pk)
+            if not before:
+                return {"ok": False, "error": "not_found"}
+            cur.execute("SELECT id FROM transcriptions WHERE user_id = %s", (int(user_pk),))
+            owned = [r[0] for r in cur.fetchall()]
+            action = "purge" if purge else "delete"
+            db.audit(conn, actor_id, action, "users", user_pk, before)
+            for tid in owned:
+                snap = _row_snapshot(cur, "transcriptions", tid)
+                db.audit(conn, actor_id, action, "transcriptions", tid, snap)
+            if purge:
+                for tid in owned:
+                    cur.execute("DELETE FROM transcriptions WHERE id = %s", (int(tid),))
+                cur.execute("DELETE FROM users WHERE id = %s", (int(user_pk),))
+            else:
+                cur.execute("UPDATE users SET deleted_at = now(), updated_at = now() WHERE id = %s",
+                            (int(user_pk),))
+                for tid in owned:
+                    cur.execute("UPDATE transcriptions SET deleted_at = now() WHERE id = %s AND deleted_at IS NULL",
+                                (int(tid),))
+        conn.commit()
+        return {"ok": True, "purged": bool(purge), "cascade": len(owned)}
+    finally:
+        db.close_connection(conn)
+
+
 def elevate(email: str, admin_secret: str):
     """Elevação a administrador (Fase 1b, 2026-07-19): identidade JÁ autenticada
     (por qualquer método — e-mail+senha, Google, GitHub) + prova de conhecimento
@@ -192,12 +318,13 @@ def elevate(email: str, admin_secret: str):
     try:
         db.check(password_override=admin_secret)  # ligação real com a credencial digitada
     except Exception:
+        db.log_event("admin_elevate", ok=False, email=email, detail="bad_secret")
         return {"ok": False, "error": "invalid_admin_credentials"}
     conn = db.connect()
     try:
         _ensure(conn)
         with conn.cursor() as cur:
-            user = _fetch_user(cur, "WHERE email = %s", (email,))
+            user = _fetch_user(cur, "WHERE email = %s AND deleted_at IS NULL", (email,))
             if not user:
                 return {"ok": False, "error": "not_found"}
             cur.execute("UPDATE users SET role = 'admin', updated_at = now() WHERE id = %s",
@@ -205,9 +332,10 @@ def elevate(email: str, admin_secret: str):
         conn.commit()
         with conn.cursor() as cur:
             user = _fetch_user(cur, "WHERE email = %s", (email,))
-        return {"ok": True, "user": _public(user)}
     finally:
         db.close_connection(conn)
+    db.log_event("admin_elevate", ok=True, email=email, user_id=user["id"])
+    return {"ok": True, "user": _public(user)}
 
 
 def reset_password(email: str, new_password: str):
@@ -218,7 +346,7 @@ def reset_password(email: str, new_password: str):
     try:
         _ensure(conn)
         with conn.cursor() as cur:
-            user = _fetch_user(cur, "WHERE email = %s", (email,))
+            user = _fetch_user(cur, "WHERE email = %s AND deleted_at IS NULL", (email,))
             if not user:
                 return {"ok": False, "error": "not_found"}
             salt = secrets.token_hex(16)
@@ -228,6 +356,7 @@ def reset_password(email: str, new_password: str):
                 (salt, _hash_password(new_password, salt), user["id"]),
             )
         conn.commit()
-        return {"ok": True}
     finally:
         db.close_connection(conn)
+    db.log_event("password_reset", ok=True, email=email, user_id=user["id"])
+    return {"ok": True}

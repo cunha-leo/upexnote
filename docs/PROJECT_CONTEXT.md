@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 19 de julho de 2026 (v0.16.0 — isolamento por utilizador + admin com 3 métodos; OAuth apps Google/GitHub registadas e EMPACOTADAS)  
+**Última atualização:** 19 de julho de 2026 (v0.17.0 — aba Administração: utilizadores/atividade/auditoria; padrão de dados com audit_log genérica)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -370,6 +370,25 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-19 (b): aba Administração + padrão de dados de auditoria — v0.17.0
+
+### O que mudou
+- **PADRÃO DE DADOS (definido pelo utilizador, permanente):** tabelas vivas guardam só o valor ATUAL + trio de datas `created_at`/`updated_at`/`deleted_at` (dt_issue/dt_change/dt_ret); editar = update no lugar (SEM arquivar o valor antigo); apagar = soft-delete + **snapshot integral na `audit_log`** (`deleted_at` preenchido = pista para ir à auditoria). `audit_log` é GENÉRICA (occurred_at, actor_user_id, action, table_name, record_id, snapshot JSON) — nem tabela gigante, nem históricos-espelho por tabela. Hard delete também deixa snapshot ANTES de destruir — deleção sem rasto não existe. **EXCEÇÃO acordada:** conteúdo (`transcript_texts`) continua a versionar EM EDIÇÃO (decisão v0.4.0 — é obra, não registo).
+- **Schema novo:** `audit_log` + `access_events` (login ok/falhado, register, password_reset, admin_elevate — com email/user_id/detail/host) + `users.deleted_at` (ALTER idempotente). Eventos gravam na base do MODO ATIVO (os de instalações remotas chegam ao central via API da Fase 2).
+- **Aba "Administração"** (nav só para `role=admin`; o worker REVALIDA o ator na base em toda a operação — a UI é janela, não segurança): **Utilizadores** (pesquisa, criar conta de teste, alterar e-mail com id imutável a arrastar tudo, apagar com cascata auditada, apagar definitivamente com snapshot prévio, mostrar apagados; auto-delete bloqueado); **Atividade** (períodos hoje/7d/30d/tudo, contadores por evento+resultado — tentativas falhadas de login/elevação = sinal de fraude — e lista); **Auditoria** (filtros tabela/id, retrato JSON expansível por entrada).
+- Contas apagadas (soft) não conseguem login; e-mail delas continua reservado até purge. CLI: `admin-users/-create-user/-change-email/-delete-user/-events/-audit` (payload stdin, `--mode`). Rust: comando `admin` com whitelist.
+- **Decisão de arquitetura registada:** telemetria de instalações de TERCEIROS (o "Joãozinho") é IMPOSSÍVEL sem a mini-API (a base está fechada ao mundo; clientes nunca terão credenciais) — a API da VPS fica com 4 papéis: reset por e-mail + 3º fator da elevação admin (código e-mail OU TOTP — pedido do utilizador: a senha do banco sozinha não pode chegar) + telemetria + gestão. É o próximo grande passo.
+
+### Evidência / teste
+- Ciclo admin completo verde em SQLite descartável: guard forbidden para não-admin e ator nulo, lista com contagem de transcrições, alterar e-mail (snapshot com valor antigo na auditoria), e-mail duplicado negado, auto-delete negado, soft-delete cascata (login da conta apagada recusado), eventos com agregados. `tsc`/`cargo check` limpos.
+- **Pendente validação do utilizador:** deleção auditada da conta `leonardoallves` (a estreia da aba), criar conta de teste, ver atividade/auditoria.
+
+### Impacto em dados, custo ou privacidade
+- Auditoria nunca guarda hashes/salts de senha (excluídos do snapshot). Sem custo. Purge existe mas sempre com rasto — conformidade e suporte.
+
+### Próximo passo
+- Validação do utilizador. Depois: mini-API na VPS (reset + 3º fator + telemetria).
 
 ### Registro — 2026-07-19: OAuth apps registadas + isolamento por utilizador + admin completo — v0.15.1 e v0.16.0
 

@@ -251,6 +251,43 @@ def cmd_oauth(args):
     return oauth.run_oauth(args.provider)
 
 
+def cmd_admin(args):
+    # Aba de Administração (2026-07-19). Payload por stdin; o ator (users.id da
+    # sessão) vai no payload e é REVALIDADO na base (role=admin) pelo worker.
+    from . import accounts, db
+    if getattr(args, "mode", None):
+        db.set_mode_override(args.mode)
+    data = _stdin_json()
+    if data is None:
+        _emit(sys.stdout, {"type": "error", "message": "JSON invalido no stdin."})
+        return 1
+    actor = data.get("actor")
+    op = args.command
+    try:
+        if op == "admin-users":
+            res = accounts.admin_list_users(actor, search=data.get("search"),
+                                            include_deleted=bool(data.get("include_deleted")))
+        elif op == "admin-create-user":
+            res = accounts.admin_list_users(actor)  # guard barato antes do register
+            if res.get("ok"):
+                res = accounts.register(data.get("user") or {})
+        elif op == "admin-change-email":
+            res = accounts.admin_change_email(actor, data.get("id"), data.get("email"))
+        elif op == "admin-delete-user":
+            res = accounts.admin_delete_user(actor, data.get("id"), purge=bool(data.get("purge")))
+        elif op == "admin-events":
+            res = db.list_access_events(actor, since=data.get("since"), event=data.get("event"),
+                                        search=data.get("search"))
+        else:  # admin-audit
+            res = db.list_audit(actor, table=data.get("table"), record_id=data.get("record_id"),
+                                since=data.get("since"))
+        _emit(sys.stdout, {"type": "admin", **res})
+        return 0 if res.get("ok") else 1
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha de administracao: {e}"})
+        return 1
+
+
 def cmd_db_check(args):
     # --mode permite testar um modo ESPECÍFICO sem o gravar (o ecrã de perfis
     # usa --mode vps para validar a config de administrador antes de trocar).
@@ -594,6 +631,11 @@ def build_parser():
     p_asg = sub.add_parser("account-suggest", help="Disponibilidade de user_id + sugestoes.")
     p_asg.add_argument("--user-id", required=True)
     p_asg.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
+
+    for name in ("admin-users", "admin-create-user", "admin-change-email",
+                 "admin-delete-user", "admin-events", "admin-audit"):
+        p_adm = sub.add_parser(name, help="Administracao (payload por stdin; ator revalidado na base).")
+        p_adm.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
     p_oa = sub.add_parser("oauth", help="Login social (Google loopback+PKCE / GitHub device flow).")
     p_oa.add_argument("--provider", choices=["google", "github"], required=True)
 
@@ -628,6 +670,12 @@ def main(argv=None):
         "account-reset": cmd_account,
         "account-elevate": cmd_account,
         "account-suggest": cmd_account,
+        "admin-users": cmd_admin,
+        "admin-create-user": cmd_admin,
+        "admin-change-email": cmd_admin,
+        "admin-delete-user": cmd_admin,
+        "admin-events": cmd_admin,
+        "admin-audit": cmd_admin,
         "oauth": cmd_oauth,
     }
     return handlers[args.command](args)
