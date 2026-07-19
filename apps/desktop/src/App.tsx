@@ -1529,7 +1529,10 @@ function AdminView({ active }: { active: boolean }) {
       op, mode: sess?.mode ?? null,
       payload: JSON.stringify({ actor: sess?.id ?? null, ...payload }),
     });
-    return JSON.parse(raw);
+    const r = JSON.parse(raw);
+    // erro do worker sem campo ok → normaliza para a UI nunca engolir falhas
+    if (r.type === "error" && r.ok === undefined) return { ok: false, error: r.message };
+    return r;
   }
 
   function sinceFor(p: typeof period): string | null {
@@ -1572,8 +1575,10 @@ function AdminView({ active }: { active: boolean }) {
   useEffect(() => {
     if (active && !loadedOnce) {
       setLoadedOnce(true);
-      loadUsers();
-      loadEvents();
+      // SEQUENCIAL de propósito: duas chamadas simultâneas ao worker no
+      // primeiro acesso disputavam o ensure_schema/túnel e uma podia morrer
+      // em silêncio (lista vazia sem erro — visto na validação da v0.17.0).
+      (async () => { await loadUsers(); await loadEvents(); })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, loadedOnce]);
@@ -1635,6 +1640,7 @@ function AdminView({ active }: { active: boolean }) {
       </div>
       {err && <div className="key-warn" style={{ marginBottom: 10 }}>{err}</div>}
       {notice && <div className="engine-info" style={{ marginBottom: 10 }}>{notice}</div>}
+      {busy && <div className="muted" style={{ marginBottom: 10 }}><span className="spinner" /> {t("loginChecking")}</div>}
 
       {tab === "users" && (
         <>
