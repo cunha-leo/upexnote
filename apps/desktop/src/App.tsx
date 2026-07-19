@@ -1373,7 +1373,16 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
             {(busy === "google" || busy === "github") && (
               <div className="muted" style={{ textAlign: "center" }}>
                 {oauthMsg}
-                {ghCode && <div className="gh-code">{t("loginGithubCode")}: <b>{ghCode}</b></div>}
+                {ghCode && (
+                  <div
+                    className="gh-code-box"
+                    onClick={() => navigator.clipboard.writeText(ghCode)}
+                    title={t("copy")}
+                  >
+                    <div className="gh-code-hint">{t("loginGithubCodeHint")}</div>
+                    <div className="gh-code-big">{ghCode}</div>
+                  </div>
+                )}
               </div>
             )}
             <div className="login-divider"><span>{t("loginOr")}</span></div>

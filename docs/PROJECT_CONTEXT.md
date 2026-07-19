@@ -371,6 +371,11 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-19 (h): código do Device Flow em destaque — v0.18.4
+
+- Validação da v0.18.3: arranque solto ✔, login pessoal Google ✔ (o `.en` entrou direto porque o e-mail JÁ tinha conta pessoal LOCAL de 2026-07-18 — account linking por e-mail, correto; conta virgem `allves` percorreu pré-cadastro + boas-vindas ✔).
+- **GitHub Device Flow confundiu o utilizador** (esperava receber o código; tem TOTP de 6 dígitos e viu 8): o código user_code aparece NA APP e é a pessoa que o escreve na página do GitHub — a apresentação estava discreta demais. v0.18.4: caixa em destaque (mono grande, borda no acento) com instrução explícita "Escreve ESTE código na página do GitHub (não é o do teu autenticador)" + clique-para-copiar. i18n ×3.
+
 ### Registro — 2026-07-19 (g): 4 fixes da validação — v0.18.3
 
 - **(1, grave) Login pessoal com Google falhava** ("e-mail ou senha incorretos"): a base SQLite local era pré-v0.17 e `accounts._ensure` só criava a tabela (CREATE IF NOT EXISTS) sem as MIGRAÇÕES de colunas — o `WHERE deleted_at IS NULL` rebentava. Fix: `_ensure` passou a chamar `db.ensure_schema` (schema completo + migrações; barato com o ensure-once). Testado contra uma base simulada antiga. As duas vertentes do mesmo e-mail (pessoal local + admin central) ficam operacionais.

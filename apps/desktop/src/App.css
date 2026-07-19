@@ -805,6 +805,19 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
 }
 
+/* Código do Device Flow do GitHub: é o UTILIZADOR que o escreve na página do
+   GitHub — tem de ser impossível de não ver (feedback 2026-07-19) */
+.gh-code-box {
+  margin-top: 10px; padding: 12px 14px; cursor: pointer;
+  border: 1px dashed var(--accent); border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.gh-code-hint { font-size: var(--fs-sm); color: var(--text-dim); margin-bottom: 6px; }
+.gh-code-big {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 26px; font-weight: 600; letter-spacing: 4px; color: var(--accent);
+}
+
 /* Boas-vindas pós-cadastro: orientações compactas antes de entrar */
 .welcome-list {
   text-align: left; margin: 0 0 18px; padding-left: 18px;
