@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 19 de julho de 2026 (v0.17.0 — aba Administração: utilizadores/atividade/auditoria; padrão de dados com audit_log genérica)  
+**Última atualização:** 19 de julho de 2026 (v0.18.4 — sessão VALIDADA de ponta a ponta: OAuth Google+GitHub, isolamento por utilizador, multi-admin, aba Administração. Próximo: mini-API na VPS)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -370,6 +370,10 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### ✅ VALIDAÇÃO FINAL DA SESSÃO 2026-07-19 (utilizador, v0.18.4)
+- **Tudo aprovado:** GitHub Device Flow completo (código em destaque na app → página do GitHub → autorizado → pré-cadastro admin → conta criada); consola mostra os **2 admins** dele — `cunhaleonardo.en` (google, dono das 10 transcrições) e `cunhaleonardo.pt` (github) — multi-admin conforme desenhado, auditoria distingue as identidades. Google pessoal+admin ✔, e-mail+senha ✔, arranque solto ✔, aba Administração ✔.
+- **PRÓXIMA SESSÃO (prioridade nº 1): mini-API na VPS** (FastAPI/EasyPanel) — (1) reset de senha por código de e-mail (remetente: domínio do utilizador, alias no-reply@); (2) 3º fator da elevação admin (código e-mail OU TOTP — a senha do banco sozinha deixa de chegar); (3) telemetria/eventos das instalações de terceiros; (4) opt-ins de backup discutidos (pasta sincronizada já tem nudge no onboarding). É o início da API única da Fase 2/item 14C.
 
 ### Registro — 2026-07-19 (h): código do Device Flow em destaque — v0.18.4
 
