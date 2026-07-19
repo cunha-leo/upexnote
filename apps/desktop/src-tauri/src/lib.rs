@@ -279,7 +279,7 @@ async fn account(op: String, payload: String, mode: Option<String>) -> Result<St
 /// que o worker REVALIDA na base — o cliente não consegue afirmar-se admin).
 #[tauri::command]
 async fn admin(op: String, payload: String, mode: Option<String>) -> Result<String, String> {
-    const OPS: [&str; 7] = ["overview", "users", "create-user", "change-email", "delete-user", "events", "audit"];
+    const OPS: [&str; 7] = ["overview", "users", "create-user", "update-user", "delete-user", "events", "audit"];
     if !OPS.contains(&op.as_str()) {
         return Err(format!("operação desconhecida: {op}"));
     }

@@ -273,8 +273,8 @@ def cmd_admin(args):
             res = accounts.admin_list_users(actor)  # guard barato antes do register
             if res.get("ok"):
                 res = accounts.register(data.get("user") or {})
-        elif op == "admin-change-email":
-            res = accounts.admin_change_email(actor, data.get("id"), data.get("email"))
+        elif op == "admin-update-user":
+            res = accounts.admin_update_user(actor, data.get("id"), data.get("fields"))
         elif op == "admin-delete-user":
             res = accounts.admin_delete_user(actor, data.get("id"), purge=bool(data.get("purge")))
         elif op == "admin-events":
@@ -634,7 +634,7 @@ def build_parser():
     p_asg.add_argument("--user-id", required=True)
     p_asg.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
 
-    for name in ("admin-overview", "admin-users", "admin-create-user", "admin-change-email",
+    for name in ("admin-overview", "admin-users", "admin-create-user", "admin-update-user",
                  "admin-delete-user", "admin-events", "admin-audit"):
         p_adm = sub.add_parser(name, help="Administracao (payload por stdin; ator revalidado na base).")
         p_adm.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
@@ -675,7 +675,7 @@ def main(argv=None):
         "admin-overview": cmd_admin,
         "admin-users": cmd_admin,
         "admin-create-user": cmd_admin,
-        "admin-change-email": cmd_admin,
+        "admin-update-user": cmd_admin,
         "admin-delete-user": cmd_admin,
         "admin-events": cmd_admin,
         "admin-audit": cmd_admin,

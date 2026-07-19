@@ -371,6 +371,12 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-19 (d): edição completa do utilizador na aba admin — v0.18.0
+
+- **Feedback do utilizador à v0.17.3 (aprovada no resto):** "Change e-mail" isolado é desenho pobre — a edição tem de ser do REGISTO completo (e-mail, username, nomes, ROLE), porque o id imutável arrasta tudo; caso de uso: despromover uma conta admin engano para user (no próximo login entra só com as abas de utilizador).
+- **v0.18.0:** `admin_update_user` (worker) edita qualquer combinação de campos com validações (e-mail/username únicos, role user|admin) + snapshot na auditoria antes; **salvaguardas de lockout: ninguém altera o PRÓPRIO role, e o último admin não pode ser despromovido.** UI: botão "Editar" → modal com o registo completo + select de role (bloqueado na própria conta). `admin-change-email` substituído por `admin-update-user` (CLI/Rust/whitelist). Testado: edição multi-campo, despromoção com 2 admins ok, próprio role negado, último admin protegido, forbidden para não-admin, duplicados negados, snapshots na auditoria.
+- Princípio anotado para as outras vistas (pedido do utilizador): edição sempre do registo completo em modal, nunca ações pontuais por campo.
+
 ### Registro — 2026-07-19 (c): correções da validação da aba admin — v0.17.1 a v0.17.3
 
 - **v0.17.3 (validação do utilizador):** a 1ª deleção auditada real (purge da conta `leonardoallves` na VPS) funcionou — users/transcrições intactos, snapshot na audit_log (verificado por query). Sustos/asperezas corrigidos: confirmação de apagar passou a MODAL próprio centrado (o texto inline quebrava dentro da célula; diálogo nativo continua proibido — crasha a WebView2); a pesquisa limpa-se após delete/create (um filtro esquecido escondia a tabela inteira e pareceu "DELETE sem WHERE" — era só o live filter); filtro sem resultados mostra mensagem explícita + "Limpar filtro".

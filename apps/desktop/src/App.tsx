@@ -1518,7 +1518,11 @@ function AdminView({ active }: { active: boolean }) {
 
   const [uSearch, setUSearch] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
-  const [emailEdit, setEmailEdit] = useState<{ id: number; value: string } | null>(null);
+  // Edição COMPLETA do registo (não ações por campo): e-mail, username, nomes,
+  // role — tudo ancorado no id imutável, que arrasta as outras tabelas.
+  const [editUser, setEditUser] = useState<{
+    id: number; email: string; user_id: string; first_name: string; last_name: string; role: string;
+  } | null>(null);
   const [confirmDel, setConfirmDel] = useState<{ id: number; purge: boolean } | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [cEmail, setCEmail] = useState("");
@@ -1604,13 +1608,30 @@ function AdminView({ active }: { active: boolean }) {
       (!aId.trim() || String(a.record_id) === aId.trim()));
   }, [data.audit, aTable, aId]);
 
-  async function saveEmail() {
-    if (!emailEdit) return;
+  function mapAdmErr(code?: string): string {
+    if (code === "email_taken") return t("loginErrEmailTaken");
+    if (code === "user_id_taken") return t("loginErrUserIdTaken");
+    if (code === "cannot_change_own_role") return t("admNoSelfRole");
+    if (code === "last_admin") return t("admLastAdmin");
+    return t("errPrefix") + (code || "");
+  }
+
+  async function saveEdit() {
+    if (!editUser) return;
     setBusy(true); setErr(""); setNotice("");
     try {
-      const r = await call("change-email", { id: emailEdit.id, email: emailEdit.value.trim() });
-      if (r.ok) { setEmailEdit(null); setNotice(t("admSaved")); loadOverview(); }
-      else setErr(r.error === "email_taken" ? t("loginErrEmailTaken") : t("errPrefix") + (r.error || ""));
+      const r = await call("update-user", {
+        id: editUser.id,
+        fields: {
+          email: editUser.email.trim(),
+          user_id: editUser.user_id.trim(),
+          first_name: editUser.first_name.trim() || null,
+          last_name: editUser.last_name.trim() || null,
+          role: editUser.role,
+        },
+      });
+      if (r.ok) { setEditUser(null); setNotice(t("admSaved")); setUSearch(""); loadOverview(); }
+      else setErr(mapAdmErr(r.error));
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   }
 
@@ -1714,17 +1735,7 @@ function AdminView({ active }: { active: boolean }) {
                     <td>#{u.id}</td>
                     <td>{u.user_id}</td>
                     <td>
-                      {emailEdit?.id === u.id ? (
-                        <span className="row" style={{ gap: 6 }}>
-                          <input type="text" value={emailEdit.value}
-                            onChange={(e) => setEmailEdit({ id: u.id, value: e.currentTarget.value })}
-                            onKeyDown={(e) => { if (e.key === "Enter") saveEmail(); }} />
-                          <button onClick={saveEmail} disabled={busy}>{t("save")}</button>
-                          <button className="secondary" onClick={() => setEmailEdit(null)}>{t("cancel")}</button>
-                        </span>
-                      ) : (
-                        <>{u.email}{u.deleted_at && <span className="badge" style={{ marginLeft: 6 }}>{t("admDeletedBadge")}</span>}</>
-                      )}
+                      {u.email}{u.deleted_at && <span className="badge" style={{ marginLeft: 6 }}>{t("admDeletedBadge")}</span>}
                     </td>
                     <td>{u.auth_provider}</td>
                     <td>{u.role}</td>
@@ -1733,8 +1744,14 @@ function AdminView({ active }: { active: boolean }) {
                     <td>
                       {!u.deleted_at ? (
                         <span className="row" style={{ gap: 6 }}>
-                          <button className="secondary" onClick={() => { setEmailEdit({ id: u.id, value: u.email }); setErr(""); }}>
-                            {t("admChangeEmail")}
+                          <button className="secondary" onClick={() => {
+                            setErr("");
+                            setEditUser({
+                              id: u.id, email: u.email, user_id: u.user_id,
+                              first_name: u.first_name || "", last_name: u.last_name || "", role: u.role,
+                            });
+                          }}>
+                            {t("admEdit")}
                           </button>
                           <button className="secondary" onClick={() => setConfirmDel({ id: u.id, purge: false })}>{t("admDelete")}</button>
                           <button className="secondary" onClick={() => setConfirmDel({ id: u.id, purge: true })}>{t("admPurge")}</button>
@@ -1761,6 +1778,54 @@ function AdminView({ active }: { active: boolean }) {
             </div>
           )}
           <div className="engine-info" style={{ marginTop: 8 }}>{t("admCascadeNote")}</div>
+          {editUser && (
+            <div className="modal-overlay" onClick={() => setEditUser(null)}>
+              <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                <h3 style={{ margin: "0 0 4px" }}>{t("admEditTitle")}</h3>
+                <div className="muted" style={{ marginBottom: 14 }}>#{editUser.id}</div>
+                <div className="field" style={{ marginBottom: 10 }}>
+                  <label>{t("loginEmail")}</label>
+                  <input type="text" value={editUser.email}
+                    onChange={(e) => setEditUser({ ...editUser, email: e.currentTarget.value })} />
+                </div>
+                <div className="field" style={{ marginBottom: 10 }}>
+                  <label>{t("loginUserId")}</label>
+                  <input type="text" value={editUser.user_id}
+                    onChange={(e) => setEditUser({ ...editUser, user_id: e.currentTarget.value.toLowerCase().replace(/[^a-z0-9._-]/g, "") })} />
+                </div>
+                <div className="row" style={{ marginBottom: 10 }}>
+                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                    <label>{t("loginFirstName")}</label>
+                    <input type="text" value={editUser.first_name}
+                      onChange={(e) => setEditUser({ ...editUser, first_name: e.currentTarget.value })} />
+                  </div>
+                  <div className="field" style={{ flex: 1, marginBottom: 0 }}>
+                    <label>{t("loginLastName")}</label>
+                    <input type="text" value={editUser.last_name}
+                      onChange={(e) => setEditUser({ ...editUser, last_name: e.currentTarget.value })} />
+                  </div>
+                </div>
+                <div className="field" style={{ marginBottom: 16 }}>
+                  <label>{t("admColRole")}</label>
+                  <select value={editUser.role}
+                    disabled={editUser.id === (sess?.id ?? -1)}
+                    onChange={(e) => setEditUser({ ...editUser, role: e.currentTarget.value })}>
+                    <option value="user">user</option>
+                    <option value="admin">admin</option>
+                  </select>
+                  {editUser.id === (sess?.id ?? -1) && (
+                    <div className="engine-info">{t("admNoSelfRole")}</div>
+                  )}
+                </div>
+                <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+                  <button className="secondary" onClick={() => setEditUser(null)} disabled={busy}>{t("cancel")}</button>
+                  <button onClick={saveEdit} disabled={busy}>
+                    {busy ? <span className="spinner" /> : t("save")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {confirmDel && (() => {
             const target = data.users.find((u) => u.id === confirmDel.id);
             return (

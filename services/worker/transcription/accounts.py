@@ -283,12 +283,29 @@ def admin_list_users(actor_id, search=None, include_deleted=False):
         db.close_connection(conn)
 
 
-def admin_change_email(actor_id, user_pk, new_email):
-    """Re-vincula a conta a um e-mail novo. O id imutável arrasta tudo o resto
-    (transcrições, eventos futuros) — nada mais precisa de mudar."""
-    new_email = (new_email or "").strip().lower()
-    if "@" not in new_email:
-        return {"ok": False, "error": "invalid_email"}
+# Campos editáveis pelo admin (2026-07-19: edição COMPLETA do registo, não
+# ações pontuais por campo — o id imutável arrasta tudo o resto).
+_ADMIN_EDITABLE = ("email", "user_id", "first_name", "last_name", "phone", "role")
+
+
+def admin_update_user(actor_id, user_pk, fields):
+    """Edita qualquer combinação de campos do registo (e-mail, username, nomes,
+    telefone, role). Snapshot na auditoria ANTES. Salvaguardas: o admin não
+    altera o PRÓPRIO role (não se tranca fora) e o último admin não pode ser
+    despromovido (a base nunca fica sem administrador)."""
+    fields = {k: v for k, v in (fields or {}).items() if k in _ADMIN_EDITABLE}
+    if not fields:
+        return {"ok": False, "error": "nothing_to_update"}
+    if "email" in fields:
+        fields["email"] = (fields["email"] or "").strip().lower()
+        if "@" not in fields["email"]:
+            return {"ok": False, "error": "invalid_email"}
+    if "user_id" in fields:
+        fields["user_id"] = _normalize_user_id(fields["user_id"])
+        if len(fields["user_id"]) < 3:
+            return {"ok": False, "error": "invalid_user_id"}
+    if "role" in fields and fields["role"] not in ("user", "admin"):
+        return {"ok": False, "error": "invalid_role"}
     conn = db.connect()
     try:
         _ensure(conn)
@@ -298,11 +315,23 @@ def admin_change_email(actor_id, user_pk, new_email):
             before = _row_snapshot(cur, "users", user_pk)
             if not before or before.get("deleted_at"):
                 return {"ok": False, "error": "not_found"}
-            if _fetch_user(cur, "WHERE email = %s", (new_email,)):
-                return {"ok": False, "error": "email_taken"}
-            db.audit(conn, actor_id, "change_email", "users", user_pk, before)
-            cur.execute("UPDATE users SET email = %s, updated_at = now() WHERE id = %s",
-                        (new_email, int(user_pk)))
+            if "role" in fields and fields["role"] != before.get("role"):
+                if int(user_pk) == int(actor_id):
+                    return {"ok": False, "error": "cannot_change_own_role"}
+                if before.get("role") == "admin" and fields["role"] == "user":
+                    cur.execute("SELECT count(*) FROM users WHERE role = 'admin' AND deleted_at IS NULL")
+                    if int(cur.fetchone()[0]) <= 1:
+                        return {"ok": False, "error": "last_admin"}
+            if "email" in fields and fields["email"] != before.get("email"):
+                if _fetch_user(cur, "WHERE email = %s AND id <> %s", (fields["email"], int(user_pk))):
+                    return {"ok": False, "error": "email_taken"}
+            if "user_id" in fields and fields["user_id"] != before.get("user_id"):
+                if _fetch_user(cur, "WHERE user_id = %s AND id <> %s", (fields["user_id"], int(user_pk))):
+                    return {"ok": False, "error": "user_id_taken"}
+            db.audit(conn, actor_id, "update", "users", user_pk, before)
+            sets = ", ".join(f"{k} = %s" for k in fields)
+            cur.execute(f"UPDATE users SET {sets}, updated_at = now() WHERE id = %s",
+                        list(fields.values()) + [int(user_pk)])
         conn.commit()
         with conn.cursor() as cur:
             user = _fetch_user(cur, "WHERE id = %s", (int(user_pk),))
