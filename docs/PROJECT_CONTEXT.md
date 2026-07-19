@@ -371,6 +371,11 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-19 (e): boas-vindas pós-cadastro + dica de backup na nuvem — v0.18.1
+
+- **Contexto (discussão de durabilidade):** conta local (SQLite) que perde a máquina perde o CONTEÚDO — por desenho (item 13: conteúdo nunca sai da máquina; admin vê métricas, não material). A recuperação certa é o próprio utilizador ter a pasta de transcripts numa pasta sincronizada (OneDrive/Drive) — os transcripts são FICHEIROS, a nuvem é dele, privacidade intacta. E-mail com anexo por transcript: rejeitado como default (espalha conteúdo sensível por servidores de correio); possível opt-in futuro via mini-API.
+- **v0.18.1:** ecrã "Bem-vindo ao UpexNote" UMA vez após criar conta (e-mail ou pós-OAuth): 3 orientações (privacidade local-first, pasta sincronizada = backup automático, custo dos motores antes de processar) + "Começar". É o encaixe futuro do consentimento de telemetria RGPD (Fase 2) — cookies banner NÃO se aplica (app desktop, sem cookies/tracking hoje). Dica curta de nuvem no Transcribe (sob "Save to", some quando há destino pontual) e nas Definições junto à pasta padrão. i18n ×3.
+
 ### Registro — 2026-07-19 (d): edição completa do utilizador na aba admin — v0.18.0
 
 - **Feedback do utilizador à v0.17.3 (aprovada no resto):** "Change e-mail" isolado é desenho pobre — a edição tem de ser do REGISTO completo (e-mail, username, nomes, ROLE), porque o id imutável arrasta tudo; caso de uso: despromover uma conta admin engano para user (no próximo login entra só com as abas de utilizador).

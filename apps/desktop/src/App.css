@@ -804,6 +804,14 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
   padding: 22px 24px; max-width: 420px; width: calc(100% - 48px);
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
 }
+
+/* Boas-vindas pós-cadastro: orientações compactas antes de entrar */
+.welcome-list {
+  text-align: left; margin: 0 0 18px; padding-left: 18px;
+  display: grid; gap: 10px;
+  font-size: var(--fs-sm); color: var(--text-dim); line-height: 1.5;
+}
+.welcome-list li::marker { color: var(--accent); }
 .lib-row .lib-meta {
   display: flex;
   gap: 6px;

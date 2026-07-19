@@ -936,6 +936,7 @@ function StorageSettingsCard() {
         {s && !s.storage_dir_custom && (
           <div className="engine-info">{t("stoFactory", { path: s.default_storage_dir })}</div>
         )}
+        <div className="engine-info">{t("cloudHint")}</div>
       </div>
       <div className="field">
         <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -1101,7 +1102,9 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   const { t } = useLang();
   // Login é SEMPRE o primeiro ecrã (padrão de mercado); criar conta é via link.
   // E-mail NUNCA pré-preenchido (após logout, a pessoa decide a conta).
-  const [screen, setScreen] = useState<"login" | "create" | "reset" | "precad">("login");
+  const [screen, setScreen] = useState<"login" | "create" | "reset" | "precad" | "welcome">("login");
+  // Conta acabada de criar, à espera do ecrã de boas-vindas (orientações)
+  const [pendingUser, setPendingUser] = useState<AccountUser | null>(null);
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
@@ -1277,6 +1280,14 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           return;
         }
         try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
+        if (screen === "create" || screen === "precad") {
+          // Conta NOVA → ecrã de boas-vindas com orientações (só uma vez;
+          // logins seguintes entram direto). Futuro: consentimento de
+          // telemetria (RGPD) encaixa aqui quando a Fase 2 chegar.
+          setPendingUser(res.user);
+          setScreen("welcome");
+          return;
+        }
         finish("user", res.user);
         return;
       }
@@ -1303,6 +1314,19 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           <span className="up">Upex</span><span className="ex">Note</span>
         </div>
       </div>
+      {screen === "welcome" ? (
+        <div className="login-card">
+          <h1 className="pg-title">{t("welcomeTitle")}</h1>
+          <ul className="welcome-list">
+            <li>{t("welcomeTipPrivacy")}</li>
+            <li>{t("welcomeTipFolder")}</li>
+            <li>{t("welcomeTipEngines")}</li>
+          </ul>
+          <button style={{ width: "100%" }} onClick={() => finish("user", pendingUser)}>
+            {t("welcomeStart")}
+          </button>
+        </div>
+      ) : (
       <div className="login-card">
         <h1 className="pg-title">
           {screen === "create" ? t("loginCreateTitle") : screen === "precad" ? t("loginPrecadTitle")
@@ -1426,16 +1450,19 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           ) : null}
         </div>
       </div>
-      <button
-        className="link-btn login-admin"
-        onClick={() => {
-          setErr(""); setAdminPw(""); setScreen("login");
-          setTarget(target === "admin" ? "user" : "admin");
-        }}
-        disabled={busy !== ""}
-      >
-        {target === "admin" ? t("loginUserLink") : t("loginAdminLink")}
-      </button>
+      )}
+      {screen !== "welcome" && (
+        <button
+          className="link-btn login-admin"
+          onClick={() => {
+            setErr(""); setAdminPw(""); setScreen("login");
+            setTarget(target === "admin" ? "user" : "admin");
+          }}
+          disabled={busy !== ""}
+        >
+          {target === "admin" ? t("loginUserLink") : t("loginAdminLink")}
+        </button>
+      )}
     </div>
   );
 }
@@ -2267,8 +2294,10 @@ function App() {
                       <button className="secondary" onClick={() => setDest("")} disabled={running}>{t("trClear")}</button>
                     )}
                   </div>
-                  {dest && (
+                  {dest ? (
                     <div className="engine-info">{t("trDestInfo", { dest })}</div>
+                  ) : (
+                    <div className="engine-info">{t("cloudHint")}</div>
                   )}
                 </div>
 
