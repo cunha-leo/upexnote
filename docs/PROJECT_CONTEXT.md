@@ -371,7 +371,9 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
-### Registro — 2026-07-19 (c): correções da validação da aba admin — v0.17.1 e v0.17.2
+### Registro — 2026-07-19 (c): correções da validação da aba admin — v0.17.1 a v0.17.3
+
+- **v0.17.3 (validação do utilizador):** a 1ª deleção auditada real (purge da conta `leonardoallves` na VPS) funcionou — users/transcrições intactos, snapshot na audit_log (verificado por query). Sustos/asperezas corrigidos: confirmação de apagar passou a MODAL próprio centrado (o texto inline quebrava dentro da célula; diálogo nativo continua proibido — crasha a WebView2); a pesquisa limpa-se após delete/create (um filtro esquecido escondia a tabela inteira e pareceu "DELETE sem WHERE" — era só o live filter); filtro sem resultados mostra mensagem explícita + "Limpar filtro".
 
 - **v0.17.1:** a carga inicial da aba disparava utilizadores+eventos em SIMULTÂNEO e a primeira chamada podia morrer em silêncio (lista vazia sem erro — visto pelo utilizador; o Filter manual trazia os dados). Sequencial + spinner + erros do worker sempre visíveis.
 - **v0.17.2 (feedback de UX do utilizador — REGRA PERMANENTE):** "pesquisa com botão Filter e espera é arcaico; tem de ser live como AJAX". Novo endpoint `admin-overview` (utilizadores+eventos+auditoria numa ÚNICA ligação/processo — antes eram 3); cache SWR da aba por modo::conta (abre instantânea, refresca em fundo com badge, igual à Biblioteca v0.8.1); **pesquisa de utilizadores, períodos de atividade e filtros de auditoria 100% locais, a cada tecla, sem round-trips**; botões Filter removidos; botão Atualizar único; caches admin limpas no logout. REGRA para todas as vistas futuras: uma chamada agregada + SWR + filtros no cliente.
