@@ -1186,7 +1186,11 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     return () => clearTimeout(id);
   }, [userId, screen, accMode]);
 
-  // Eventos do fluxo OAuth (o device flow do GitHub mostra um código)
+  // Eventos do fluxo OAuth (o device flow do GitHub mostra um código).
+  // processingRef: entre o fim do processo OAuth e o fim da validação da conta
+  // há 2-3 chamadas à base — o "done" do OAuth NÃO pode limpar o estado ocupado
+  // nesse intervalo (parecia erro/silêncio; visto na validação da v0.18.1).
+  const processingRef = useRef(false);
   useEffect(() => {
     const unEvent = listen<string>("oauth://event", async (ev) => {
       let obj: any;
@@ -1195,13 +1199,20 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         setOauthMsg(obj.message || t("loginOauthWaiting"));
         if (obj.user_code) setGhCode(obj.user_code);
       } else if (obj.type === "oauth") {
+        processingRef.current = true;
+        setGhCode("");
+        setOauthMsg(t("loginFinishing"));
         const adm = targetRef.current === "admin";
         const raw = await invoke<string>("account", {
           op: "oauth-login", mode: adm ? "vps" : "local", payload: JSON.stringify(obj),
         });
         const res = JSON.parse(raw);
         if (res.ok && !res.new) {
-          if (adm) { await elevateAndFinish(res.user); return; }
+          if (adm) {
+            const ok = await elevateAndFinish(res.user);
+            if (!ok) { processingRef.current = false; setBusy(""); setOauthMsg(""); }
+            return;
+          }
           // fixa o modo local EXPLICITAMENTE — a conta pessoal nunca pode
           // depender do default da máquina (bug real de 2026-07-19)
           try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
@@ -1209,6 +1220,9 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           return;
         }
         if (res.ok && res.new) {
+          processingRef.current = false;
+          setBusy("");
+          setOauthMsg("");
           setOauthPending(obj as OauthPayload);
           setEmail(obj.email || "");
           setFirstName(obj.first_name || "");
@@ -1217,11 +1231,22 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           setErr("");
           setScreen("precad");
         }
+        if (!res.ok) {
+          processingRef.current = false;
+          setBusy(""); setOauthMsg("");
+          setErr(t("loginErrWrong"));
+        }
       } else if (obj.type === "error") {
+        processingRef.current = false;
+        setBusy(""); setOauthMsg("");
         setErr(obj.error === "oauth_not_configured" ? t("loginOauthNotConfigured") : t("loginErrWrong"));
       }
     });
-    const unDone = listen("oauth://done", () => { setBusy(""); setOauthMsg(""); setGhCode(""); });
+    const unDone = listen("oauth://done", () => {
+      // Só limpa se NÃO houver validação de conta em curso (o fim do processo
+      // OAuth chega antes das chamadas à base terminarem).
+      if (!processingRef.current) { setBusy(""); setOauthMsg(""); setGhCode(""); }
+    });
     return () => { unEvent.then((f) => f()); unDone.then((f) => f()); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t]);

@@ -371,6 +371,12 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-19 (f): fim do silêncio pós-OAuth + ensure-once — v0.18.2
+
+- **Bug visto pelo utilizador na v0.18.1:** login admin via Google parecia morto por vários segundos — o evento de fim do processo OAuth limpava o spinner ANTES das 2-3 chamadas à base (oauth-login + elevate) terminarem. Fix: `processingRef` mantém o estado ocupado com "A concluir a sessão…" até ao fim real; erros em qualquer ramo limpam o estado.
+- **Latência real cortada:** `ensure_schema` passou a correr UMA vez por processo/modo (`_ensured_modes`) — cada verificação eram ~20 statements pelo túnel, e comandos como o elevate ligavam-se 2× (check + update), pagando o ensure duas vezes.
+- Esclarecimento anotado: a mensagem de boas-vindas é SÓ no cadastro (uma vez por conta) — logins seguintes entram direto, como desenhado.
+
 ### Registro — 2026-07-19 (e): boas-vindas pós-cadastro + dica de backup na nuvem — v0.18.1
 
 - **Contexto (discussão de durabilidade):** conta local (SQLite) que perde a máquina perde o CONTEÚDO — por desenho (item 13: conteúdo nunca sai da máquina; admin vê métricas, não material). A recuperação certa é o próprio utilizador ter a pasta de transcripts numa pasta sincronizada (OneDrive/Drive) — os transcripts são FICHEIROS, a nuvem é dele, privacidade intacta. E-mail com anexo por transcript: rejeitado como default (espalha conteúdo sensível por servidores de correio); possível opt-in futuro via mini-API.

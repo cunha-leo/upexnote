@@ -555,8 +555,17 @@ def _ensure_owner_column(conn):
             cur.execute("ALTER TABLE users ADD COLUMN deleted_at timestamptz")
 
 
+_ensured_modes = set()
+
+
 def ensure_schema(conn):
-    """Cria todas as tabelas (idempotente) e semeia as dimensões."""
+    """Cria todas as tabelas (idempotente) e semeia as dimensões.
+    Corre UMA vez por processo/modo: cada statement é uma ida-e-volta pelo
+    túnel — repetir o ensure em cada connect() do mesmo comando só soma
+    latência (visto no login admin da v0.18.1)."""
+    mode = storage_mode()
+    if mode in _ensured_modes:
+        return
     with conn.cursor() as cur:
         for stmt in SCHEMA_SQL:
             cur.execute(stmt)
@@ -581,6 +590,7 @@ def ensure_schema(conn):
                 (code, label, severity),
             )
     conn.commit()
+    _ensured_modes.add(mode)
 
 
 # Compat: nome antigo ainda chamado nalguns sítios.
