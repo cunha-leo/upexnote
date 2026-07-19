@@ -371,6 +371,13 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-19 (c): correções da validação da aba admin — v0.17.1 e v0.17.2
+
+- **v0.17.1:** a carga inicial da aba disparava utilizadores+eventos em SIMULTÂNEO e a primeira chamada podia morrer em silêncio (lista vazia sem erro — visto pelo utilizador; o Filter manual trazia os dados). Sequencial + spinner + erros do worker sempre visíveis.
+- **v0.17.2 (feedback de UX do utilizador — REGRA PERMANENTE):** "pesquisa com botão Filter e espera é arcaico; tem de ser live como AJAX". Novo endpoint `admin-overview` (utilizadores+eventos+auditoria numa ÚNICA ligação/processo — antes eram 3); cache SWR da aba por modo::conta (abre instantânea, refresca em fundo com badge, igual à Biblioteca v0.8.1); **pesquisa de utilizadores, períodos de atividade e filtros de auditoria 100% locais, a cada tecla, sem round-trips**; botões Filter removidos; botão Atualizar único; caches admin limpas no logout. REGRA para todas as vistas futuras: uma chamada agregada + SWR + filtros no cliente.
+- Nota de expectativa registada: Activity/Audit começam VAZIOS — os eventos só se acumulam a partir da v0.17.0 (logins/resets/elevações novos) e a auditoria enche na primeira mutação admin.
+- Validado pelo utilizador na v0.17.0/1: aba aparece só para admin, lista da base central com os 2 utilizadores; pendente validar 0.17.2 (velocidade + live search) e a deleção auditada da `leonardoallves`.
+
 ### Registro — 2026-07-19 (b): aba Administração + padrão de dados de auditoria — v0.17.0
 
 ### O que mudou

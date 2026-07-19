@@ -398,7 +398,7 @@ function libCacheKey(): string {
 
 function clearLibCaches() {
   for (const k of Object.keys(localStorage)) {
-    if (k.startsWith(LIB_CACHE_PREFIX)) localStorage.removeItem(k);
+    if (k.startsWith(LIB_CACHE_PREFIX) || k.startsWith("upexnote-admin-cache")) localStorage.removeItem(k);
   }
 }
 
@@ -1456,7 +1456,7 @@ function SidebarProfile({ collapsed }: { collapsed: boolean }) {
   const initial = (name[0] || "?").toUpperCase();
   function logout() {
     localStorage.removeItem("upexnote-session");
-    localStorage.removeItem("upexnote-lib-cache");
+    clearLibCaches();
     window.location.reload();
   }
   return (
@@ -1496,6 +1496,16 @@ type AdmAudit = {
   table_name: string; record_id: number | null; snapshot: Record<string, unknown> | null;
 };
 
+// Cache SWR da aba (mesmo padrão da Biblioteca v0.8.1): abre instantânea com
+// os últimos dados guardados; a atualização corre em fundo. Por modo+conta.
+const ADM_CACHE_PREFIX = "upexnote-admin-cache";
+type AdmData = { users: AdmUser[]; events: AdmEvent[]; audit: AdmAudit[] };
+
+function admCacheKey(): string {
+  const s = getSession();
+  return `${ADM_CACHE_PREFIX}::${s?.mode || "?"}::${s?.id ?? "?"}`;
+}
+
 function AdminView({ active }: { active: boolean }) {
   const { t, locale } = useLang();
   const sess = getSession();
@@ -1503,8 +1513,9 @@ function AdminView({ active }: { active: boolean }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
+  const [data, setData] = useState<AdmData>({ users: [], events: [], audit: [] });
+  const [cacheTs, setCacheTs] = useState<string | null>(null);
 
-  const [users, setUsers] = useState<AdmUser[]>([]);
   const [uSearch, setUSearch] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
   const [emailEdit, setEmailEdit] = useState<{ id: number; value: string } | null>(null);
@@ -1516,12 +1527,8 @@ function AdminView({ active }: { active: boolean }) {
   const [notice, setNotice] = useState("");
 
   const [period, setPeriod] = useState<"day" | "week" | "month" | "all">("week");
-  const [events, setEvents] = useState<AdmEvent[]>([]);
-  const [counts, setCounts] = useState<{ event: string; ok: boolean | number | null; n: number }[]>([]);
-
   const [aTable, setATable] = useState("");
   const [aId, setAId] = useState("");
-  const [audit, setAudit] = useState<AdmAudit[]>([]);
   const [openSnap, setOpenSnap] = useState<number | null>(null);
 
   async function call(op: string, payload: Record<string, unknown>) {
@@ -1535,60 +1542,74 @@ function AdminView({ active }: { active: boolean }) {
     return r;
   }
 
-  function sinceFor(p: typeof period): string | null {
-    if (p === "all") return null;
-    const days = p === "day" ? 1 : p === "week" ? 7 : 30;
-    return new Date(Date.now() - days * 86400000).toISOString();
-  }
-
-  async function loadUsers(searchTerm?: string, withDeleted?: boolean) {
+  // UMA chamada única traz tudo (1 processo do worker, 1 ligação); os filtros
+  // são todos locais e instantâneos — nada de round-trips por pesquisa.
+  async function loadOverview() {
     setBusy(true); setErr("");
     try {
-      const r = await call("users", {
-        search: (searchTerm ?? uSearch).trim() || null,
-        include_deleted: withDeleted ?? showDeleted,
-      });
-      if (r.ok) setUsers(r.items || []); else setErr(r.error || r.message || "");
-    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
-  }
-
-  async function loadEvents(p?: typeof period) {
-    setBusy(true); setErr("");
-    try {
-      const r = await call("events", { since: sinceFor(p ?? period) });
-      if (r.ok) { setEvents(r.items || []); setCounts(r.counts || []); }
-      else setErr(r.error || r.message || "");
-    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
-  }
-
-  async function loadAudit() {
-    setBusy(true); setErr("");
-    try {
-      const r = await call("audit", {
-        table: aTable.trim() || null,
-        record_id: aId.trim() ? Number(aId.trim()) : null,
-      });
-      if (r.ok) setAudit(r.items || []); else setErr(r.error || r.message || "");
+      const r = await call("overview", {});
+      if (r.ok) {
+        const fresh = { users: r.users || [], events: r.events || [], audit: r.audit || [] };
+        setData(fresh);
+        setCacheTs(null);
+        try {
+          localStorage.setItem(admCacheKey(), JSON.stringify({ ts: new Date().toISOString(), ...fresh }));
+        } catch { /* cache é best-effort */ }
+      } else setErr(r.error || r.message || "");
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   }
 
   useEffect(() => {
     if (active && !loadedOnce) {
       setLoadedOnce(true);
-      // SEQUENCIAL de propósito: duas chamadas simultâneas ao worker no
-      // primeiro acesso disputavam o ensure_schema/túnel e uma podia morrer
-      // em silêncio (lista vazia sem erro — visto na validação da v0.17.0).
-      (async () => { await loadUsers(); await loadEvents(); })();
+      try {
+        const c = JSON.parse(localStorage.getItem(admCacheKey()) || "null");
+        if (c && c.users) {
+          setData({ users: c.users, events: c.events || [], audit: c.audit || [] });
+          setCacheTs(c.ts || null);
+        }
+      } catch { /* sem cache */ }
+      loadOverview();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, loadedOnce]);
+
+  // Filtros locais (live, a cada tecla — sem tocar na base)
+  const usersFiltered = useMemo(() => {
+    const q = uSearch.trim().toLowerCase();
+    return data.users.filter((u) =>
+      (showDeleted || !u.deleted_at) &&
+      (!q || u.email.toLowerCase().includes(q) || u.user_id.toLowerCase().includes(q)));
+  }, [data.users, uSearch, showDeleted]);
+
+  const sinceMs = period === "all" ? 0 : Date.now() - (period === "day" ? 1 : period === "week" ? 7 : 30) * 86400000;
+  const eventsFiltered = useMemo(
+    () => data.events.filter((ev) => !sinceMs || (ev.occurred_at && Date.parse(ev.occurred_at) >= sinceMs)),
+    [data.events, sinceMs]);
+  const counts = useMemo(() => {
+    const m = new Map<string, { event: string; ok: boolean | number | null; n: number }>();
+    for (const ev of eventsFiltered) {
+      const k = `${ev.event}::${ev.ok ? 1 : 0}`;
+      const cur = m.get(k) || { event: ev.event, ok: ev.ok, n: 0 };
+      cur.n += 1;
+      m.set(k, cur);
+    }
+    return [...m.values()].sort((a, b) => a.event.localeCompare(b.event));
+  }, [eventsFiltered]);
+
+  const auditFiltered = useMemo(() => {
+    const tq = aTable.trim().toLowerCase();
+    return data.audit.filter((a) =>
+      (!tq || a.table_name.toLowerCase().includes(tq)) &&
+      (!aId.trim() || String(a.record_id) === aId.trim()));
+  }, [data.audit, aTable, aId]);
 
   async function saveEmail() {
     if (!emailEdit) return;
     setBusy(true); setErr(""); setNotice("");
     try {
       const r = await call("change-email", { id: emailEdit.id, email: emailEdit.value.trim() });
-      if (r.ok) { setEmailEdit(null); setNotice(t("admSaved")); loadUsers(); }
+      if (r.ok) { setEmailEdit(null); setNotice(t("admSaved")); loadOverview(); }
       else setErr(r.error === "email_taken" ? t("loginErrEmailTaken") : t("errPrefix") + (r.error || ""));
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   }
@@ -1601,7 +1622,7 @@ function AdminView({ active }: { active: boolean }) {
       if (r.ok) {
         setNotice(t(confirmDel.purge ? "admPurged" : "admDeletedOk", { n: r.cascade ?? 0 }));
         setConfirmDel(null);
-        loadUsers();
+        loadOverview();
       } else {
         setErr(r.error === "cannot_delete_self" ? t("admNoSelfDelete") : t("errPrefix") + (r.error || ""));
         setConfirmDel(null);
@@ -1615,7 +1636,7 @@ function AdminView({ active }: { active: boolean }) {
       const r = await call("create-user", {
         user: { email: cEmail.trim(), user_id: cUser.trim(), password: cPw, auth_provider: "email" },
       });
-      if (r.ok) { setNotice(t("admCreated")); setShowCreate(false); setCEmail(""); setCUser(""); setCPw(""); loadUsers(); }
+      if (r.ok) { setNotice(t("admCreated")); setShowCreate(false); setCEmail(""); setCUser(""); setCPw(""); loadOverview(); }
       else setErr(r.error === "email_taken" ? t("loginErrEmailTaken")
         : r.error === "user_id_taken" ? t("loginErrUserIdTaken")
         : r.error === "password_required" ? t("loginErrPwShort") : t("errPrefix") + (r.error || ""));
@@ -1631,16 +1652,18 @@ function AdminView({ active }: { active: boolean }) {
         {(["users", "activity", "audit"] as const).map((tb) => (
           <button key={tb} className={tab === tb ? "" : "secondary"} onClick={() => {
             setTab(tb); setErr(""); setNotice("");
-            if (tb === "activity") loadEvents();
-            if (tb === "audit") loadAudit();
           }}>
             {t(tb === "users" ? "admTabUsers" : tb === "activity" ? "admTabActivity" : "admTabAudit")}
           </button>
         ))}
+        <span style={{ flex: 1 }} />
+        {cacheTs && <span className="muted" title={t("libCacheTitle")}>{t("libCacheUpdating", { ts: fmtDate(cacheTs, locale) })}</span>}
+        <button className="secondary" onClick={loadOverview} disabled={busy}>
+          {busy ? <span className="spinner" /> : t("libRefresh")}
+        </button>
       </div>
       {err && <div className="key-warn" style={{ marginBottom: 10 }}>{err}</div>}
       {notice && <div className="engine-info" style={{ marginBottom: 10 }}>{notice}</div>}
-      {busy && <div className="muted" style={{ marginBottom: 10 }}><span className="spinner" /> {t("loginChecking")}</div>}
 
       {tab === "users" && (
         <>
@@ -1649,12 +1672,10 @@ function AdminView({ active }: { active: boolean }) {
               type="text" style={{ flex: 1, minWidth: 220 }} placeholder={t("admSearchPh")}
               value={uSearch}
               onChange={(e) => setUSearch(e.currentTarget.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") loadUsers(); }}
             />
-            <button className="secondary" onClick={() => loadUsers()} disabled={busy}>{t("admFilter")}</button>
             <label className="row" style={{ gap: 6, alignItems: "center" }}>
               <input type="checkbox" checked={showDeleted}
-                onChange={(e) => { setShowDeleted(e.currentTarget.checked); loadUsers(undefined, e.currentTarget.checked); }} />
+                onChange={(e) => setShowDeleted(e.currentTarget.checked)} />
               {t("admShowDeleted")}
             </label>
             <button className="secondary" onClick={() => setShowCreate((s) => !s)}>{t("admNewUser")}</button>
@@ -1687,7 +1708,7 @@ function AdminView({ active }: { active: boolean }) {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
+                {usersFiltered.map((u) => (
                   <tr key={u.id} style={u.deleted_at ? { opacity: 0.55 } : undefined}>
                     <td>#{u.id}</td>
                     <td>{u.user_id}</td>
@@ -1740,8 +1761,7 @@ function AdminView({ active }: { active: boolean }) {
         <>
           <div className="row wrap" style={{ marginBottom: 10 }}>
             {(["day", "week", "month", "all"] as const).map((p) => (
-              <button key={p} className={period === p ? "" : "secondary"}
-                onClick={() => { setPeriod(p); loadEvents(p); }}>
+              <button key={p} className={period === p ? "" : "secondary"} onClick={() => setPeriod(p)}>
                 {t(p === "day" ? "admPeriodDay" : p === "week" ? "admPeriodWeek" : p === "month" ? "admPeriodMonth" : "admPeriodAll")}
               </button>
             ))}
@@ -1760,7 +1780,7 @@ function AdminView({ active }: { active: boolean }) {
                 <tr><th>{t("admColWhen")}</th><th>{t("admColEvent")}</th><th>{t("loginEmail")}</th><th>{t("admColDetail")}</th></tr>
               </thead>
               <tbody>
-                {events.map((ev) => (
+                {eventsFiltered.map((ev) => (
                   <tr key={ev.id}>
                     <td>{fmtDate(ev.occurred_at, locale)}</td>
                     <td><span className={"badge " + (evOk(ev.ok) ? "ok" : "warn")}>{ev.event}</span></td>
@@ -1781,7 +1801,6 @@ function AdminView({ active }: { active: boolean }) {
               value={aTable} onChange={(e) => setATable(e.currentTarget.value)} />
             <input type="text" style={{ width: 120 }} placeholder={t("admAuditId")}
               value={aId} onChange={(e) => setAId(e.currentTarget.value.replace(/\D/g, ""))} />
-            <button className="secondary" onClick={loadAudit} disabled={busy}>{t("admFilter")}</button>
           </div>
           <div className="table-scroll">
             <table className="eng-table">
@@ -1789,7 +1808,7 @@ function AdminView({ active }: { active: boolean }) {
                 <tr><th>{t("admColWhen")}</th><th>{t("admColAction")}</th><th>{t("admAuditTable")}</th><th>ID</th><th>{t("admColActor")}</th><th></th></tr>
               </thead>
               <tbody>
-                {audit.map((a) => (
+                {auditFiltered.map((a) => (
                   <Fragment key={a.id}>
                     <tr>
                       <td>{fmtDate(a.occurred_at, locale)}</td>
@@ -1817,7 +1836,7 @@ function AdminView({ active }: { active: boolean }) {
               </tbody>
             </table>
           </div>
-          {audit.length === 0 && <div className="muted" style={{ marginTop: 8 }}>{t("admNoAudit")}</div>}
+          {auditFiltered.length === 0 && <div className="muted" style={{ marginTop: 8 }}>{t("admNoAudit")}</div>}
         </>
       )}
     </section>

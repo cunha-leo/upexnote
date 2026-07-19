@@ -209,6 +209,51 @@ def _row_snapshot(cur, table, pk):
     return snap
 
 
+def admin_overview(actor_id):
+    """Carga ÚNICA da aba de Administração: utilizadores + eventos + auditoria
+    numa só ligação/processo (a UI filtra tudo localmente — padrão live/AJAX;
+    feedback do utilizador 2026-07-19: nunca um round-trip por filtro)."""
+    conn = db.connect()
+    try:
+        _ensure(conn)
+        db.ensure_schema(conn)
+        with conn.cursor() as cur:
+            if not db.is_admin_user(cur, actor_id):
+                return {"ok": False, "error": "forbidden"}
+            cur.execute("""SELECT u.id, u.user_id, u.email, u.first_name, u.last_name,
+                                  u.auth_provider, u.role, u.created_at, u.last_login_at, u.deleted_at,
+                                  (SELECT count(*) FROM transcriptions t
+                                   WHERE t.user_id = u.id AND t.deleted_at IS NULL) AS transcription_count
+                           FROM users u ORDER BY u.id""")
+            cols = [c[0] for c in cur.description]
+            users = [dict(zip(cols, r)) for r in cur.fetchall()]
+            cur.execute("""SELECT id, occurred_at, event, ok, email, user_id, detail, app_version, host
+                           FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT 500""")
+            cols = [c[0] for c in cur.description]
+            events = [dict(zip(cols, r)) for r in cur.fetchall()]
+            cur.execute("""SELECT id, occurred_at, actor_user_id, action, table_name, record_id, snapshot
+                           FROM audit_log ORDER BY occurred_at DESC, id DESC LIMIT 300""")
+            cols = [c[0] for c in cur.description]
+            audit = [dict(zip(cols, r)) for r in cur.fetchall()]
+        for it in users:
+            for k in ("created_at", "last_login_at", "deleted_at"):
+                it[k] = db._iso(it.get(k))
+            it["transcription_count"] = int(it["transcription_count"] or 0)
+        for it in events:
+            it["occurred_at"] = db._iso(it["occurred_at"])
+            it["ok"] = bool(it["ok"]) if it["ok"] is not None else None
+        for it in audit:
+            it["occurred_at"] = db._iso(it["occurred_at"])
+            if isinstance(it.get("snapshot"), str):
+                try:
+                    it["snapshot"] = json.loads(it["snapshot"])
+                except Exception:
+                    pass
+        return {"ok": True, "users": users, "events": events, "audit": audit}
+    finally:
+        db.close_connection(conn)
+
+
 def admin_list_users(actor_id, search=None, include_deleted=False):
     conn = db.connect()
     try:

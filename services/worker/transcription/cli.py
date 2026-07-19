@@ -264,7 +264,9 @@ def cmd_admin(args):
     actor = data.get("actor")
     op = args.command
     try:
-        if op == "admin-users":
+        if op == "admin-overview":
+            res = accounts.admin_overview(actor)
+        elif op == "admin-users":
             res = accounts.admin_list_users(actor, search=data.get("search"),
                                             include_deleted=bool(data.get("include_deleted")))
         elif op == "admin-create-user":
@@ -632,7 +634,7 @@ def build_parser():
     p_asg.add_argument("--user-id", required=True)
     p_asg.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
 
-    for name in ("admin-users", "admin-create-user", "admin-change-email",
+    for name in ("admin-overview", "admin-users", "admin-create-user", "admin-change-email",
                  "admin-delete-user", "admin-events", "admin-audit"):
         p_adm = sub.add_parser(name, help="Administracao (payload por stdin; ator revalidado na base).")
         p_adm.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
@@ -670,6 +672,7 @@ def main(argv=None):
         "account-reset": cmd_account,
         "account-elevate": cmd_account,
         "account-suggest": cmd_account,
+        "admin-overview": cmd_admin,
         "admin-users": cmd_admin,
         "admin-create-user": cmd_admin,
         "admin-change-email": cmd_admin,
