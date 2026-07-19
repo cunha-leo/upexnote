@@ -971,6 +971,16 @@ textarea.edit-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px va
 .login-card .pg-title { text-align: left; margin-bottom: 10px; }
 /* WebView2 desta máquina crasha com type="password" → máscara via CSS */
 .pw-mask { -webkit-text-security: disc; }
+.login-success {
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--ok) 55%, var(--border));
+  border-radius: var(--radius-ctl);
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
 .link-btn {
   background: transparent;
   border: none;

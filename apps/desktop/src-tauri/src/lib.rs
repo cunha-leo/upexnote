@@ -239,7 +239,7 @@ async fn library_item(id: i64, user: Option<i64>) -> Result<String, String> {
 /// visível na lista de processos). `op` é validado contra a whitelist.
 #[tauri::command]
 async fn account(op: String, payload: String, mode: Option<String>) -> Result<String, String> {
-    const OPS: [&str; 6] = ["register", "login", "oauth-login", "update", "reset", "elevate"];
+    const OPS: [&str; 5] = ["register", "login", "oauth-login", "update", "elevate"];
     if !OPS.contains(&op.as_str()) {
         return Err(format!("operação desconhecida: {op}"));
     }
@@ -257,6 +257,39 @@ async fn account(op: String, payload: String, mode: Option<String>) -> Result<St
             cli.push(m);
         }
         let mut cmd = worker_command(&cli);
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        with_no_window(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        child
+            .stdin
+            .as_mut()
+            .ok_or("sem stdin")?
+            .write_all(payload.as_bytes())
+            .map_err(|e| e.to_string())?;
+        drop(child.stdin.take());
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if stdout.is_empty() {
+            return Err(String::from_utf8_lossy(&out.stderr).to_string());
+        }
+        Ok(stdout)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Password reset through the central HTTPS API. All sensitive fields remain
+/// in the JSON stdin pipe and never enter the process command line.
+#[tauri::command]
+async fn api_reset(op: String, payload: String) -> Result<String, String> {
+    const OPS: [&str; 3] = ["request", "verify", "complete"];
+    if !OPS.contains(&op.as_str()) {
+        return Err(format!("operação desconhecida: {op}"));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        let cmd_name = format!("api-reset-{op}");
+        let mut cmd = worker_command(&[&cmd_name]);
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         with_no_window(&mut cmd);
         let mut child = cmd.spawn().map_err(|e| e.to_string())?;
@@ -581,7 +614,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
-            list_system_fonts, db_check, db_check_secret, account, account_suggest, admin, oauth_start, transcribe
+            list_system_fonts, db_check, db_check_secret, account, api_reset, account_suggest, admin, oauth_start, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1102,12 +1102,16 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   const { t } = useLang();
   // Login é SEMPRE o primeiro ecrã (padrão de mercado); criar conta é via link.
   // E-mail NUNCA pré-preenchido (após logout, a pessoa decide a conta).
-  const [screen, setScreen] = useState<"login" | "create" | "reset" | "precad" | "welcome">("login");
+  const [screen, setScreen] = useState<
+    "login" | "create" | "resetRequest" | "resetVerify" | "resetComplete" | "precad" | "welcome"
+  >("login");
   // Conta acabada de criar, à espera do ecrã de boas-vindas (orientações)
   const [pendingUser, setPendingUser] = useState<AccountUser | null>(null);
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [userId, setUserId] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -1117,6 +1121,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   const [ghCode, setGhCode] = useState("");
   const [busy, setBusy] = useState<"" | "form" | "admin" | "google" | "github">("");
   const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
 
   // Alvo da entrada: utilizador (conta pessoal, base local) ou administrador
   // (conta na base central + prova da credencial). Mesmos 3 métodos nos dois.
@@ -1248,7 +1253,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     setErr("");
     const mail = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setErr(t("loginErrEmail"));
-    if (screen === "create" || screen === "reset") {
+    if (screen === "create") {
       if (pw.length < 6) return setErr(t("loginErrPwShort"));
       if (pw !== pw2) return setErr(t("loginErrPwMatch"));
     }
@@ -1264,16 +1269,6 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           op: "login", mode: accMode,
           payload: JSON.stringify({ email: mail, password: pw, ...adminExtra }),
         }));
-      } else if (screen === "reset") {
-        res = JSON.parse(await invoke<string>("account", {
-          op: "reset", mode: accMode, payload: JSON.stringify({ email: mail, password: pw }),
-        }));
-        if (res.ok) {
-          res = JSON.parse(await invoke<string>("account", {
-            op: "login", mode: accMode,
-            payload: JSON.stringify({ email: mail, password: pw, ...adminExtra }),
-          }));
-        }
       } else {
         // create / precad → registo completo na tabela users
         res = JSON.parse(await invoke<string>("account", {
@@ -1317,6 +1312,77 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     }
   }
 
+  async function requestPasswordReset() {
+    setErr(""); setNotice("");
+    const mail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return setErr(t("loginErrEmail"));
+    setBusy("form");
+    try {
+      const res = JSON.parse(await invoke<string>("api_reset", {
+        op: "request", payload: JSON.stringify({ email: mail }),
+      }));
+      if (!res.ok) return setErr(t("loginResetService"));
+      setEmail(mail);
+      setResetCode("");
+      setScreen("resetVerify");
+      setNotice(t("loginResetSent"));
+    } catch {
+      setErr(t("loginResetService"));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function verifyPasswordReset() {
+    setErr(""); setNotice("");
+    if (!/^\d{6}$/.test(resetCode)) return setErr(t("loginErrCode"));
+    setBusy("form");
+    try {
+      const res = JSON.parse(await invoke<string>("api_reset", {
+        op: "verify",
+        payload: JSON.stringify({ email: email.trim().toLowerCase(), code: resetCode }),
+      }));
+      if (!res.ok || !res.reset_token) return setErr(t("loginResetInvalid"));
+      setResetToken(res.reset_token);
+      setPw(""); setPw2("");
+      setScreen("resetComplete");
+    } catch {
+      setErr(t("loginResetService"));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function completePasswordReset() {
+    setErr(""); setNotice("");
+    if (pw.length < 8) return setErr(t("loginResetPwShort"));
+    if (pw !== pw2) return setErr(t("loginErrPwMatch"));
+    setBusy("form");
+    try {
+      const res = JSON.parse(await invoke<string>("api_reset", {
+        op: "complete",
+        payload: JSON.stringify({
+          email: email.trim().toLowerCase(), reset_token: resetToken, new_password: pw,
+        }),
+      }));
+      if (!res.ok) return setErr(t("loginResetInvalid"));
+      setPw(""); setPw2(""); setResetCode(""); setResetToken("");
+      setScreen("login");
+      setNotice(t("loginResetDone"));
+    } catch {
+      setErr(t("loginResetService"));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function primarySubmit() {
+    if (screen === "resetRequest") return requestPasswordReset();
+    if (screen === "resetVerify") return verifyPasswordReset();
+    if (screen === "resetComplete") return completePasswordReset();
+    return submit();
+  }
+
   function maskedPaste(setter: (v: string) => void) {
     return (e: ClipboardEvent<HTMLInputElement>) => {
       e.preventDefault();
@@ -1348,9 +1414,11 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
       <div className="login-card">
         <h1 className="pg-title">
           {screen === "create" ? t("loginCreateTitle") : screen === "precad" ? t("loginPrecadTitle")
+            : screen === "resetComplete" ? t("loginResetNewTitle")
+            : screen === "resetRequest" || screen === "resetVerify" ? t("loginResetTitle")
             : target === "admin" ? t("loginAdminTitle") : t("loginTitle")}
         </h1>
-        {target === "admin" && (
+        {target === "admin" && (screen === "login" || screen === "create") && (
           <div className="field" style={{ marginBottom: 12 }}>
             <label>{t("loginAdminPw")}</label>
             <input
@@ -1362,7 +1430,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
             <div className="engine-info">{t("loginAdminHint")}</div>
           </div>
         )}
-        {screen !== "precad" && (
+        {(screen === "login" || screen === "create") && (
           <>
             <button className="secondary social-btn" onClick={() => social("google")} disabled={busy !== ""}>
               {busy === "google" ? <span className="spinner" /> : <GoogleG />} {t("loginWithGoogle")}
@@ -1388,17 +1456,34 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
             <div className="login-divider"><span>{t("loginOr")}</span></div>
           </>
         )}
-        {screen === "reset" && <div className="muted" style={{ textAlign: "left" }}>{t("loginResetInfo")}</div>}
+        {screen === "resetRequest" && <div className="muted" style={{ textAlign: "left" }}>{t("loginResetInfo")}</div>}
+        {screen === "resetVerify" && <div className="muted" style={{ textAlign: "left" }}>{t("loginResetCodeHint")}</div>}
         <div className="field" style={{ marginBottom: 10 }}>
           <label>{t("loginEmail")}</label>
           <input
             type="text" autoComplete="off" spellCheck={false}
             value={email}
-            readOnly={screen === "precad"}
+            readOnly={screen === "precad" || screen === "resetVerify" || screen === "resetComplete"}
             onChange={(e) => setEmail(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+            onKeyDown={(e) => { if (e.key === "Enter") primarySubmit(); }}
           />
         </div>
+        {screen === "resetVerify" && (
+          <div className="field" style={{ marginBottom: 10 }}>
+            <label>{t("loginResetCode")}</label>
+            <input
+              type="text" inputMode="numeric" autoComplete="one-time-code" spellCheck={false}
+              value={resetCode}
+              maxLength={6}
+              onChange={(e) => setResetCode(e.currentTarget.value.replace(/\D/g, "").slice(0, 6))}
+              onPaste={(e) => {
+                e.preventDefault();
+                setResetCode(e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6));
+              }}
+              onKeyDown={(e) => { if (e.key === "Enter") primarySubmit(); }}
+            />
+          </div>
+        )}
         {(screen === "create" || screen === "precad") && (
           <>
             <div className="field" style={{ marginBottom: 10 }}>
@@ -1437,7 +1522,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
             </div>
           </>
         )}
-        {screen !== "precad" && (
+        {(screen === "login" || screen === "create" || screen === "resetComplete") && (
           <div className="field" style={{ marginBottom: 10 }}>
             <label>{t("loginPassword")}</label>
             <input
@@ -1445,11 +1530,11 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
               value={pw}
               onChange={(e) => setPw(e.currentTarget.value)}
               onPaste={maskedPaste(setPw)}
-              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+              onKeyDown={(e) => { if (e.key === "Enter") primarySubmit(); }}
             />
           </div>
         )}
-        {(screen === "create" || screen === "reset") && (
+        {(screen === "create" || screen === "resetComplete") && (
           <div className="field" style={{ marginBottom: 10 }}>
             <label>{t("loginPasswordConfirm")}</label>
             <input
@@ -1457,23 +1542,36 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
               value={pw2}
               onChange={(e) => setPw2(e.currentTarget.value)}
               onPaste={maskedPaste(setPw2)}
-              onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+              onKeyDown={(e) => { if (e.key === "Enter") primarySubmit(); }}
             />
           </div>
         )}
+        {notice && <div className="login-success" role="status">{notice}</div>}
         {err && <div className="key-warn" style={{ marginBottom: 8 }}>{err}</div>}
-        <button style={{ width: "100%" }} onClick={submit} disabled={busy !== ""}>
+        <button style={{ width: "100%" }} onClick={primarySubmit} disabled={busy !== ""}>
           {busy === "form" ? t("loginChecking") : screen === "login" ? t("loginBtn")
-            : screen === "reset" ? t("loginResetBtn") : screen === "precad" ? t("loginFinish") : t("loginCreateBtn")}
+            : screen === "resetRequest" ? t("loginResetRequestBtn")
+            : screen === "resetVerify" ? t("loginResetVerifyBtn")
+            : screen === "resetComplete" ? t("loginResetCompleteBtn")
+            : screen === "precad" ? t("loginFinish") : t("loginCreateBtn")}
         </button>
         <div className="login-links">
-          {/* "Esqueci a senha" REMOVIDO até haver reset com verificação real por
-              e-mail (código enviado) — um reset local aberto era anti-segurança
-              (feedback do utilizador, 2026-07-18). Chega com a infra de e-mail. */}
           {screen === "login" ? (
-            <button className="link-btn" onClick={() => { setErr(""); setScreen("create"); }}>{t("loginNoAccount")}</button>
+            <>
+              {target === "admin" && (
+                <button className="link-btn" onClick={() => {
+                  setErr(""); setNotice(""); setPw(""); setAdminPw(""); setScreen("resetRequest");
+                }}>{t("loginForgot")}</button>
+              )}
+              <button className="link-btn" onClick={() => { setErr(""); setNotice(""); setScreen("create"); }}>{t("loginNoAccount")}</button>
+            </>
+          ) : screen === "resetRequest" || screen === "resetVerify" || screen === "resetComplete" ? (
+            <button className="link-btn" onClick={() => {
+              setErr(""); setNotice(""); setPw(""); setPw2("");
+              setResetCode(""); setResetToken(""); setScreen("login");
+            }}>{t("loginBack")}</button>
           ) : screen !== "precad" ? (
-            <button className="link-btn" onClick={() => { setErr(""); setScreen("login"); }}>{t("loginHaveAccount")}</button>
+            <button className="link-btn" onClick={() => { setErr(""); setNotice(""); setScreen("login"); }}>{t("loginHaveAccount")}</button>
           ) : null}
         </div>
       </div>
@@ -1482,7 +1580,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         <button
           className="link-btn login-admin"
           onClick={() => {
-            setErr(""); setAdminPw(""); setScreen("login");
+            setErr(""); setNotice(""); setAdminPw(""); setScreen("login");
             setTarget(target === "admin" ? "user" : "admin");
           }}
           disabled={busy !== ""}

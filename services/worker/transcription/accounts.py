@@ -412,27 +412,3 @@ def elevate(email: str, admin_secret: str):
         db.close_connection(conn)
     db.log_event("admin_elevate", ok=True, email=email, user_id=user["id"])
     return {"ok": True, "user": _public(user)}
-
-
-def reset_password(email: str, new_password: str):
-    """Fase local: repõe a senha da conta desta máquina/banco. O reset por
-    e-mail verificado chega com a API (Fase 2)."""
-    email = (email or "").strip().lower()
-    conn = db.connect()
-    try:
-        _ensure(conn)
-        with conn.cursor() as cur:
-            user = _fetch_user(cur, "WHERE email = %s AND deleted_at IS NULL", (email,))
-            if not user:
-                return {"ok": False, "error": "not_found"}
-            salt = secrets.token_hex(16)
-            cur.execute(
-                "UPDATE users SET password_salt = %s, password_hash = %s, updated_at = now()"
-                " WHERE id = %s",
-                (salt, _hash_password(new_password, salt), user["id"]),
-            )
-        conn.commit()
-    finally:
-        db.close_connection(conn)
-    db.log_event("password_reset", ok=True, email=email, user_id=user["id"])
-    return {"ok": True}

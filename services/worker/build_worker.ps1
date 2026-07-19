@@ -45,6 +45,16 @@ if (Test-Path $oauthCfg) {
     Write-Host "oauth_config.json ausente — botoes de login social ficarao inativos."
 }
 
+# URL publica da API central (nao e segredo). Empacotada para a aplicacao ser
+# autocontida, com AppData como override opcional no runtime.
+$apiCfg = Join-Path $PSScriptRoot "transcription\api_config.json"
+if (Test-Path $apiCfg) {
+    Copy-Item $apiCfg ".\dist\upexnote-worker\api_config.json" -Force
+    Write-Host "api_config.json incluido no pacote (recuperacao de senha pronta a usar)."
+} else {
+    throw "api_config.json ausente — o build nao pode oferecer recuperacao segura de senha."
+}
+
 # Sanity check: o exe responde ao comando mais barato (sem tocar em APIs).
 & ".\dist\upexnote-worker\upexnote-worker.exe" engines | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "O worker empacotado nao respondeu a 'engines' (exit $LASTEXITCODE)" }

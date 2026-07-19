@@ -237,8 +237,8 @@ def cmd_account(args):
             res = accounts.update_profile(data)
         elif op == "account-elevate":
             res = accounts.elevate(data.get("email"), data.get("admin_secret"))
-        else:  # account-reset
-            res = accounts.reset_password(data.get("email"), data.get("password"))
+        else:
+            res = {"ok": False, "error": "unsupported_operation"}
         # Fluxo de administrador NUM SÓ processo (2026-07-19: dois spawns
         # sequenciais duplicavam o custo do ensure/túnel): se o payload traz
         # admin_secret, a identidade validada é elevada aqui mesmo.
@@ -249,6 +249,36 @@ def cmd_account(args):
         return 0 if res.get("ok") else 1
     except Exception as e:  # noqa: BLE001
         _emit(sys.stdout, {"type": "error", "message": f"Falha de conta: {e}"})
+        return 1
+
+
+def cmd_api_reset(args):
+    """Password reset through the central HTTPS API; payload is stdin-only."""
+    from .api_client import ApiConfigurationError, UpexNoteApiClient
+
+    data = _stdin_json()
+    if data is None:
+        _emit(sys.stdout, {"type": "api-reset", "ok": False, "error": "invalid_payload"})
+        return 1
+    try:
+        client = UpexNoteApiClient()
+        if args.command == "api-reset-request":
+            result = client.request_reset(data.get("email", ""))
+        elif args.command == "api-reset-verify":
+            result = client.verify_reset(data.get("email", ""), data.get("code", ""))
+        else:
+            result = client.complete_reset(
+                data.get("email", ""),
+                data.get("reset_token", ""),
+                data.get("new_password", ""),
+            )
+        _emit(sys.stdout, {"type": "api-reset", **result})
+        return 0 if result.get("ok") else 1
+    except ApiConfigurationError as exc:
+        _emit(sys.stdout, {"type": "api-reset", "ok": False, "error": str(exc)})
+        return 1
+    except Exception:  # never serialize exception details from a sensitive flow
+        _emit(sys.stdout, {"type": "api-reset", "ok": False, "error": "service_unavailable"})
         return 1
 
 
@@ -632,7 +662,7 @@ def build_parser():
     sub.add_parser("tunnel-keep", help="(interno) Guardiao do tunel SSH persistente; termina no EOF do stdin.")
 
     for name in ("account-register", "account-login", "account-oauth-login",
-                 "account-update", "account-reset", "account-elevate"):
+                 "account-update", "account-elevate"):
         p_acc = sub.add_parser(name, help="Identidade (dados por stdin, JSON).")
         p_acc.add_argument("--mode", choices=["local", "vps"],
                            help="Base alvo (contas admin vivem na vps). Sem gravar.")
@@ -646,6 +676,9 @@ def build_parser():
         p_adm.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
     p_oa = sub.add_parser("oauth", help="Login social (Google loopback+PKCE / GitHub device flow).")
     p_oa.add_argument("--provider", choices=["google", "github"], required=True)
+
+    for name in ("api-reset-request", "api-reset-verify", "api-reset-complete"):
+        sub.add_parser(name, help="Recuperacao de senha via API HTTPS (payload JSON por stdin).")
 
     return parser
 
@@ -675,7 +708,6 @@ def main(argv=None):
         "account-login": cmd_account,
         "account-oauth-login": cmd_account,
         "account-update": cmd_account,
-        "account-reset": cmd_account,
         "account-elevate": cmd_account,
         "account-suggest": cmd_account,
         "admin-overview": cmd_admin,
@@ -686,6 +718,9 @@ def main(argv=None):
         "admin-events": cmd_admin,
         "admin-audit": cmd_admin,
         "oauth": cmd_oauth,
+        "api-reset-request": cmd_api_reset,
+        "api-reset-verify": cmd_api_reset,
+        "api-reset-complete": cmd_api_reset,
     }
     return handlers[args.command](args)
 
