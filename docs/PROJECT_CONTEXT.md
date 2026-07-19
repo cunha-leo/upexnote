@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 18 de julho de 2026 (v0.15.0 — gate do administrador: credencial digitada validada por ligação real)  
+**Última atualização:** 19 de julho de 2026 (v0.16.0 — isolamento por utilizador + admin com 3 métodos; OAuth apps Google/GitHub registadas e EMPACOTADAS)  
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -370,6 +370,31 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-19: OAuth apps registadas + isolamento por utilizador + admin completo — v0.15.1 e v0.16.0
+
+### O que mudou (v0.15.1 — OAuth apps + empacotamento)
+- **OAuth apps registadas pelo dono (guiado):** GitHub OAuth App `UpexNote` na conta `cunha-leo` (Device Flow ativo; client `Ov23liZry2jzBROC16EN`) e Google Cloud projeto `upexnote` na conta `.en` (consent screen Externo PUBLICADO, client OAuth tipo Desktop `UpexNote Desktop`). Client IDs em `oauth_config.json` (fora do Git — `.gitignore` corrigido: a entrada FALTAVA na v0.14.0).
+- **REGRA NOVA (correção do utilizador, permanente): o `oauth_config.json` é EMPACOTADO no instalador** (`build_worker.ps1` copia-o como já fazia ao db_config; `oauth.py` resolve AppData→pasta do exe→dev). Client IDs de apps desktop não são segredos (PKCE é a segurança) — o instalador funciona em QUALQUER máquina sem configuração. Nunca mais deixar config por máquina quando dá para empacotar; segredos de utilizador/infra continuam FORA do pacote.
+- **Validação real do utilizador:** login Google de ponta a ponta a partir do pacote (browser → consentimento → retorno → pré-cadastro → sessão). Decisões de conta: projeto Cloud fica na `.en` (conta de ferramentas; `.pt` a adicionar como Owner no IAM — pendente), GitHub `cunha-leo` intocado.
+- **Reset de senha: decidido SEM n8n** — em vez disso, mini-API na VPS (FastAPI/EasyPanel), que é o início da API única da Fase 2/item 14C. E-mail de envio: domínio próprio do utilizador (alias no-reply@). PENDENTE (próxima sessão).
+
+### O que mudou (v0.16.0 — isolamento por utilizador + admin, a partir de bug REAL apanhado pelo utilizador)
+- **Bug (grave):** conta Google nova via a transcrição de outra conta. Causas: (1) o hub `transcriptions` não tinha dono — a Biblioteca mostrava a base da máquina inteira; (2) o modo NUNCA era persistido (settings.json sem `storage_mode`) → a conta OAuth nasceu na VPS enquanto a Biblioteca lia o SQLite (contexto misto).
+- **Isolamento (worker):** coluna `user_id` (FK→users) no hub + ALTER idempotente nas bases existentes (VPS migrada: 10 órfãs à espera de adoção); `insert_transcription` carimba o dono (`transcribe --user`); `library*` filtram pela conta (`--user`) — **role lido da BASE, nunca do cliente**; admin vê tudo COM dono (email/username/provider) por item; mutações só dono/admin. `users` DDL movida para o db.py (ordem de criação). Testado de ponta a ponta em SQLite descartável (2 contas + órfã: filtros, negações cruzadas, vista admin, adoção) e regressão VPS ok.
+- **Admin = identidade + elevação (Fase 1b entregue):** o ecrã de entrada tem alvo utilizador/administrador (link alterna). Admin: MESMOS 3 métodos (e-mail+senha, Google, GitHub — contas admin na base central via `--mode vps`) + campo "Senha de administrador" (validada por ligação real: `accounts.elevate` → `db.check(password_override)`) ⇒ `role=admin` na tabela users da VPS. `db.set_mode_override` substitui o monkey-patch do db-check.
+- **Modo explícito SEMPRE:** login pessoal fixa `storage_mode=local`, admin fixa `vps` (o bug do default nunca se repete). Sessão guarda `{profile, mode, id, email, user_id, role}`; cache da Biblioteca por `modo::conta` (nunca herda de outra sessão).
+- **OAuth polish:** página de retorno do loopback com a marca UpexNote (era HTML cru); a janela da app vem para a frente sozinha no fim do fluxo (unminimize+set_focus). Popup "Abrir UpexNote?" (protocolo upexnote://) fica como melhoria futura.
+- CLI novo: `db-adopt-orphans --email --mode` (entrega o legado a uma conta). i18n: chaves novas nos 3 idiomas. `_require_db` deixou de exigir config VPS em modo local (bug latente de máquinas virgens).
+
+### Evidência / teste
+- Worker: ciclo completo de isolamento verde (ver acima); `tsc`/`cargo check` limpos. Instalador v0.16.0 no Desktop. **Pendente validação do utilizador:** (1º) login admin com um dos 3 métodos + senha do banco → cria/eleva a conta dele na VPS; DEPOIS o assistente corre `db-adopt-orphans` para as 10 órfãs da VPS; conta acidental `leonardoallves` (role=user, criada no teste de hoje na VPS) — decidir: elevar ou apagar. SQLite local: 1 transcrição órfã (invisível a todas as contas por não ter dono; limpar se incomodar).
+
+### Impacto em dados, custo ou privacidade
+- Nenhum dado apagado; coluna nova nullable. Isolamento REFORÇA privacidade (requisito permanente §10/13). Sem custo novo.
+
+### Próximo passo
+- Validação do utilizador (admin + adoção). Depois: mini-API de reset de senha na VPS (estreia da API da Fase 2) + convite `.pt` como Owner no IAM.
 
 ### Registro — 2026-07-18: gate do administrador (pendência de segurança nº 1) — v0.15.0
 

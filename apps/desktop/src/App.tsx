@@ -307,6 +307,10 @@ type LibItem = {
   validation_ok: boolean | null;
   warnings_ack: boolean | null;
   clean_path: string | null;
+  // Presentes só na vista de ADMIN (o worker junta o dono a cada item)
+  owner_email?: string | null;
+  owner_username?: string | null;
+  owner_provider?: string | null;
 };
 type LibEngine = { engine: string; count: number; cost: number; duration: number; proc_avg: number };
 type LibSummary = {
@@ -359,15 +363,48 @@ function fmtDate(iso: string | null, locale?: string): string {
   }
 }
 
+// Sessão da conta (isolamento por utilizador, 2026-07-19): guarda QUEM está
+// dentro (pk da tabela users), em QUE modo (local/vps) e o role. Toda a
+// Biblioteca e transcrição enviam o id — o worker filtra por ele.
+type Session = {
+  profile: "user" | "admin";
+  mode: "local" | "vps";
+  id: number | null;
+  email: string;
+  user_id: string | null;
+  role: string;
+};
+
+function getSession(): Session | null {
+  try {
+    const s = JSON.parse(localStorage.getItem("upexnote-session") || "null");
+    return s && s.profile ? (s as Session) : null;
+  } catch {
+    return null;
+  }
+}
+
 // Cache local da Biblioteca (lista + resumo, SEM textos) para a app abrir já
 // com os últimos dados em vez de "resetar" a cada arranque — padrão
-// stale-while-revalidate: mostra o guardado, atualiza em fundo pelo túnel.
-const LIB_CACHE_KEY = "upexnote-lib-cache";
+// stale-while-revalidate. A chave inclui modo+conta: a cache de uma conta
+// NUNCA aparece a outra (mesma regra de isolamento da base).
+const LIB_CACHE_PREFIX = "upexnote-lib-cache";
 type LibCache = { ts: string; summary: LibSummary; items: LibItem[] };
+
+function libCacheKey(): string {
+  const s = getSession();
+  return `${LIB_CACHE_PREFIX}::${s?.mode || "?"}::${s?.id ?? "?"}`;
+}
+
+function clearLibCaches() {
+  for (const k of Object.keys(localStorage)) {
+    if (k.startsWith(LIB_CACHE_PREFIX)) localStorage.removeItem(k);
+  }
+}
 
 function readLibCache(): LibCache | null {
   try {
-    const raw = localStorage.getItem(LIB_CACHE_KEY);
+    const raw = localStorage.getItem(libCacheKey());
     if (!raw) return null;
     const c = JSON.parse(raw) as LibCache;
     return c && c.summary ? c : null;
@@ -402,7 +439,9 @@ function LibraryView({ active }: { active: boolean }) {
     setLoading(true);
     setError("");
     try {
-      const raw = await invoke<string>("library", { search: searchTerm ?? null });
+      const raw = await invoke<string>("library", {
+        search: searchTerm ?? null, user: getSession()?.id ?? null,
+      });
       const obj = JSON.parse(raw);
       if (obj.type === "error") {
         setError(obj.message);
@@ -419,7 +458,7 @@ function LibraryView({ active }: { active: boolean }) {
         if (!searchTerm) {
           try {
             localStorage.setItem(
-              LIB_CACHE_KEY,
+              libCacheKey(),
               JSON.stringify({ ts: new Date().toISOString(), summary: obj.summary, items: obj.items || [] })
             );
           } catch { /* cache é best-effort */ }
@@ -460,7 +499,7 @@ function LibraryView({ active }: { active: boolean }) {
     setOpeningId(id);
     setActionMsg("");
     try {
-      const raw = await invoke<string>("library_item", { id });
+      const raw = await invoke<string>("library_item", { id, user: getSession()?.id ?? null });
       const obj = JSON.parse(raw);
       if (obj.type === "library_item") {
         setDetail(obj.item);
@@ -483,7 +522,7 @@ function LibraryView({ active }: { active: boolean }) {
     setSaving(true);
     setActionMsg("");
     try {
-      const raw = await invoke<string>("library_update", { id: detail.id, text: editText });
+      const raw = await invoke<string>("library_update", { id: detail.id, text: editText, user: getSession()?.id ?? null });
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
         setDetail({ ...detail, clean_text: editText, edited_at: new Date().toISOString() });
@@ -505,7 +544,7 @@ function LibraryView({ active }: { active: boolean }) {
     setSaving(true);
     setActionMsg("");
     try {
-      const raw = await invoke<string>("library_delete", { id: detail.id });
+      const raw = await invoke<string>("library_delete", { id: detail.id, user: getSession()?.id ?? null });
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
         closeDetail();
@@ -527,7 +566,7 @@ function LibraryView({ active }: { active: boolean }) {
     setAckBusy(true);
     try {
       const reopen = !!detail.warnings_ack;
-      const raw = await invoke<string>("library_ack", { id: detail.id, reopen });
+      const raw = await invoke<string>("library_ack", { id: detail.id, reopen, user: getSession()?.id ?? null });
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
         setDetail({ ...detail, warnings_ack: !reopen });
@@ -613,6 +652,14 @@ function LibraryView({ active }: { active: boolean }) {
           <span className="badge">{fmtCost(detail.cost_usd)}</span>
           <span className="badge">{fmtDur(detail.duration_s)}</span>
           <span className="badge">{fmtDate(detail.created_at, locale)}</span>
+          {"owner_email" in detail && (
+            <span
+              className="badge"
+              title={detail.owner_provider ? t("libOwnerVia", { provider: detail.owner_provider }) : undefined}
+            >
+              {detail.owner_email || t("libOwnerNone")}
+            </span>
+          )}
         </div>
         {!detail.validation_ok && showWarnings && (
           <div className="warnings-panel">
@@ -780,7 +827,14 @@ function LibraryView({ active }: { active: boolean }) {
               />
               <span className="lib-main">
                 <div className="lib-name">{it.source_filename || t("libItemN", { id: it.id })}</div>
-                <div className="lib-sub">#{it.id} · {engLabel(it.engine)} · {fmtDate(it.created_at, locale)}{it.language ? " · " + it.language : ""}</div>
+                <div className="lib-sub">
+                  #{it.id} · {engLabel(it.engine)} · {fmtDate(it.created_at, locale)}{it.language ? " · " + it.language : ""}
+                  {"owner_email" in it && (
+                    <span className="lib-owner" title={it.owner_provider ? t("libOwnerVia", { provider: it.owner_provider }) : undefined}>
+                      {" · "}{it.owner_email || t("libOwnerNone")}
+                    </span>
+                  )}
+                </div>
               </span>
               <span className="lib-meta">
                 {openingId === it.id ? (
@@ -1061,13 +1115,50 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   const [busy, setBusy] = useState<"" | "form" | "admin" | "google" | "github">("");
   const [err, setErr] = useState("");
 
+  // Alvo da entrada: utilizador (conta pessoal, base local) ou administrador
+  // (conta na base central + prova da credencial). Mesmos 3 métodos nos dois.
+  const [target, setTarget] = useState<"user" | "admin">("user");
+  const [adminPw, setAdminPw] = useState("");
+  // Refs para os handlers assíncronos (o listener de OAuth vive fora do render)
+  const targetRef = useRef(target);
+  targetRef.current = target;
+  const adminPwRef = useRef(adminPw);
+  adminPwRef.current = adminPw;
+  const accMode = target === "admin" ? "vps" : "local";
+
   function finish(profile: "user" | "admin", user?: AccountUser | null) {
-    localStorage.removeItem("upexnote-lib-cache"); // cache pertence ao modo anterior
+    clearLibCaches(); // cache é por conta/modo — nunca herdar de outra sessão
     localStorage.setItem(
       "upexnote-session",
-      JSON.stringify({ profile, email: user?.email || email, user_id: user?.user_id || null })
+      JSON.stringify({
+        profile,
+        mode: profile === "admin" ? "vps" : "local",
+        id: user?.id ?? null,
+        email: user?.email || email,
+        user_id: user?.user_id || null,
+        role: user?.role || (profile === "admin" ? "admin" : "user"),
+      })
     );
     onDone(profile);
+  }
+
+  // Identidade validada → segundo fator: a credencial de administrador digitada
+  // é provada por ligação real no worker; certa ⇒ role=admin na base central.
+  async function elevateAndFinish(user: AccountUser): Promise<boolean> {
+    try {
+      const raw = await invoke<string>("account", {
+        op: "elevate", mode: "vps",
+        payload: JSON.stringify({ email: user.email, admin_secret: adminPwRef.current }),
+      });
+      const res = JSON.parse(raw);
+      if (res.ok) {
+        try { await invoke("set_settings", { storageMode: "vps" }); } catch { /* best-effort */ }
+        finish("admin", res.user);
+        return true;
+      }
+    } catch { /* cai no erro genérico */ }
+    setErr(t("loginAdminFail"));
+    return false;
   }
 
   function mapErr(code?: string): string {
@@ -1084,13 +1175,13 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     }
     const id = setTimeout(async () => {
       try {
-        const raw = await invoke<string>("account_suggest", { userId: userId.trim() });
+        const raw = await invoke<string>("account_suggest", { userId: userId.trim(), mode: accMode });
         const obj = JSON.parse(raw);
         setAvail({ available: !!obj.available, suggestions: obj.suggestions || [] });
       } catch { /* silencioso */ }
     }, 450);
     return () => clearTimeout(id);
-  }, [userId, screen]);
+  }, [userId, screen, accMode]);
 
   // Eventos do fluxo OAuth (o device flow do GitHub mostra um código)
   useEffect(() => {
@@ -1101,9 +1192,19 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         setOauthMsg(obj.message || t("loginOauthWaiting"));
         if (obj.user_code) setGhCode(obj.user_code);
       } else if (obj.type === "oauth") {
-        const raw = await invoke<string>("account", { op: "oauth-login", payload: JSON.stringify(obj) });
+        const adm = targetRef.current === "admin";
+        const raw = await invoke<string>("account", {
+          op: "oauth-login", mode: adm ? "vps" : "local", payload: JSON.stringify(obj),
+        });
         const res = JSON.parse(raw);
-        if (res.ok && !res.new) { finish("user", res.user); return; }
+        if (res.ok && !res.new) {
+          if (adm) { await elevateAndFinish(res.user); return; }
+          // fixa o modo local EXPLICITAMENTE — a conta pessoal nunca pode
+          // depender do default da máquina (bug real de 2026-07-19)
+          try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
+          finish("user", res.user);
+          return;
+        }
         if (res.ok && res.new) {
           setOauthPending(obj as OauthPayload);
           setEmail(obj.email || "");
@@ -1123,6 +1224,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   }, [t]);
 
   async function social(provider: "google" | "github") {
+    if (target === "admin" && !adminPw) { setErr(t("loginAdminNeedPw")); return; }
     setErr(""); setOauthMsg(t("loginOauthWaiting")); setBusy(provider);
     try { await invoke("oauth_start", { provider }); } catch { setBusy(""); setErr(t("loginErrWrong")); }
   }
@@ -1135,26 +1237,28 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
       if (pw.length < 6) return setErr(t("loginErrPwShort"));
       if (pw !== pw2) return setErr(t("loginErrPwMatch"));
     }
+    if (target === "admin" && !adminPw) return setErr(t("loginAdminNeedPw"));
     setBusy("form");
     try {
       let res: any;
       if (screen === "login") {
         res = JSON.parse(await invoke<string>("account", {
-          op: "login", payload: JSON.stringify({ email: mail, password: pw }),
+          op: "login", mode: accMode, payload: JSON.stringify({ email: mail, password: pw }),
         }));
       } else if (screen === "reset") {
         res = JSON.parse(await invoke<string>("account", {
-          op: "reset", payload: JSON.stringify({ email: mail, password: pw }),
+          op: "reset", mode: accMode, payload: JSON.stringify({ email: mail, password: pw }),
         }));
         if (res.ok) {
           res = JSON.parse(await invoke<string>("account", {
-            op: "login", payload: JSON.stringify({ email: mail, password: pw }),
+            op: "login", mode: accMode, payload: JSON.stringify({ email: mail, password: pw }),
           }));
         }
       } else {
         // create / precad → registo completo na tabela users
         res = JSON.parse(await invoke<string>("account", {
           op: "register",
+          mode: accMode,
           payload: JSON.stringify({
             email: mail,
             user_id: userId.trim(),
@@ -1168,6 +1272,10 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         }));
       }
       if (res.ok) {
+        if (target === "admin") {
+          await elevateAndFinish(res.user);
+          return;
+        }
         try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
         finish("user", res.user);
         return;
@@ -1177,38 +1285,6 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
       setErr(t("loginErrWrong"));
     } finally {
       setBusy("");
-    }
-  }
-
-  // Gate do administrador (feedback 2026-07-18): entrar como admin exige
-  // DIGITAR a credencial, validada por ligação real — posse da máquina não
-  // chega. 1º clique abre o campo; 2º valida.
-  const [adminPw, setAdminPw] = useState("");
-  const [showAdminPw, setShowAdminPw] = useState(false);
-
-  async function adminEnter() {
-    if (!showAdminPw) {
-      setErr("");
-      setShowAdminPw(true);
-      return;
-    }
-    if (!adminPw) return;
-    setBusy("admin");
-    setErr("");
-    try {
-      const raw = await invoke<string>("db_check_secret", { secret: adminPw });
-      const obj = JSON.parse(raw);
-      if (obj.ok) {
-        await invoke("set_settings", { storageMode: "vps" });
-        finish("admin", null);
-        return;
-      }
-      setErr(t("loginAdminFail"));
-    } catch {
-      setErr(t("loginAdminFail"));
-    } finally {
-      setBusy("");
-      setAdminPw("");
     }
   }
 
@@ -1229,8 +1305,21 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
       </div>
       <div className="login-card">
         <h1 className="pg-title">
-          {screen === "create" ? t("loginCreateTitle") : screen === "precad" ? t("loginPrecadTitle") : t("loginTitle")}
+          {screen === "create" ? t("loginCreateTitle") : screen === "precad" ? t("loginPrecadTitle")
+            : target === "admin" ? t("loginAdminTitle") : t("loginTitle")}
         </h1>
+        {target === "admin" && (
+          <div className="field" style={{ marginBottom: 12 }}>
+            <label>{t("loginAdminPw")}</label>
+            <input
+              type="text" className="pw-mask" autoComplete="off" spellCheck={false}
+              value={adminPw}
+              onChange={(e) => setAdminPw(e.currentTarget.value)}
+              onPaste={maskedPaste(setAdminPw)}
+            />
+            <div className="engine-info">{t("loginAdminHint")}</div>
+          </div>
+        )}
         {screen !== "precad" && (
           <>
             <button className="secondary social-btn" onClick={() => social("google")} disabled={busy !== ""}>
@@ -1337,32 +1426,16 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           ) : null}
         </div>
       </div>
-      {showAdminPw ? (
-        <div className="login-card" style={{ paddingTop: 14 }}>
-          <div className="field" style={{ marginBottom: 10 }}>
-            <label>{t("loginAdminPw")}</label>
-            <input
-              type="text" className="pw-mask" autoComplete="off" spellCheck={false}
-              value={adminPw}
-              onChange={(e) => setAdminPw(e.currentTarget.value)}
-              onPaste={maskedPaste(setAdminPw)}
-              onKeyDown={(e) => { if (e.key === "Enter") adminEnter(); }}
-            />
-          </div>
-          <button style={{ width: "100%" }} onClick={adminEnter} disabled={busy !== "" || !adminPw}>
-            {busy === "admin" ? t("loginChecking") : t("loginAdminLink")}
-          </button>
-          <div className="login-links">
-            <button className="link-btn" onClick={() => { setShowAdminPw(false); setAdminPw(""); setErr(""); }}>
-              {t("cancel")}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button className="link-btn login-admin" onClick={adminEnter} disabled={busy !== ""}>
-          {t("loginAdminLink")}
-        </button>
-      )}
+      <button
+        className="link-btn login-admin"
+        onClick={() => {
+          setErr(""); setAdminPw(""); setScreen("login");
+          setTarget(target === "admin" ? "user" : "admin");
+        }}
+        disabled={busy !== ""}
+      >
+        {target === "admin" ? t("loginUserLink") : t("loginAdminLink")}
+      </button>
     </div>
   );
 }
@@ -1593,7 +1666,7 @@ function App() {
     setStage(1);
     setStatus(t("trStarting"));
     try {
-      await invoke("transcribe", { engine: selected.id, file, dest: dest.trim() || null });
+      await invoke("transcribe", { engine: selected.id, file, dest: dest.trim() || null, user: getSession()?.id ?? null });
     } catch (e) {
       setStatus(t("errPrefix") + String(e));
       setRunning(false);

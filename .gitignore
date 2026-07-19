@@ -22,6 +22,8 @@ storage/*
 *.pem
 credentials.json
 db_config.json
+oauth_config.json
+!oauth_config.example.json
 
 # Python
 __pycache__/

@@ -19,23 +19,9 @@ import secrets
 
 from . import db
 
-USERS_DDL = """CREATE TABLE IF NOT EXISTS users (
-    id bigserial PRIMARY KEY,
-    user_id text UNIQUE NOT NULL,
-    email text UNIQUE NOT NULL,
-    first_name text,
-    last_name text,
-    phone text,
-    auth_provider text NOT NULL,
-    provider_id text,
-    provider_scopes text,
-    password_salt text,
-    password_hash text,
-    role text NOT NULL DEFAULT 'user',
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz,
-    last_login_at timestamptz
-)"""
+# O DDL vive no db.py (o hub transcriptions referencia users(id) — a ordem
+# de criação importa); este alias mantém compatibilidade.
+USERS_DDL = db.USERS_DDL
 
 _USER_COLS = ("id", "user_id", "email", "first_name", "last_name", "phone",
               "auth_provider", "role", "created_at", "last_login_at")
@@ -189,6 +175,36 @@ def update_profile(data: dict):
         conn.commit()
         with conn.cursor() as cur:
             user = _fetch_user(cur, "WHERE id = %s", (int(data["id"]),))
+        return {"ok": True, "user": _public(user)}
+    finally:
+        db.close_connection(conn)
+
+
+def elevate(email: str, admin_secret: str):
+    """Elevação a administrador (Fase 1b, 2026-07-19): identidade JÁ autenticada
+    (por qualquer método — e-mail+senha, Google, GitHub) + prova de conhecimento
+    da credencial REAL do banco central (validada por ligação com ESSA senha,
+    nunca a guardada) ⇒ role='admin' na tabela users da VPS.
+    Chamar SEMPRE com o modo vps ativo (set_mode_override feito pelo CLI)."""
+    email = (email or "").strip().lower()
+    if not admin_secret:
+        return {"ok": False, "error": "invalid_admin_credentials"}
+    try:
+        db.check(password_override=admin_secret)  # ligação real com a credencial digitada
+    except Exception:
+        return {"ok": False, "error": "invalid_admin_credentials"}
+    conn = db.connect()
+    try:
+        _ensure(conn)
+        with conn.cursor() as cur:
+            user = _fetch_user(cur, "WHERE email = %s", (email,))
+            if not user:
+                return {"ok": False, "error": "not_found"}
+            cur.execute("UPDATE users SET role = 'admin', updated_at = now() WHERE id = %s",
+                        (user["id"],))
+        conn.commit()
+        with conn.cursor() as cur:
+            user = _fetch_user(cur, "WHERE email = %s", (email,))
         return {"ok": True, "user": _public(user)}
     finally:
         db.close_connection(conn)

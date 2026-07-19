@@ -19,6 +19,7 @@ import base64
 import hashlib
 import http.server
 import json
+import os
 import secrets
 import socket
 import sys
@@ -28,9 +29,21 @@ import urllib.parse
 import urllib.request
 import webbrowser
 
-from .db import CONFIG_PATH
+from pathlib import Path
 
-OAUTH_CONFIG_PATH = CONFIG_PATH.parent / "oauth_config.json"
+# Resolução própria (não herda a do db_config): o oauth_config.json é
+# EMPACOTADO com a app (client IDs de apps desktop não são segredos — a
+# segurança é o PKCE), para o instalador funcionar em qualquer máquina
+# sem configuração. O AppData fica como override manual, se existir.
+if getattr(sys, "frozen", False):
+    _appdata = Path(os.environ.get("APPDATA", str(Path.home())))
+    _candidates = [
+        _appdata / "UpexNote" / "oauth_config.json",
+        Path(sys.executable).resolve().parent / "oauth_config.json",
+    ]
+    OAUTH_CONFIG_PATH = next((p for p in _candidates if p.exists()), _candidates[-1])
+else:
+    OAUTH_CONFIG_PATH = Path(__file__).resolve().parent / "oauth_config.json"
 
 
 def _emit(obj):
@@ -55,6 +68,43 @@ def _http_json(url, data=None, headers=None, method=None):
         req.add_header(k, v)
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _success_page(ok: bool) -> str:
+    """Página de retorno do loopback com a identidade do produto (pedido do
+    utilizador, 2026-07-19) — sem recursos externos, funciona offline."""
+    title = "Sessão iniciada" if ok else "Pedido inválido"
+    body = ("A tua conta foi autenticada com sucesso.<br>"
+            "Volta ao <b>UpexNote</b> — esta aba pode ser fechada."
+            if ok else
+            "Este pedido de autenticação não é válido ou expirou.<br>"
+            "Volta ao <b>UpexNote</b> e tenta novamente.")
+    icon = "&#10003;" if ok else "&#10007;"
+    icon_bg = "#e8b4a0" if ok else "#5c5c6e"
+    return f"""<!doctype html><html lang="pt"><head><meta charset="utf-8">
+<title>UpexNote — {title}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body {{ margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:#16161e; font-family:'Segoe UI Variable Text','Segoe UI',sans-serif; color:#e4e4ef; }}
+  .card {{ text-align:center; padding:48px 56px; border:1px solid #2a2a38; border-radius:12px;
+           background:#1c1c26; box-shadow:0 8px 40px rgba(0,0,0,.35); max-width:420px; }}
+  .badge {{ width:56px; height:56px; border-radius:50%; background:{icon_bg}; color:#16161e;
+            font-size:28px; line-height:56px; margin:0 auto 20px; }}
+  .brand {{ font-size:22px; font-weight:600; letter-spacing:.2px; margin-bottom:6px; }}
+  .brand span {{ color:#e8b4a0; }}
+  h1 {{ font-size:17px; font-weight:600; margin:14px 0 8px; }}
+  p {{ font-size:14px; color:#a0a0b4; line-height:1.55; margin:0; }}
+  .foot {{ margin-top:26px; font-size:12px; color:#5c5c6e; }}
+</style></head><body>
+<div class="card">
+  <div class="badge">{icon}</div>
+  <div class="brand">Upex<span>Note</span></div>
+  <h1>{title}</h1>
+  <p>{body}</p>
+  <div class="foot">&copy; UpexFlow &middot; upexflow.com</div>
+</div>
+</body></html>"""
 
 
 # ---------------------------------------------------------------------------
@@ -83,8 +133,7 @@ def _google_flow(cfg):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            msg = "Sessão iniciada — podes voltar ao UpexNote." if ok else "Pedido inválido."
-            self.wfile.write(f"<html><body style='font-family:sans-serif'>{msg}</body></html>".encode())
+            self.wfile.write(_success_page(ok).encode("utf-8"))
             if ok:
                 done.set()
 

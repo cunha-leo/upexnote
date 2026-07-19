@@ -179,6 +179,7 @@ def cmd_transcribe(args):
             raw_text = Path(rp).read_text(encoding="utf-8")
         db.insert_transcription({
             "engine": args.engine,
+            "user_id": getattr(args, "user", None),
             "source_filename": Path(file_path).name,
             "source_path": file_path,
             "language": language,
@@ -212,8 +213,12 @@ def _stdin_json():
 def cmd_account(args):
     # Identidade (item 13-C). Dados SEMPRE por stdin (nunca argv — visível na
     # lista de processos). Um comando por operação; resposta JSON única.
-    from . import accounts
+    # --mode: as contas de ADMINISTRADOR vivem na base central (vps) mesmo que
+    # a sessão atual seja local — o override vale só para este processo.
+    from . import accounts, db
     op = args.command
+    if getattr(args, "mode", None):
+        db.set_mode_override(args.mode)
     try:
         if op == "account-suggest":
             _emit(sys.stdout, {"type": "account", **accounts.suggest_user_id(args.user_id)})
@@ -230,6 +235,8 @@ def cmd_account(args):
             res = accounts.oauth_login(data)
         elif op == "account-update":
             res = accounts.update_profile(data)
+        elif op == "account-elevate":
+            res = accounts.elevate(data.get("email"), data.get("admin_secret"))
         else:  # account-reset
             res = accounts.reset_password(data.get("email"), data.get("password"))
         _emit(sys.stdout, {"type": "account", **res})
@@ -329,8 +336,11 @@ def cmd_check_key(args):
 
 
 def _require_db():
-    """Valida config+password da DB; devolve mensagem de erro ou None."""
+    """Valida config+password da DB; devolve mensagem de erro ou None.
+    Em modo local (SQLite) não há nada a validar — a base cria-se sozinha."""
     from . import db
+    if db.storage_mode() == "local":
+        return None
     if not db.load_config():
         return "db_config.json não encontrado — copia db_config.example.json para db_config.json."
     if not get_key(db.PG_PASSWORD_KEY):
@@ -345,9 +355,10 @@ def cmd_library(args):
         _emit(sys.stdout, {"type": "error", "message": err})
         return 1
     try:
-        summary = db.library_summary()
+        uid = getattr(args, "user", None)
+        summary = db.library_summary(user_id=uid)
         items = db.library_list(limit=getattr(args, "limit", 200) or 200,
-                                search=getattr(args, "search", None))
+                                search=getattr(args, "search", None), user_id=uid)
         _emit(sys.stdout, {"type": "library", "summary": summary, "items": items})
         return 0
     except Exception as e:  # noqa: BLE001
@@ -362,7 +373,7 @@ def cmd_library_item(args):
         _emit(sys.stdout, {"type": "error", "message": err})
         return 1
     try:
-        item = db.library_item(args.id)
+        item = db.library_item(args.id, user_id=getattr(args, "user", None))
         if item is None:
             _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
             return 1
@@ -382,7 +393,7 @@ def cmd_library_update(args):
     # O texto clean editado vem por STDIN (pode ser grande e multi-linha).
     new_text = sys.stdin.read()
     try:
-        res = db.update_transcription(args.id, new_text)
+        res = db.update_transcription(args.id, new_text, user_id=getattr(args, "user", None))
         if not res.get("ok"):
             _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
             return 1
@@ -408,6 +419,26 @@ def cmd_db_migrate(args):
     return 1
 
 
+def cmd_db_adopt_orphans(args):
+    from . import db
+    if getattr(args, "mode", None):
+        db.set_mode_override(args.mode)
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.adopt_orphans(args.email, log=lambda m: _emit(sys.stderr, {"type": "progress", "message": m}))
+        if res.get("ok"):
+            _emit(sys.stdout, {"type": "ok", **res})
+            return 0
+        _emit(sys.stdout, {"type": "error", "message": f"Adoção falhou: {res.get('error')}"})
+        return 1
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha na adoção: {e}"})
+        return 1
+
+
 def cmd_library_ack(args):
     from . import db
     err = _require_db()
@@ -415,7 +446,7 @@ def cmd_library_ack(args):
         _emit(sys.stdout, {"type": "error", "message": err})
         return 1
     try:
-        res = db.acknowledge_warnings(args.id, ack=not args.reopen)
+        res = db.acknowledge_warnings(args.id, ack=not args.reopen, user_id=getattr(args, "user", None))
         if not res.get("ok"):
             _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
             return 1
@@ -433,7 +464,7 @@ def cmd_library_delete(args):
         _emit(sys.stdout, {"type": "error", "message": err})
         return 1
     try:
-        res = db.delete_transcription(args.id)
+        res = db.delete_transcription(args.id, user_id=getattr(args, "user", None))
         if not res.get("ok"):
             _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
             return 1
@@ -499,6 +530,7 @@ def build_parser():
     p_tr.add_argument("--engine", required=True, help=f"ID do motor: {', '.join(ENGINES)}")
     p_tr.add_argument("--file", required=True, help="Caminho do video/audio a transcrever.")
     p_tr.add_argument("--dest", help="Pasta de destino SO desta transcricao (ficheiros gravados diretamente nela).")
+    p_tr.add_argument("--user", type=int, help="ID (pk) da conta da sessao — dono da transcricao.")
 
     sub.add_parser("get-settings", help="Definicoes de armazenamento em vigor (JSON).")
 
@@ -529,27 +561,39 @@ def build_parser():
     p_lib = sub.add_parser("library", help="Historico + agregados da Biblioteca (JSON).")
     p_lib.add_argument("--limit", type=int, default=200, help="Maximo de itens na lista.")
     p_lib.add_argument("--search", help="Filtra por nome do ficheiro (case-insensitive).")
+    p_lib.add_argument("--user", type=int, help="ID (pk) da conta da sessao — admin ve tudo, user so o seu.")
 
     p_libi = sub.add_parser("library-item", help="Uma transcricao completa, com texto (JSON).")
     p_libi.add_argument("--id", type=int, required=True, help="ID da transcricao.")
+    p_libi.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
 
     p_libu = sub.add_parser("library-update", help="Edita o texto clean (le stdin); a raw fica intacta.")
     p_libu.add_argument("--id", type=int, required=True, help="ID da transcricao.")
+    p_libu.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
 
     p_libd = sub.add_parser("library-delete", help="Apaga uma transcricao (arquiva no historico).")
     p_libd.add_argument("--id", type=int, required=True, help="ID da transcricao.")
+    p_libd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
 
     p_lack = sub.add_parser("library-ack", help="Marca/desmarca os avisos de validacao como revistos.")
     p_lack.add_argument("--id", type=int, required=True, help="ID da transcricao.")
     p_lack.add_argument("--reopen", action="store_true", help="Reabre o aviso (em vez de marcar como revisto).")
+    p_lack.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_adopt = sub.add_parser("db-adopt-orphans", help="Atribui transcricoes sem dono a conta com este e-mail (migracao unica).")
+    p_adopt.add_argument("--email", required=True, help="E-mail da conta que herda o legado.")
+    p_adopt.add_argument("--mode", choices=["local", "vps"], help="Forca o modo (sem gravar).")
 
     sub.add_parser("tunnel-keep", help="(interno) Guardiao do tunel SSH persistente; termina no EOF do stdin.")
 
     for name in ("account-register", "account-login", "account-oauth-login",
-                 "account-update", "account-reset"):
-        sub.add_parser(name, help="Identidade (dados por stdin, JSON).")
+                 "account-update", "account-reset", "account-elevate"):
+        p_acc = sub.add_parser(name, help="Identidade (dados por stdin, JSON).")
+        p_acc.add_argument("--mode", choices=["local", "vps"],
+                           help="Base alvo (contas admin vivem na vps). Sem gravar.")
     p_asg = sub.add_parser("account-suggest", help="Disponibilidade de user_id + sugestoes.")
     p_asg.add_argument("--user-id", required=True)
+    p_asg.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
     p_oa = sub.add_parser("oauth", help="Login social (Google loopback+PKCE / GitHub device flow).")
     p_oa.add_argument("--provider", choices=["google", "github"], required=True)
 
@@ -576,11 +620,13 @@ def main(argv=None):
         "library-delete": cmd_library_delete,
         "library-ack": cmd_library_ack,
         "tunnel-keep": cmd_tunnel_keep,
+        "db-adopt-orphans": cmd_db_adopt_orphans,
         "account-register": cmd_account,
         "account-login": cmd_account,
         "account-oauth-login": cmd_account,
         "account-update": cmd_account,
         "account-reset": cmd_account,
+        "account-elevate": cmd_account,
         "account-suggest": cmd_account,
         "oauth": cmd_oauth,
     }

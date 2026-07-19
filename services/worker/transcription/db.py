@@ -61,6 +61,26 @@ CREATE TABLE IF NOT EXISTS transcriptions_history (
 )
 """
 
+# users vive AQUI (não só em accounts.py) porque o hub transcriptions
+# referencia users(id) — a ordem de criação importa. accounts.py reutiliza.
+USERS_DDL = """CREATE TABLE IF NOT EXISTS users (
+    id bigserial PRIMARY KEY,
+    user_id text UNIQUE NOT NULL,
+    email text UNIQUE NOT NULL,
+    first_name text,
+    last_name text,
+    phone text,
+    auth_provider text NOT NULL,
+    provider_id text,
+    provider_scopes text,
+    password_salt text,
+    password_hash text,
+    role text NOT NULL DEFAULT 'user',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz,
+    last_login_at timestamptz
+)"""
+
 SCHEMA_SQL = [
     """CREATE TABLE IF NOT EXISTS engines (
            id smallserial PRIMARY KEY,
@@ -78,6 +98,7 @@ SCHEMA_SQL = [
            label text,
            severity text NOT NULL DEFAULT 'warning'
        )""",
+    USERS_DDL,
     """CREATE TABLE IF NOT EXISTS transcriptions (
            id bigserial PRIMARY KEY,
            created_at timestamptz NOT NULL DEFAULT now(),
@@ -85,6 +106,7 @@ SCHEMA_SQL = [
            deleted_at timestamptz,
            engine_id smallint REFERENCES engines(id),
            service_type_id smallint REFERENCES service_types(id),
+           user_id bigint REFERENCES users(id),
            language text,
            source_filename text,
            source_path text,
@@ -197,7 +219,19 @@ def is_configured():
 # local caso contrário (instalação virgem de um amigo → SQLite automático).
 # --------------------------------------------------------------------------
 
+_mode_override = None
+
+
+def set_mode_override(mode):
+    """Força um modo SÓ neste processo (ex.: login de administrador feito a
+    partir de uma sessão local — as contas admin vivem na VPS). Não grava."""
+    global _mode_override
+    _mode_override = mode if mode in ("local", "vps") else None
+
+
 def storage_mode() -> str:
+    if _mode_override:
+        return _mode_override
     from . import paths
     mode = (paths.load_settings() or {}).get("storage_mode")
     if mode in ("local", "vps"):
@@ -464,11 +498,28 @@ def close_connection(conn):
         _stop_tunnel()
 
 
+def _ensure_owner_column(conn):
+    """Bases criadas antes do isolamento por utilizador (2026-07-19) não têm
+    a coluna user_id no hub — acrescenta-a sem tocar em dados. Idempotente."""
+    with conn.cursor() as cur:
+        if storage_mode() == "local":
+            cur.execute("SELECT name FROM pragma_table_info('transcriptions') WHERE name='user_id'")
+            has = cur.fetchone() is not None
+        else:
+            cur.execute("""SELECT 1 FROM information_schema.columns
+                           WHERE table_name='transcriptions' AND column_name='user_id'""")
+            has = cur.fetchone() is not None
+        if not has:
+            cur.execute("ALTER TABLE transcriptions ADD COLUMN user_id bigint REFERENCES users(id)")
+
+
 def ensure_schema(conn):
     """Cria todas as tabelas (idempotente) e semeia as dimensões."""
     with conn.cursor() as cur:
         for stmt in SCHEMA_SQL:
             cur.execute(stmt)
+    _ensure_owner_column(conn)
+    with conn.cursor() as cur:
         for code, label, primary in ENGINE_SEED:
             cur.execute(
                 "INSERT INTO engines (code, label, is_primary) VALUES (%s,%s,%s) "
@@ -539,12 +590,33 @@ def _rows_to_dicts(cur):
     return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
-def library_summary():
+# --------------------------------------------------------------------------
+# Isolamento por utilizador (2026-07-19): cada conta vê SÓ o que é dela;
+# role=admin (na tabela users do modo ativo) vê tudo, com o dono visível.
+# O role NUNCA vem do chamador — é lido da base a partir do user_id da
+# sessão (o cliente não consegue "afirmar-se" admin).
+# user_id=None (chamadas de dev/CLI direto) mantém o comportamento antigo
+# de ver tudo — a app envia SEMPRE o utilizador da sessão.
+# --------------------------------------------------------------------------
+
+def _actor(cur, user_id):
+    """Devolve (filtro_sql, params, is_admin) para o utilizador da sessão."""
+    if user_id is None:
+        return "", [], True
+    cur.execute("SELECT role FROM users WHERE id = %s", (int(user_id),))
+    row = cur.fetchone()
+    if row and (row[0] or "").lower() == "admin":
+        return "", [], True
+    return " AND t.user_id = %s", [int(user_id)], False
+
+
+def library_summary(user_id=None):
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("""
+            own_sql, own_params, _ = _actor(cur, user_id)
+            cur.execute(f"""
                 SELECT count(*)                         AS total,
                        COALESCE(sum(m.cost_usd), 0)     AS cost_total,
                        COALESCE(sum(m.duration_s), 0)   AS duration_total,
@@ -553,10 +625,10 @@ def library_summary():
                        max(t.created_at)                AS last_at
                 FROM transcriptions t
                 LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
-                WHERE t.deleted_at IS NULL
-            """)
+                WHERE t.deleted_at IS NULL{own_sql}
+            """, own_params)
             t = _rows_to_dicts(cur)[0]
-            cur.execute("""
+            cur.execute(f"""
                 SELECT e.code AS engine,
                        count(*)                         AS count,
                        COALESCE(sum(m.cost_usd), 0)     AS cost,
@@ -565,10 +637,10 @@ def library_summary():
                 FROM transcriptions t
                 LEFT JOIN engines e ON e.id = t.engine_id
                 LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
-                WHERE t.deleted_at IS NULL
+                WHERE t.deleted_at IS NULL{own_sql}
                 GROUP BY e.code
                 ORDER BY count DESC
-            """)
+            """, own_params)
             by_engine = _rows_to_dicts(cur)
         return {
             "total": int(t["total"]),
@@ -592,25 +664,32 @@ def library_summary():
         close_connection(conn)
 
 
-def library_list(limit=200, search=None):
+def library_list(limit=200, search=None, user_id=None):
     conn = connect()
     try:
         ensure_schema(conn)
-        params = []
-        where = "WHERE t.deleted_at IS NULL"
-        if search:
-            where += " AND t.source_filename ILIKE %s"
-            params.append(f"%{search}%")
-        params.append(int(limit))
         with conn.cursor() as cur:
+            own_sql, own_params, is_admin = _actor(cur, user_id)
+            params = list(own_params)
+            where = "WHERE t.deleted_at IS NULL" + own_sql
+            if search:
+                where += " AND t.source_filename ILIKE %s"
+                params.append(f"%{search}%")
+            params.append(int(limit))
+            # Vista de admin inclui o DONO de cada item (e-mail + username +
+            # como entrou) — auditoria pedida pelo produto (2026-07-19).
+            owner_cols = (", u.email AS owner_email, u.user_id AS owner_username,"
+                          " u.auth_provider AS owner_provider" if is_admin else "")
+            owner_join = "LEFT JOIN users u ON u.id = t.user_id" if is_admin else ""
             cur.execute(f"""
                 SELECT t.id, t.created_at, e.code AS engine, t.source_filename, t.language,
                        m.duration_s, m.cost_usd, m.processing_s, t.validation_ok, t.warnings_ack,
-                       x.clean_path
+                       x.clean_path{owner_cols}
                 FROM transcriptions t
                 LEFT JOIN engines e ON e.id = t.engine_id
                 LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
                 LEFT JOIN transcript_texts x ON x.transcription_id = t.id
+                {owner_join}
                 {where}
                 ORDER BY t.created_at DESC, t.id DESC
                 LIMIT %s
@@ -625,21 +704,26 @@ def library_list(limit=200, search=None):
         close_connection(conn)
 
 
-def library_item(item_id):
+def library_item(item_id, user_id=None):
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("""
+            own_sql, own_params, is_admin = _actor(cur, user_id)
+            owner_cols = (", u.email AS owner_email, u.user_id AS owner_username,"
+                          " u.auth_provider AS owner_provider" if is_admin else "")
+            owner_join = "LEFT JOIN users u ON u.id = t.user_id" if is_admin else ""
+            cur.execute(f"""
                 SELECT t.id, t.created_at, t.edited_at, e.code AS engine, t.source_filename,
                        t.source_path, t.language, m.duration_s, m.cost_usd, m.processing_s,
-                       t.validation_ok, t.warnings_ack, x.clean_text, x.clean_path
+                       t.validation_ok, t.warnings_ack, x.clean_text, x.clean_path{owner_cols}
                 FROM transcriptions t
                 LEFT JOIN engines e ON e.id = t.engine_id
                 LEFT JOIN transcription_metrics m ON m.transcription_id = t.id
                 LEFT JOIN transcript_texts x ON x.transcription_id = t.id
-                WHERE t.id = %s AND t.deleted_at IS NULL
-            """, (int(item_id),))
+                {owner_join}
+                WHERE t.id = %s AND t.deleted_at IS NULL{own_sql}
+            """, [int(item_id)] + own_params)
             rows = _rows_to_dicts(cur)
             if not rows:
                 return None
@@ -658,18 +742,19 @@ def library_item(item_id):
         close_connection(conn)
 
 
-def update_transcription(item_id, new_clean_text):
+def update_transcription(item_id, new_clean_text, user_id=None):
     """Edita a versão CLEAN. A raw NUNCA é tocada. Snapshot no histórico antes;
-    reescreve o ficheiro clean no disco (best-effort)."""
+    reescreve o ficheiro clean no disco (best-effort). Só o dono ou admin."""
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id)
             cur.execute(
                 "SELECT x.clean_path FROM transcriptions t "
                 "LEFT JOIN transcript_texts x ON x.transcription_id = t.id "
-                "WHERE t.id = %s AND t.deleted_at IS NULL",
-                (int(item_id),),
+                f"WHERE t.id = %s AND t.deleted_at IS NULL{own_sql}",
+                [int(item_id)] + own_params,
             )
             row = cur.fetchone()
             if not row:
@@ -696,12 +781,14 @@ def update_transcription(item_id, new_clean_text):
         close_connection(conn)
 
 
-def acknowledge_warnings(item_id, ack=True):
+def acknowledge_warnings(item_id, ack=True, user_id=None):
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM transcriptions WHERE id = %s AND deleted_at IS NULL", (int(item_id),))
+            own_sql, own_params, _ = _actor(cur, user_id)
+            cur.execute(f"SELECT 1 FROM transcriptions t WHERE t.id = %s AND t.deleted_at IS NULL{own_sql}",
+                        [int(item_id)] + own_params)
             if not cur.fetchone():
                 return {"ok": False, "error": "not_found"}
             cur.execute("UPDATE transcriptions SET warnings_ack = %s WHERE id = %s", (bool(ack), int(item_id)))
@@ -711,14 +798,17 @@ def acknowledge_warnings(item_id, ack=True):
         close_connection(conn)
 
 
-def delete_transcription(item_id):
+def delete_transcription(item_id, user_id=None):
     """Soft-delete: arquiva no histórico + marca deleted_at. A identidade (id) e
-    o conteúdo ficam — recuperável, e nada que aponte para este id se parte."""
+    o conteúdo ficam — recuperável, e nada que aponte para este id se parte.
+    Só o dono ou admin."""
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM transcriptions WHERE id = %s AND deleted_at IS NULL", (int(item_id),))
+            own_sql, own_params, _ = _actor(cur, user_id)
+            cur.execute(f"SELECT 1 FROM transcriptions t WHERE t.id = %s AND t.deleted_at IS NULL{own_sql}",
+                        [int(item_id)] + own_params)
             if not cur.fetchone():
                 return {"ok": False, "error": "not_found"}
             cur.execute(_snapshot_sql(), ("delete", int(item_id)))
@@ -745,11 +835,13 @@ def insert_transcription(record, log=print):
         with conn.cursor() as cur:
             eng_id = _engine_id(cur, record.get("engine"))
             st_id = _service_type_id(cur, "file")
+            owner = record.get("user_id")
             cur.execute(
                 "INSERT INTO transcriptions "
-                "(engine_id, service_type_id, language, source_filename, source_path, validation_ok, host) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
-                (eng_id, st_id, record.get("language"), record.get("source_filename"),
+                "(engine_id, service_type_id, user_id, language, source_filename, source_path, validation_ok, host) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                (eng_id, st_id, int(owner) if owner is not None else None,
+                 record.get("language"), record.get("source_filename"),
                  record.get("source_path"), record.get("validation_ok"),
                  record.get("host") or socket.gethostname()),
             )
@@ -774,6 +866,29 @@ def insert_transcription(record, log=print):
     except Exception as e:  # noqa: BLE001 - best-effort, reportar e seguir
         log(f"DB: não gravou na base ({e}) — ficheiro local está seguro; sincroniza depois.")
         return None
+    finally:
+        close_connection(conn)
+
+
+def adopt_orphans(email, log=print):
+    """Migração única (2026-07-19): atribui todas as transcrições SEM dono
+    (anteriores ao isolamento por utilizador) à conta com este e-mail no modo
+    ativo. Usada para entregar o legado da VPS à conta admin do dono."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE email = %s", ((email or "").strip().lower(),))
+            row = cur.fetchone()
+            if not row:
+                return {"ok": False, "error": "user_not_found"}
+            uid = row[0]
+            cur.execute("SELECT count(*) FROM transcriptions WHERE user_id IS NULL")
+            orphans = cur.fetchone()[0]
+            cur.execute("UPDATE transcriptions SET user_id = %s WHERE user_id IS NULL", (uid,))
+        conn.commit()
+        log(f"Adoção: {orphans} transcrições sem dono atribuídas ao user #{uid}.")
+        return {"ok": True, "adopted": int(orphans), "user_pk": int(uid)}
     finally:
         close_connection(conn)
 

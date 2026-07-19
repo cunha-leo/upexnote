@@ -33,6 +33,18 @@ if (Test-Path $cfg) {
     Write-Host "db_config.json ausente — pacote sem ligacao a VPS (so ficheiro local)."
 }
 
+# Inclui o registo OAuth da aplicacao (client IDs Google/GitHub) no pacote:
+# a app instala e o login social funciona em QUALQUER maquina, sem passos
+# manuais — padrao de apps desktop de mercado (client IDs nao sao segredos;
+# a seguranca do fluxo e o PKCE/Device Flow).
+$oauthCfg = Join-Path $PSScriptRoot "transcription\oauth_config.json"
+if (Test-Path $oauthCfg) {
+    Copy-Item $oauthCfg ".\dist\upexnote-worker\oauth_config.json" -Force
+    Write-Host "oauth_config.json incluido no pacote (login social pronto a usar)."
+} else {
+    Write-Host "oauth_config.json ausente — botoes de login social ficarao inativos."
+}
+
 # Sanity check: o exe responde ao comando mais barato (sem tocar em APIs).
 & ".\dist\upexnote-worker\upexnote-worker.exe" engines | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "O worker empacotado nao respondeu a 'engines' (exit $LASTEXITCODE)" }

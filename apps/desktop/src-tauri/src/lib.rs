@@ -204,7 +204,7 @@ fn clear_credential(name: String) -> Result<String, String> {
 /// Histórico + agregados da Biblioteca (JSON). `search` filtra por nome.
 /// `async` para correr fora da thread principal (não congela a UI).
 #[tauri::command]
-async fn library(search: Option<String>) -> Result<String, String> {
+async fn library(search: Option<String>, user: Option<i64>) -> Result<String, String> {
     let mut args: Vec<String> = vec!["library".into()];
     if let Some(s) = search {
         if !s.trim().is_empty() {
@@ -212,27 +212,48 @@ async fn library(search: Option<String>) -> Result<String, String> {
             args.push(s);
         }
     }
+    push_user(&mut args, user);
     run_cli_async(args).await
+}
+
+/// Acrescenta `--user <id>` (conta da sessão — isolamento por utilizador).
+fn push_user(args: &mut Vec<String>, user: Option<i64>) {
+    if let Some(u) = user {
+        args.push("--user".into());
+        args.push(u.to_string());
+    }
 }
 
 /// Uma transcrição completa (com texto) para a vista de detalhe.
 #[tauri::command]
-async fn library_item(id: i64) -> Result<String, String> {
-    run_cli_async(vec!["library-item".into(), "--id".into(), id.to_string()]).await
+async fn library_item(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["library-item".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
 }
 
 /// Operações de conta (item 13-C): payload JSON via STDIN (nunca argv, que é
 /// visível na lista de processos). `op` é validado contra a whitelist.
 #[tauri::command]
-async fn account(op: String, payload: String) -> Result<String, String> {
-    const OPS: [&str; 5] = ["register", "login", "oauth-login", "update", "reset"];
+async fn account(op: String, payload: String, mode: Option<String>) -> Result<String, String> {
+    const OPS: [&str; 6] = ["register", "login", "oauth-login", "update", "reset", "elevate"];
     if !OPS.contains(&op.as_str()) {
         return Err(format!("operação desconhecida: {op}"));
+    }
+    if let Some(m) = mode.as_deref() {
+        if m != "local" && m != "vps" {
+            return Err(format!("modo desconhecido: {m}"));
+        }
     }
     tauri::async_runtime::spawn_blocking(move || {
         use std::io::Write;
         let cmd_name = format!("account-{op}");
-        let mut cmd = worker_command(&[&cmd_name]);
+        let mut cli: Vec<&str> = vec![&cmd_name];
+        if let Some(m) = mode.as_deref() {
+            cli.push("--mode");
+            cli.push(m);
+        }
+        let mut cmd = worker_command(&cli);
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         with_no_window(&mut cmd);
         let mut child = cmd.spawn().map_err(|e| e.to_string())?;
@@ -255,8 +276,15 @@ async fn account(op: String, payload: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn account_suggest(user_id: String) -> Result<String, String> {
-    run_cli_async(vec!["account-suggest".into(), "--user-id".into(), user_id]).await
+async fn account_suggest(user_id: String, mode: Option<String>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["account-suggest".into(), "--user-id".into(), user_id];
+    if let Some(m) = mode {
+        if m == "local" || m == "vps" {
+            args.push("--mode".into());
+            args.push(m);
+        }
+    }
+    run_cli_async(args).await
 }
 
 /// Gate do administrador: valida uma credencial DIGITADA (via stdin, nunca
@@ -309,6 +337,15 @@ fn oauth_start(app: AppHandle, provider: String) -> Result<(), String> {
             }
         }
         let _ = child.wait();
+        // Traz a janela da app para a frente — a pessoa autenticou no browser
+        // e o retorno deve "aterrar" no UpexNote sem cliques (2026-07-19).
+        {
+            use tauri::Manager;
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }
         let _ = app.emit("oauth://done", ());
     });
     Ok(())
@@ -331,11 +368,18 @@ async fn db_check(mode: Option<String>) -> Result<String, String> {
 /// grande e ter caracteres especiais), nunca por argumentos. A raw é intacta.
 /// Corre numa thread de bloqueio (não congela a UI).
 #[tauri::command]
-async fn library_update(id: i64, text: String) -> Result<String, String> {
+async fn library_update(id: i64, text: String, user: Option<i64>) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         use std::io::Write;
         let id_s = id.to_string();
-        let mut cmd = worker_command(&["library-update", "--id", &id_s]);
+        let mut cli: Vec<&str> = vec!["library-update", "--id", &id_s];
+        let user_s;
+        if let Some(u) = user {
+            user_s = u.to_string();
+            cli.push("--user");
+            cli.push(&user_s);
+        }
+        let mut cmd = worker_command(&cli);
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         with_no_window(&mut cmd);
         let mut child = cmd.spawn().map_err(|e| format!("Falha ao iniciar o worker Python: {e}"))?;
@@ -359,17 +403,20 @@ async fn library_update(id: i64, text: String) -> Result<String, String> {
 
 /// Apaga uma transcrição (arquivada no histórico pelo worker).
 #[tauri::command]
-async fn library_delete(id: i64) -> Result<String, String> {
-    run_cli_async(vec!["library-delete".into(), "--id".into(), id.to_string()]).await
+async fn library_delete(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["library-delete".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
 }
 
 /// Marca/desmarca os avisos de validação como revistos.
 #[tauri::command]
-async fn library_ack(id: i64, reopen: bool) -> Result<String, String> {
+async fn library_ack(id: i64, reopen: bool, user: Option<i64>) -> Result<String, String> {
     let mut args: Vec<String> = vec!["library-ack".into(), "--id".into(), id.to_string()];
     if reopen {
         args.push("--reopen".into());
     }
+    push_user(&mut args, user);
     run_cli_async(args).await
 }
 
@@ -411,7 +458,7 @@ fn set_settings(
 /// Inicia uma transcrição. Não bloqueia: corre o worker numa thread e emite
 /// cada linha NDJSON como evento `worker://event`; no fim emite `worker://done`.
 #[tauri::command]
-fn transcribe(app: AppHandle, engine: String, file: String, dest: Option<String>) -> Result<(), String> {
+fn transcribe(app: AppHandle, engine: String, file: String, dest: Option<String>, user: Option<i64>) -> Result<(), String> {
     std::thread::spawn(move || {
         let mut args: Vec<&str> = vec!["transcribe", "--engine", &engine, "--file", &file];
         if let Some(d) = dest.as_deref() {
@@ -419,6 +466,12 @@ fn transcribe(app: AppHandle, engine: String, file: String, dest: Option<String>
                 args.push("--dest");
                 args.push(d);
             }
+        }
+        let user_s;
+        if let Some(u) = user {
+            user_s = u.to_string();
+            args.push("--user");
+            args.push(&user_s);
         }
         let mut cmd = worker_command(&args);
         cmd.stdout(Stdio::piped()).stderr(Stdio::null());

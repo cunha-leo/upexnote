@@ -789,6 +789,8 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
   text-overflow: ellipsis;
 }
 .lib-row .lib-sub { font-size: var(--fs-sm); color: var(--text-dim); margin-top: 2px; }
+/* Dono do item (vista de admin): mesmo tom, com o acento do tema para saltar à vista */
+.lib-row .lib-owner { color: var(--accent); }
 .lib-row .lib-meta {
   display: flex;
   gap: 6px;
