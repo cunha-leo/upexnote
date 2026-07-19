@@ -791,6 +791,19 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
 .lib-row .lib-sub { font-size: var(--fs-sm); color: var(--text-dim); margin-top: 2px; }
 /* Dono do item (vista de admin): mesmo tom, com o acento do tema para saltar à vista */
 .lib-row .lib-owner { color: var(--accent); }
+
+/* Modal de confirmação (custom — o diálogo nativo crasha a WebView2 desta máquina) */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 22px 24px; max-width: 420px; width: calc(100% - 48px);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+}
 .lib-row .lib-meta {
   display: flex;
   gap: 6px;

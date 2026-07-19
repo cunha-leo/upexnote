@@ -1622,6 +1622,7 @@ function AdminView({ active }: { active: boolean }) {
       if (r.ok) {
         setNotice(t(confirmDel.purge ? "admPurged" : "admDeletedOk", { n: r.cascade ?? 0 }));
         setConfirmDel(null);
+        setUSearch(""); // volta à tabela completa — nunca deixar um filtro antigo esconder o resultado
         loadOverview();
       } else {
         setErr(r.error === "cannot_delete_self" ? t("admNoSelfDelete") : t("errPrefix") + (r.error || ""));
@@ -1636,7 +1637,7 @@ function AdminView({ active }: { active: boolean }) {
       const r = await call("create-user", {
         user: { email: cEmail.trim(), user_id: cUser.trim(), password: cPw, auth_provider: "email" },
       });
-      if (r.ok) { setNotice(t("admCreated")); setShowCreate(false); setCEmail(""); setCUser(""); setCPw(""); loadOverview(); }
+      if (r.ok) { setNotice(t("admCreated")); setShowCreate(false); setCEmail(""); setCUser(""); setCPw(""); setUSearch(""); loadOverview(); }
       else setErr(r.error === "email_taken" ? t("loginErrEmailTaken")
         : r.error === "user_id_taken" ? t("loginErrUserIdTaken")
         : r.error === "password_required" ? t("loginErrPwShort") : t("errPrefix") + (r.error || ""));
@@ -1730,13 +1731,7 @@ function AdminView({ active }: { active: boolean }) {
                     <td>{u.transcription_count}</td>
                     <td>{fmtDate(u.last_login_at, locale)}</td>
                     <td>
-                      {confirmDel?.id === u.id ? (
-                        <span className="row" style={{ gap: 6 }}>
-                          <span className="muted">{t(confirmDel.purge ? "admPurgeConfirm" : "admDeleteConfirm")}</span>
-                          <button onClick={doDelete} disabled={busy}>{t("admConfirm")}</button>
-                          <button className="secondary" onClick={() => setConfirmDel(null)}>{t("cancel")}</button>
-                        </span>
-                      ) : !u.deleted_at ? (
+                      {!u.deleted_at ? (
                         <span className="row" style={{ gap: 6 }}>
                           <button className="secondary" onClick={() => { setEmailEdit({ id: u.id, value: u.email }); setErr(""); }}>
                             {t("admChangeEmail")}
@@ -1753,7 +1748,39 @@ function AdminView({ active }: { active: boolean }) {
               </tbody>
             </table>
           </div>
+          {usersFiltered.length === 0 && (
+            <div className="muted" style={{ marginTop: 10 }}>
+              {data.users.length > 0 ? (
+                <>
+                  {t("admNoMatch")}{" "}
+                  <button className="link-btn" onClick={() => { setUSearch(""); setShowDeleted(false); }}>
+                    {t("admClearFilter")}
+                  </button>
+                </>
+              ) : busy ? t("loginChecking") : t("admNoEvents")}
+            </div>
+          )}
           <div className="engine-info" style={{ marginTop: 8 }}>{t("admCascadeNote")}</div>
+          {confirmDel && (() => {
+            const target = data.users.find((u) => u.id === confirmDel.id);
+            return (
+              <div className="modal-overlay" onClick={() => setConfirmDel(null)}>
+                <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                  <h3 style={{ margin: "0 0 6px" }}>{t(confirmDel.purge ? "admPurge" : "admDelete")}</h3>
+                  <div style={{ marginBottom: 6 }}><b>{target?.email || `#${confirmDel.id}`}</b></div>
+                  <p className="muted" style={{ margin: "0 0 16px" }}>
+                    {t(confirmDel.purge ? "admPurgeConfirm" : "admDeleteConfirm")}
+                  </p>
+                  <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+                    <button className="secondary" onClick={() => setConfirmDel(null)} disabled={busy}>{t("cancel")}</button>
+                    <button onClick={doDelete} disabled={busy}>
+                      {busy ? <span className="spinner" /> : t("admConfirm")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </>
       )}
 
