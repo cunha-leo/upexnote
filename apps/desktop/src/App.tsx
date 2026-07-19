@@ -1145,28 +1145,18 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     onDone(profile);
   }
 
-  // Identidade validada → segundo fator: a credencial de administrador digitada
-  // é provada por ligação real no worker; certa ⇒ role=admin na base central.
-  async function elevateAndFinish(user: AccountUser): Promise<boolean> {
-    try {
-      const raw = await invoke<string>("account", {
-        op: "elevate", mode: "vps",
-        payload: JSON.stringify({ email: user.email, admin_secret: adminPwRef.current }),
-      });
-      const res = JSON.parse(raw);
-      if (res.ok) {
-        try { await invoke("set_settings", { storageMode: "vps" }); } catch { /* best-effort */ }
-        finish("admin", res.user);
-        return true;
-      }
-    } catch { /* cai no erro genérico */ }
-    setErr(t("loginAdminFail"));
-    return false;
+  // Fluxo admin: a credencial digitada segue DENTRO do payload de login/registo
+  // e o worker eleva no MESMO processo (identidade + prova numa só ida à base
+  // — dois spawns sequenciais duplicavam a latência; 2026-07-19).
+  async function finishAdmin(user: AccountUser) {
+    try { await invoke("set_settings", { storageMode: "vps" }); } catch { /* best-effort */ }
+    finish("admin", user);
   }
 
   function mapErr(code?: string): string {
     if (code === "email_taken") return t("loginErrEmailTaken");
     if (code === "user_id_taken") return t("loginErrUserIdTaken");
+    if (code === "invalid_admin_credentials") return t("loginAdminFail");
     return t("loginErrWrong");
   }
 
@@ -1204,15 +1194,12 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         setOauthMsg(t("loginFinishing"));
         const adm = targetRef.current === "admin";
         const raw = await invoke<string>("account", {
-          op: "oauth-login", mode: adm ? "vps" : "local", payload: JSON.stringify(obj),
+          op: "oauth-login", mode: adm ? "vps" : "local",
+          payload: JSON.stringify(adm ? { ...obj, admin_secret: adminPwRef.current } : obj),
         });
         const res = JSON.parse(raw);
         if (res.ok && !res.new) {
-          if (adm) {
-            const ok = await elevateAndFinish(res.user);
-            if (!ok) { processingRef.current = false; setBusy(""); setOauthMsg(""); }
-            return;
-          }
+          if (adm) { await finishAdmin(res.user); return; }
           // fixa o modo local EXPLICITAMENTE — a conta pessoal nunca pode
           // depender do default da máquina (bug real de 2026-07-19)
           try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
@@ -1234,7 +1221,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         if (!res.ok) {
           processingRef.current = false;
           setBusy(""); setOauthMsg("");
-          setErr(t("loginErrWrong"));
+          setErr(res.error === "invalid_admin_credentials" ? t("loginAdminFail") : t("loginErrWrong"));
         }
       } else if (obj.type === "error") {
         processingRef.current = false;
@@ -1268,10 +1255,14 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     if (target === "admin" && !adminPw) return setErr(t("loginAdminNeedPw"));
     setBusy("form");
     try {
+      // No alvo admin, a credencial digitada segue no payload e o worker eleva
+      // no mesmo processo — a resposta já vem com role=admin.
+      const adminExtra = target === "admin" ? { admin_secret: adminPw } : {};
       let res: any;
       if (screen === "login") {
         res = JSON.parse(await invoke<string>("account", {
-          op: "login", mode: accMode, payload: JSON.stringify({ email: mail, password: pw }),
+          op: "login", mode: accMode,
+          payload: JSON.stringify({ email: mail, password: pw, ...adminExtra }),
         }));
       } else if (screen === "reset") {
         res = JSON.parse(await invoke<string>("account", {
@@ -1279,7 +1270,8 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         }));
         if (res.ok) {
           res = JSON.parse(await invoke<string>("account", {
-            op: "login", mode: accMode, payload: JSON.stringify({ email: mail, password: pw }),
+            op: "login", mode: accMode,
+            payload: JSON.stringify({ email: mail, password: pw, ...adminExtra }),
           }));
         }
       } else {
@@ -1296,12 +1288,13 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
             auth_provider: oauthPending?.auth_provider || "email",
             provider_id: oauthPending?.provider_id,
             provider_scopes: oauthPending?.provider_scopes,
+            ...adminExtra,
           }),
         }));
       }
       if (res.ok) {
         if (target === "admin") {
-          await elevateAndFinish(res.user);
+          await finishAdmin(res.user);
           return;
         }
         try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
@@ -2115,12 +2108,24 @@ function App() {
       setEngines(list);
       setEngineId((cur) => cur || list.find((e) => e.primary)?.id || list[0]?.id || "");
       setLoadError("");
+      try { localStorage.setItem("upexnote-engines", raw); } catch { /* cache é best-effort */ }
     } catch (e) {
       setLoadError(String(e));
     }
   }
 
   useEffect(() => {
+    // SWR: o seletor de motores pinta-se JÁ com a última lista guardada (o
+    // worker demora segundos a arrancar a frio e deixava o campo vazio); o
+    // load real corre em fundo e atualiza estado das chaves/motores novos.
+    try {
+      const cached = JSON.parse(localStorage.getItem("upexnote-engines") || "null");
+      const list: Engine[] = cached?.engines || [];
+      if (list.length) {
+        setEngines(list);
+        setEngineId((cur) => cur || list.find((e) => e.primary)?.id || list[0]?.id || "");
+      }
+    } catch { /* sem cache */ }
     loadEngines();
   }, []);
 

@@ -93,15 +93,18 @@ async fn run_cli_async(args: Vec<String>) -> Result<String, String> {
 }
 
 /// Lista os motores (JSON de uma linha, tal como a CLI devolve).
+/// `async`: comandos síncronos correm na THREAD PRINCIPAL e congelavam a
+/// janela inteira no arranque até o worker responder (lição da v0.5.1,
+/// que só tinha sido aplicada à Biblioteca — visto de novo em 2026-07-19).
 #[tauri::command]
-fn list_engines() -> Result<String, String> {
-    run_cli(&["engines"])
+async fn list_engines() -> Result<String, String> {
+    run_cli_async(vec!["engines".into()]).await
 }
 
 /// Diz se uma chave está configurada (JSON), sem revelar o valor.
 #[tauri::command]
-fn check_key(name: String) -> Result<String, String> {
-    run_cli(&["check-key", "--name", &name])
+async fn check_key(name: String) -> Result<String, String> {
+    run_cli_async(vec!["check-key".into(), "--name".into(), name]).await
 }
 
 /// Remove o sufixo de formato ("Arial (TrueType)" → "Arial") e os estilos no
@@ -161,8 +164,8 @@ fn list_system_fonts() -> Result<Vec<String>, String> {
 
 /// Estado de todas as chaves numa só chamada (o ecrã de Definições usa isto).
 #[tauri::command]
-fn list_credentials() -> Result<String, String> {
-    run_cli(&["list-keys"])
+async fn list_credentials() -> Result<String, String> {
+    run_cli_async(vec!["list-keys".into()]).await
 }
 
 /// Guarda uma chave/credencial recebida da interface. O valor é escrito no
@@ -465,15 +468,15 @@ async fn library_ack(id: i64, reopen: bool, user: Option<i64>) -> Result<String,
 
 /// Definições de armazenamento em vigor (pasta padrão + organização).
 #[tauri::command]
-fn get_settings() -> Result<String, String> {
-    run_cli(&["get-settings"])
+async fn get_settings() -> Result<String, String> {
+    run_cli_async(vec!["get-settings".into()]).await
 }
 
 /// Altera as definições de armazenamento (pasta padrão dos transcripts e/ou
 /// organização por dia/motor). `storage_dir=None` + `clear=true` repõe a
 /// pasta de fábrica. Devolve as definições resultantes.
 #[tauri::command]
-fn set_settings(
+async fn set_settings(
     storage_dir: Option<String>,
     clear_storage_dir: Option<bool>,
     organize: Option<bool>,
@@ -494,8 +497,7 @@ fn set_settings(
         args.push("--storage-mode".into());
         args.push(mode);
     }
-    let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    run_cli(&refs)
+    run_cli_async(args).await
 }
 
 /// Inicia uma transcrição. Não bloqueia: corre o worker numa thread e emite

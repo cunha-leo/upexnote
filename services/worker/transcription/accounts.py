@@ -33,9 +33,11 @@ def _hash_password(password: str, salt: str) -> str:
 
 
 def _ensure(conn):
-    with conn.cursor() as cur:
-        cur.execute(USERS_DDL)
-    conn.commit()
+    # Schema COMPLETO (não só a users): as migrações de colunas (ex.:
+    # users.deleted_at) vivem no ensure_schema — só criar a tabela deixava
+    # bases antigas sem as colunas novas (bug real: login local, 2026-07-19).
+    # Custa pouco: o ensure corre uma vez por processo/modo.
+    db.ensure_schema(conn)
 
 
 def _public(row_dict):

@@ -371,6 +371,13 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-07-19 (g): 4 fixes da validação — v0.18.3
+
+- **(1, grave) Login pessoal com Google falhava** ("e-mail ou senha incorretos"): a base SQLite local era pré-v0.17 e `accounts._ensure` só criava a tabela (CREATE IF NOT EXISTS) sem as MIGRAÇÕES de colunas — o `WHERE deleted_at IS NULL` rebentava. Fix: `_ensure` passou a chamar `db.ensure_schema` (schema completo + migrações; barato com o ensure-once). Testado contra uma base simulada antiga. As duas vertentes do mesmo e-mail (pessoal local + admin central) ficam operacionais.
+- **(2) Admin em 1 processo:** `admin_secret` segue no payload de login/oauth-login/register e o cmd_account eleva NO MESMO processo (antes: 2 spawns sequenciais = 2× ensure/túnel). `elevateAndFinish` removido do frontend.
+- **(3) Arranque congelado 5-10s:** `list_engines`/`get_settings`/`set_settings`/`list_credentials`/`check_key` eram comandos Rust SÍNCRONOS na thread principal (lição da v0.5.1 aplicada só à Biblioteca) — a janela nem arrastava até o worker responder. Todos async agora + seletor de motores com cache SWR (`upexnote-engines`) — pinta instantâneo, refresca em fundo.
+- **(4) Falhas de login não constavam na Activity:** o crash do (1) acontecia ANTES da avaliação — com o fix, senha errada regista `login · falha`. Nota mantida: eventos do modo local ficam na base local; a Activity do admin (VPS) mostra o central até a telemetria da Fase 2.
+
 ### Registro — 2026-07-19 (f): fim do silêncio pós-OAuth + ensure-once — v0.18.2
 
 - **Bug visto pelo utilizador na v0.18.1:** login admin via Google parecia morto por vários segundos — o evento de fim do processo OAuth limpava o spinner ANTES das 2-3 chamadas à base (oauth-login + elevate) terminarem. Fix: `processingRef` mantém o estado ocupado com "A concluir a sessão…" até ao fim real; erros em qualquer ramo limpam o estado.

@@ -239,6 +239,12 @@ def cmd_account(args):
             res = accounts.elevate(data.get("email"), data.get("admin_secret"))
         else:  # account-reset
             res = accounts.reset_password(data.get("email"), data.get("password"))
+        # Fluxo de administrador NUM SÓ processo (2026-07-19: dois spawns
+        # sequenciais duplicavam o custo do ensure/túnel): se o payload traz
+        # admin_secret, a identidade validada é elevada aqui mesmo.
+        if (op in ("account-login", "account-oauth-login", "account-register")
+                and res.get("ok") and res.get("user") and data.get("admin_secret")):
+            res = accounts.elevate(res["user"]["email"], data.get("admin_secret"))
         _emit(sys.stdout, {"type": "account", **res})
         return 0 if res.get("ok") else 1
     except Exception as e:  # noqa: BLE001
