@@ -1,8 +1,11 @@
 # UpexNote API
 
-FastAPI service for the central, versioned UpexNote API. Release `0.1.0`
-delivers the password-reset flow and reserves explicit `/v1` routes for admin
-elevation, installation telemetry, and Phase 2 tokens/webhooks.
+FastAPI service for the central, versioned UpexNote API. Release `0.2.0`
+delivers password reset and administrative MFA. Administrative elevation uses
+identity + administrator password + **TOTP or e-mail code**. TOTP is compatible
+with standard authenticator apps through an `otpauth://` QR Code, while e-mail
+always remains available as the recovery alternative. Explicit `/v1` routes
+remain reserved for installation telemetry and Phase 2 tokens/webhooks.
 
 ## Local tests
 
@@ -26,7 +29,9 @@ not expose PostgreSQL.
 Configure every variable named in `.env.example` in EasyPanel's environment
 editor. Real values must never be committed, pasted into build arguments, or
 written to logs. `UPEXNOTE_RESET_HMAC_SECRET` must be an independent random
-secret of at least 32 characters.
+secret of at least 32 characters. It also derives a purpose-separated
+encryption key for TOTP secrets; the plaintext authenticator secret is never
+stored in PostgreSQL.
 
 The service reaches PostgreSQL only through the EasyPanel internal network at
 the service host configured by `UPEXNOTE_DB_HOST` (default `upexnote-db`). The

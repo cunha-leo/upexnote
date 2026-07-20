@@ -60,6 +60,12 @@ class Settings:
     reset_rate_window_seconds: int
     reset_rate_email_max: int
     reset_rate_ip_max: int
+    admin_code_ttl_seconds: int
+    admin_session_ttl_seconds: int
+    admin_max_attempts: int
+    admin_rate_window_seconds: int
+    admin_rate_email_max: int
+    admin_rate_ip_max: int
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -91,6 +97,12 @@ class Settings:
             reset_rate_window_seconds=_integer("UPEXNOTE_RESET_RATE_WINDOW_SECONDS", 900, 60),
             reset_rate_email_max=_integer("UPEXNOTE_RESET_RATE_EMAIL_MAX", 3),
             reset_rate_ip_max=_integer("UPEXNOTE_RESET_RATE_IP_MAX", 10),
+            admin_code_ttl_seconds=_integer("UPEXNOTE_ADMIN_CODE_TTL_SECONDS", 600, 60),
+            admin_session_ttl_seconds=_integer("UPEXNOTE_ADMIN_SESSION_TTL_SECONDS", 28800, 300),
+            admin_max_attempts=_integer("UPEXNOTE_ADMIN_MAX_ATTEMPTS", 5),
+            admin_rate_window_seconds=_integer("UPEXNOTE_ADMIN_RATE_WINDOW_SECONDS", 900, 60),
+            admin_rate_email_max=_integer("UPEXNOTE_ADMIN_RATE_EMAIL_MAX", 3),
+            admin_rate_ip_max=_integer("UPEXNOTE_ADMIN_RATE_IP_MAX", 10),
         )
 
 

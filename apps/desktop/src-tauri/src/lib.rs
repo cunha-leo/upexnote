@@ -92,6 +92,36 @@ async fn run_cli_async(args: Vec<String>) -> Result<String, String> {
     .map_err(|e| format!("erro na thread do worker: {e}"))?
 }
 
+async fn run_cli_stdin_async(args: Vec<String>, payload: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let mut cmd = worker_command(&refs);
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        with_no_window(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        child.stdin.as_mut().ok_or("sem stdin")?
+            .write_all(payload.as_bytes()).map_err(|e| e.to_string())?;
+        drop(child.stdin.take());
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if stdout.is_empty() {
+            return Err(String::from_utf8_lossy(&out.stderr).to_string());
+        }
+        Ok(stdout)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn admin_proof_json(email: Option<String>, token: Option<String>, text: Option<String>) -> String {
+    serde_json::json!({
+        "admin_email": email.unwrap_or_default(),
+        "admin_token": token.unwrap_or_default(),
+        "text": text.unwrap_or_default(),
+    }).to_string()
+}
+
 /// Lista os motores (JSON de uma linha, tal como a CLI devolve).
 /// `async`: comandos síncronos correm na THREAD PRINCIPAL e congelavam a
 /// janela inteira no arranque até o worker responder (lição da v0.5.1,
@@ -207,8 +237,10 @@ fn clear_credential(name: String) -> Result<String, String> {
 /// Histórico + agregados da Biblioteca (JSON). `search` filtra por nome.
 /// `async` para correr fora da thread principal (não congela a UI).
 #[tauri::command]
-async fn library(search: Option<String>, user: Option<i64>) -> Result<String, String> {
-    let mut args: Vec<String> = vec!["library".into()];
+async fn library(
+    search: Option<String>, user: Option<i64>, admin_email: Option<String>, admin_token: Option<String>
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["library".into(), "--json-stdin".into()];
     if let Some(s) = search {
         if !s.trim().is_empty() {
             args.push("--search".into());
@@ -216,7 +248,7 @@ async fn library(search: Option<String>, user: Option<i64>) -> Result<String, St
         }
     }
     push_user(&mut args, user);
-    run_cli_async(args).await
+    run_cli_stdin_async(args, admin_proof_json(admin_email, admin_token, None)).await
 }
 
 /// Acrescenta `--user <id>` (conta da sessão — isolamento por utilizador).
@@ -229,17 +261,19 @@ fn push_user(args: &mut Vec<String>, user: Option<i64>) {
 
 /// Uma transcrição completa (com texto) para a vista de detalhe.
 #[tauri::command]
-async fn library_item(id: i64, user: Option<i64>) -> Result<String, String> {
-    let mut args: Vec<String> = vec!["library-item".into(), "--id".into(), id.to_string()];
+async fn library_item(
+    id: i64, user: Option<i64>, admin_email: Option<String>, admin_token: Option<String>
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["library-item".into(), "--json-stdin".into(), "--id".into(), id.to_string()];
     push_user(&mut args, user);
-    run_cli_async(args).await
+    run_cli_stdin_async(args, admin_proof_json(admin_email, admin_token, None)).await
 }
 
 /// Operações de conta (item 13-C): payload JSON via STDIN (nunca argv, que é
 /// visível na lista de processos). `op` é validado contra a whitelist.
 #[tauri::command]
 async fn account(op: String, payload: String, mode: Option<String>) -> Result<String, String> {
-    const OPS: [&str; 5] = ["register", "login", "oauth-login", "update", "elevate"];
+    const OPS: [&str; 4] = ["register", "login", "oauth-login", "update"];
     if !OPS.contains(&op.as_str()) {
         return Err(format!("operação desconhecida: {op}"));
     }
@@ -289,6 +323,39 @@ async fn api_reset(op: String, payload: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         use std::io::Write;
         let cmd_name = format!("api-reset-{op}");
+        let mut cmd = worker_command(&[&cmd_name]);
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        with_no_window(&mut cmd);
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        child
+            .stdin
+            .as_mut()
+            .ok_or("sem stdin")?
+            .write_all(payload.as_bytes())
+            .map_err(|e| e.to_string())?;
+        drop(child.stdin.take());
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if stdout.is_empty() {
+            return Err(String::from_utf8_lossy(&out.stderr).to_string());
+        }
+        Ok(stdout)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Administrative e-mail/TOTP factor through the central HTTPS API. Secrets,
+/// one-time codes and session tokens stay in the stdin JSON pipe.
+#[tauri::command]
+async fn api_admin_factor(op: String, payload: String) -> Result<String, String> {
+    const OPS: [&str; 6] = ["challenge", "verify", "validate", "revoke", "totp-enroll", "totp-confirm"];
+    if !OPS.contains(&op.as_str()) {
+        return Err(format!("operação desconhecida: {op}"));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        let cmd_name = format!("api-admin-{op}");
         let mut cmd = worker_command(&[&cmd_name]);
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         with_no_window(&mut cmd);
@@ -447,56 +514,35 @@ async fn db_check(mode: Option<String>) -> Result<String, String> {
 /// grande e ter caracteres especiais), nunca por argumentos. A raw é intacta.
 /// Corre numa thread de bloqueio (não congela a UI).
 #[tauri::command]
-async fn library_update(id: i64, text: String, user: Option<i64>) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        use std::io::Write;
-        let id_s = id.to_string();
-        let mut cli: Vec<&str> = vec!["library-update", "--id", &id_s];
-        let user_s;
-        if let Some(u) = user {
-            user_s = u.to_string();
-            cli.push("--user");
-            cli.push(&user_s);
-        }
-        let mut cmd = worker_command(&cli);
-        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        with_no_window(&mut cmd);
-        let mut child = cmd.spawn().map_err(|e| format!("Falha ao iniciar o worker Python: {e}"))?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-        }
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            let err = String::from_utf8_lossy(&out.stderr);
-            return Err(if err.trim().is_empty() {
-                String::from_utf8_lossy(&out.stdout).to_string()
-            } else {
-                err.to_string()
-            });
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).to_string())
-    })
-    .await
-    .map_err(|e| format!("erro na thread do worker: {e}"))?
+async fn library_update(
+    id: i64, text: String, user: Option<i64>, admin_email: Option<String>, admin_token: Option<String>
+) -> Result<String, String> {
+    let mut args = vec!["library-update".into(), "--json-stdin".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_stdin_async(args, admin_proof_json(admin_email, admin_token, Some(text))).await
 }
 
 /// Apaga uma transcrição (arquivada no histórico pelo worker).
 #[tauri::command]
-async fn library_delete(id: i64, user: Option<i64>) -> Result<String, String> {
-    let mut args: Vec<String> = vec!["library-delete".into(), "--id".into(), id.to_string()];
+async fn library_delete(
+    id: i64, user: Option<i64>, admin_email: Option<String>, admin_token: Option<String>
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["library-delete".into(), "--json-stdin".into(), "--id".into(), id.to_string()];
     push_user(&mut args, user);
-    run_cli_async(args).await
+    run_cli_stdin_async(args, admin_proof_json(admin_email, admin_token, None)).await
 }
 
 /// Marca/desmarca os avisos de validação como revistos.
 #[tauri::command]
-async fn library_ack(id: i64, reopen: bool, user: Option<i64>) -> Result<String, String> {
-    let mut args: Vec<String> = vec!["library-ack".into(), "--id".into(), id.to_string()];
+async fn library_ack(
+    id: i64, reopen: bool, user: Option<i64>, admin_email: Option<String>, admin_token: Option<String>
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["library-ack".into(), "--json-stdin".into(), "--id".into(), id.to_string()];
     if reopen {
         args.push("--reopen".into());
     }
     push_user(&mut args, user);
-    run_cli_async(args).await
+    run_cli_stdin_async(args, admin_proof_json(admin_email, admin_token, None)).await
 }
 
 /// Definições de armazenamento em vigor (pasta padrão + organização).
@@ -614,7 +660,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
-            list_system_fonts, db_check, db_check_secret, account, api_reset, account_suggest, admin, oauth_start, transcribe
+            list_system_fonts, db_check, db_check_secret, account, api_reset, api_admin_factor,
+            account_suggest, admin, oauth_start, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

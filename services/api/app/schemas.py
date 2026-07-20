@@ -56,5 +56,57 @@ class ResetCompleted(StrictModel):
     ok: bool = True
 
 
+class AdminChallenge(EmailPayload):
+    admin_secret: str = Field(min_length=1, max_length=512)
+    prefer_email: bool = False
+
+
+class AdminVerify(EmailPayload):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class AdminTokenPayload(EmailPayload):
+    elevation_token: str = Field(min_length=32, max_length=256)
+
+
+class AdminTotpConfirm(AdminTokenPayload):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class AdminChallengeAccepted(GenericAccepted):
+    factor: str
+
+
+class AdminVerified(StrictModel):
+    ok: bool = True
+    elevation_token: str
+    expires_in: int
+    factor: str
+    totp_enrolled: bool
+
+
+class AdminValidation(StrictModel):
+    ok: bool = True
+    valid: bool
+    user_id: int | None = None
+    expires_in: int | None = None
+    totp_enrolled: bool = False
+
+
+class AdminRevoked(StrictModel):
+    ok: bool = True
+
+
+class AdminTotpEnrollment(StrictModel):
+    ok: bool = True
+    qr_data_url: str
+    manual_key: str
+    expires_in: int
+
+
+class AdminTotpConfirmed(StrictModel):
+    ok: bool = True
+
+
 class SkeletonResponse(StrictModel):
     detail: str = "Not implemented in this release"

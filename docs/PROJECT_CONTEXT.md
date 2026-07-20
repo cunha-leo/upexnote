@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 19 de julho de 2026 (v0.19.1 — MINI-API e recuperação de senha por e-mail VALIDADAS de ponta a ponta; UX de campos sensíveis melhorada e instalada. Próximo: 3º fator da elevação admin)
+**Última atualização:** 19 de julho de 2026 (v0.20.0 — MFA administrativo TOTP OU e-mail construído, testado e empacotado; publicação/validação real em curso)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -245,10 +245,11 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 - **MINI-API central em produção (v0.19.0):** FastAPI `/v1` no serviço `upexnote-api` do projeto EasyPanel `upexnote`; reset de senha por código de e-mail completo; esqueletos versionados para 3º fator admin, telemetria e tokens/webhooks; Postgres apenas pela rede interna. Domínio canónico `https://api.upexflow.com`; domínio temporário removido após emissão/validação do TLS.
 - **Recuperação de senha validada de ponta a ponta (v0.19.0):** pedido genérico → e-mail SMTP → código de 6 dígitos → token de uso único → nova senha no formato PBKDF2 já usado pelo login → login bem-sucedido. Eventos `password_reset_requested` e `password_reset_completed` confirmados em `access_events`, sem expor dados sensíveis.
 - **UX de campos sensíveis (v0.19.1, VALIDADA pelo utilizador):** controlo mostrar/ocultar com Lucide em login, elevação admin, criação de conta e credenciais; validação visual real de comprimento mínimo e igualdade da confirmação; estados de espera específicos no reset/login. Mantido `type="text"` + máscara CSS + paste intercetado por compatibilidade com a WebView2. Instalador v0.19.1 gerado, copiado para o Desktop e instalado.
+- **MFA administrativo completo no código (v0.20.0, publicação/validação real em curso):** entrada admin exige identidade + senha administrativa + **TOTP OU código por e-mail**; o e-mail permanece sempre como recuperação. QR Code `otpauth://` compatível com qualquer autenticador, segredo TOTP cifrado no servidor, sessões opacas revogáveis, rate limit e 5 tentativas. Definições → Segurança permite configurar/substituir o autenticador de conta existente sem invalidar o antigo antes da confirmação. Operações administrativas e visão global da Biblioteca exigem sessão MFA central válida; autoelevação de role foi removida.
 
 ### Próximo trabalho (deixados em aberto)
 
-1. **MINI-API — papel nº 2:** implementar o 3º fator da elevação admin por código de e-mail; TOTP fica para uma etapa posterior. O endpoint `/v1/admin/elevation/challenge` já existe apenas como esqueleto reservado.
+1. **Publicar e validar a v0.20.0:** reimplantar a API 0.2.0 no EasyPanel; instalar a app; validar login admin por e-mail, cadastro por QR/TOTP, login posterior por TOTP, fallback por e-mail e substituição do autenticador em Definições.
 2. **MINI-API — papéis nº 3 e 4:** evoluir os esqueletos de telemetria/eventos de instalações e tokens/webhooks da API única da Fase 2; nada de conteúdo de transcripts na telemetria e nada de n8n neste serviço.
 3. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
 4. Menor: considerar cópia periódica dos dumps para fora da VPS (a VPS é ponto único de falha). ~~Reboot pendente do Ubuntu~~ FEITO a 2026-07-15 (ver Registro). Hardening a considerar: reaplicar o firewall também a cada restart do Docker (hoje só no boot — as regras DOCKER-USER podem ser limpas quando o Docker reinicia; a 2026-07-15 sobreviveram ao upgrade do docker-ce, mas por sorte).
@@ -376,6 +377,35 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-19 (k): MFA admin TOTP OU e-mail + gestão do autenticador — v0.20.0
+
+### O que mudou
+- O esqueleto do papel nº 2 da MINI-API tornou-se um fluxo real: desafio, verificação, validação/revogação de sessão e cadastro/confirmação TOTP sob `/v1/admin/elevation/*`.
+- Regra de fatores fechada como **OR, nunca AND**: identidade (e-mail/Google/GitHub) + senha administrativa + (`TOTP` **OU** código de e-mail). Mesmo com TOTP ativo, `prefer_email` mantém o e-mail como recuperação permanente se o telefone for perdido.
+- Adicionadas as tabelas idempotentes `admin_mfa` e `admin_elevation_codes`. Código e token de sessão são guardados apenas como hash; o segredo TOTP é cifrado com chave derivada e separada por propósito do segredo mestre de ambiente. Códigos duram 10 minutos, têm máximo de 5 tentativas e rate limit por e-mail/IP; sessões expiram e podem ser revogadas.
+- Removida a autoelevação perigosa: o login já não transforma a própria conta em admin. A função `role=admin` só pode ser atribuída por um administrador já autenticado na aba Administração; o login apenas confirma uma conta admin existente.
+- Worker ganhou cliente/CLI MFA via HTTPS com todos os payloads sensíveis por stdin; operações da Administração e acesso global da Biblioteca passam a validar online o token MFA e o vínculo com o `users.id` do ator.
+- LoginGate ganhou o fluxo código → sessão e o cadastro opcional por QR Code. Definições → Segurança mostra o estado e permite configurar/substituir o autenticador de contas existentes; o autenticador antigo permanece válido até a confirmação do novo. Sessão expirada devolve a app ao login. UI integral PT/EN/ES e compatível com as restrições WebView2.
+
+### Evidência / teste
+- API: `11 passed` — inclui fluxo e-mail, TOTP primário, recuperação por e-mail com TOTP ativo, sessão/revogação, cadastro QR e vetor RFC 6238 SHA-1 compatível com autenticadores padrão.
+- Worker: `4` testes `unittest` aprovados; comprovam também que senha administrativa e token de sessão ficam no corpo JSON, nunca na URL/argv. `compileall` concluído.
+- Frontend: TypeScript + i18n tipado + Vite aprovados (1810 módulos); Rust/Tauri `cargo check` aprovado.
+- Ordem de entrega respeitada: `services/worker/build_worker.ps1` concluiu primeiro; depois `npm run tauri build` gerou `UpexNote_0.20.0_x64-setup.exe` (57.327.737 bytes; SHA-256 `5A26D8DE9E41EED6D449A763216C307BCEA2ACA51182CC10F087474F911DF3B3`) e a cópia foi colocada no Desktop.
+- Pendente neste registro: reimplantação da API 0.2.0 e validação humana ponta a ponta dos dois ramos.
+
+### Decisão
+- TOTP é o caminho primário quando cadastrado; e-mail é uma alternativa permanente e explícita. Perder o telefone nunca bloqueia a conta: usa-se e-mail, entra-se e substitui-se o autenticador em Definições.
+- A troca do autenticador é transacional: um segredo pendente e expirável não substitui o atual até um código TOTP válido confirmar posse do novo cadastro.
+- Sessão MFA central é requisito para privilégios; possuir somente a senha do Postgres já não autoriza operações administrativas.
+
+### Impacto em dados, custo ou privacidade
+- Novos dados limitados a hashes de desafios/sessões, segredo TOTP cifrado e eventos operacionais `admin_mfa_*`/`admin_totp_*`; códigos, tokens, senhas e segredo TOTP em claro não entram em Git/log/chat/argv.
+- Sem nova porta, firewall, n8n ou exposição do Postgres. E-mail só é enviado quando escolhido como fator; TOTP não tem custo por uso.
+
+### Próximo passo
+- Reimplantar a API pelo EasyPanel, instalar a v0.20.0 e validar na app: e-mail → QR → TOTP, novo login TOTP, fallback e-mail e substituição nas Definições. Depois atualizar este mesmo registro com a evidência real.
 
 ### Registro — 2026-07-19 (j): campos sensíveis verificáveis + feedback de espera — v0.19.1
 

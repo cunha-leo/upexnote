@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.db import CompleteResult, RequestStart, VerifyResult
+from app.admin_db import ChallengeStart, FactorVerification, SessionValidation
 
 
 class FakeMailer:
@@ -10,6 +11,9 @@ class FakeMailer:
         self.deliveries: list[tuple[str, str, int]] = []
 
     def send_reset_code(self, recipient: str, code: str, expires_minutes: int) -> None:
+        self.deliveries.append((recipient, code, expires_minutes))
+
+    def send_admin_code(self, recipient: str, code: str, expires_minutes: int) -> None:
         self.deliveries.append((recipient, code, expires_minutes))
 
 
@@ -104,3 +108,85 @@ class FakeRepository:
         self.user.password_hash = kwargs["password_hash"]
         self.events.append(("password_reset_completed", True, kwargs["email"]))
         return CompleteResult(True, "completed", self.user.id)
+
+
+class FakeAdminRepository:
+    def __init__(self, known_email: str = "owner@example.com"):
+        self.email = known_email
+        self.user_id = 7
+        self.totp_enrolled = False
+        self.challenges: list[dict] = []
+        self.sessions: dict[str, bool] = {}
+        self.pending_secret: str | None = None
+
+    def ensure_schema(self) -> None:
+        return None
+
+    def start_challenge(self, **kwargs) -> ChallengeStart:
+        eligible = kwargs["credential_ok"] and kwargs["email"] == self.email
+        factor = "totp" if eligible and self.totp_enrolled and not kwargs["prefer_email"] else "email"
+        record = {
+            "email_hash": kwargs["email_hash"],
+            "code_hash": kwargs["code_hash"] if eligible and factor == "email" else None,
+            "factor": factor,
+            "attempts": 0,
+            "invalid": False,
+        }
+        self.challenges.append(record)
+        return ChallengeStart(
+            eligible,
+            len(self.challenges) if eligible else None,
+            self.user_id if eligible else None,
+            self.email if eligible and factor == "email" else None,
+            factor,
+        )
+
+    def invalidate_delivery(self, challenge_id: int, email: str, user_id: int) -> None:
+        self.challenges[challenge_id - 1]["invalid"] = True
+
+    def verify_factor(self, **kwargs) -> FactorVerification:
+        candidates = [
+            c for c in self.challenges
+            if c["email_hash"] == kwargs["email_hash"] and not c["invalid"]
+        ]
+        if not candidates:
+            return FactorVerification(False, "invalid_or_expired_code")
+        record = candidates[-1]
+        record["attempts"] += 1
+        matched = (
+            record["code_hash"] == kwargs["email_code_hash"]
+            if record["factor"] == "email"
+            else kwargs["code"] == "654321"
+        )
+        if not matched:
+            if record["attempts"] >= kwargs["max_attempts"]:
+                record["invalid"] = True
+            return FactorVerification(False, "invalid_code", self.user_id, record["factor"], self.totp_enrolled)
+        self.sessions[kwargs["session_token_hash"]] = True
+        record["invalid"] = True
+        return FactorVerification(True, "verified", self.user_id, record["factor"], self.totp_enrolled)
+
+    def validate_session(self, **kwargs) -> SessionValidation:
+        valid = bool(self.sessions.get(kwargs["session_token_hash"]))
+        return SessionValidation(
+            valid, self.user_id if valid else None, 28800 if valid else None,
+            self.totp_enrolled if valid else False,
+        )
+
+    def revoke_session(self, **kwargs) -> None:
+        self.sessions[kwargs["session_token_hash"]] = False
+
+    def begin_totp_enrollment(self, **kwargs) -> bool:
+        if not self.sessions.get(kwargs["session_token_hash"]):
+            return False
+        self.pending_secret = kwargs["encrypted_secret"]
+        return True
+
+    def confirm_totp_enrollment(self, **kwargs) -> bool:
+        if not self.sessions.get(kwargs["session_token_hash"]):
+            return False
+        if not self.pending_secret or kwargs["code"] != "123456":
+            return False
+        self.totp_enrolled = True
+        self.pending_secret = None
+        return True

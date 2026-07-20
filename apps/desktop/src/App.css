@@ -969,6 +969,38 @@ textarea.edit-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px va
   gap: 4px;
 }
 .login-card .pg-title { text-align: left; margin-bottom: 10px; }
+.totp-enrollment {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 12px;
+}
+.totp-enrollment .muted { align-self: stretch; text-align: left; }
+.totp-qr {
+  width: min(220px, 70vw);
+  aspect-ratio: 1;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: #fff;
+}
+.totp-manual {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+}
+.totp-manual .link-btn {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 0.06em;
+}
 /* WebView2 desta máquina crasha com type="password" → máscara via CSS */
 .pw-mask { -webkit-text-security: disc; }
 .secret-field { width: 100%; min-width: 0; }

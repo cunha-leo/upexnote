@@ -383,11 +383,13 @@ def admin_delete_user(actor_id, user_pk, purge=False):
 
 
 def elevate(email: str, admin_secret: str):
-    """Elevação a administrador (Fase 1b, 2026-07-19): identidade JÁ autenticada
-    (por qualquer método — e-mail+senha, Google, GitHub) + prova de conhecimento
-    da credencial REAL do banco central (validada por ligação com ESSA senha,
-    nunca a guardada) ⇒ role='admin' na tabela users da VPS.
-    Chamar SEMPRE com o modo vps ativo (set_mode_override feito pelo CLI)."""
+    """Valida a segunda etapa administrativa sem promover a própria conta.
+
+    Desde a v0.20.0, ``role=admin`` só pode ser atribuído por um administrador
+    já autenticado na aba Administração. Este gate confirma que a identidade
+    já autenticada pertence a uma conta admin ativa e que a credencial central
+    digitada é válida. O terceiro fator (TOTP OU e-mail) é emitido pela API.
+    """
     email = (email or "").strip().lower()
     if not admin_secret:
         return {"ok": False, "error": "invalid_admin_credentials"}
@@ -403,12 +405,11 @@ def elevate(email: str, admin_secret: str):
             user = _fetch_user(cur, "WHERE email = %s AND deleted_at IS NULL", (email,))
             if not user:
                 return {"ok": False, "error": "not_found"}
-            cur.execute("UPDATE users SET role = 'admin', updated_at = now() WHERE id = %s",
-                        (user["id"],))
-        conn.commit()
-        with conn.cursor() as cur:
-            user = _fetch_user(cur, "WHERE email = %s", (email,))
+            if (user.get("role") or "").lower() != "admin":
+                db.log_event("admin_primary_verified", ok=False, email=email,
+                             user_id=user["id"], detail="not_admin")
+                return {"ok": False, "error": "not_admin"}
     finally:
         db.close_connection(conn)
-    db.log_event("admin_elevate", ok=True, email=email, user_id=user["id"])
+    db.log_event("admin_primary_verified", ok=True, email=email, user_id=user["id"])
     return {"ok": True, "user": _public(user)}

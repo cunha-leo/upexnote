@@ -74,3 +74,38 @@ class UpexNoteApiClient:
             "/v1/auth/reset/complete",
             {"email": email, "reset_token": reset_token, "new_password": new_password},
         )
+
+    def request_admin_challenge(
+        self, email: str, admin_secret: str, prefer_email: bool = False
+    ) -> dict:
+        return self._post(
+            "/v1/admin/elevation/challenge",
+            {"email": email, "admin_secret": admin_secret, "prefer_email": prefer_email},
+        )
+
+    def verify_admin_factor(self, email: str, code: str) -> dict:
+        return self._post("/v1/admin/elevation/verify", {"email": email, "code": code})
+
+    def validate_admin_session(self, email: str, elevation_token: str) -> dict:
+        return self._post(
+            "/v1/admin/elevation/validate",
+            {"email": email, "elevation_token": elevation_token},
+        )
+
+    def revoke_admin_session(self, email: str, elevation_token: str) -> dict:
+        return self._post(
+            "/v1/admin/elevation/revoke",
+            {"email": email, "elevation_token": elevation_token},
+        )
+
+    def begin_totp_enrollment(self, email: str, elevation_token: str) -> dict:
+        return self._post(
+            "/v1/admin/elevation/totp/enroll",
+            {"email": email, "elevation_token": elevation_token},
+        )
+
+    def confirm_totp_enrollment(self, email: str, elevation_token: str, code: str) -> dict:
+        return self._post(
+            "/v1/admin/elevation/totp/confirm",
+            {"email": email, "elevation_token": elevation_token, "code": code},
+        )

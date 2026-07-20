@@ -282,6 +282,67 @@ def cmd_api_reset(args):
         return 1
 
 
+def cmd_api_admin_factor(args):
+    """Administrative MFA via HTTPS; every sensitive value is stdin-only."""
+    from .api_client import ApiConfigurationError, UpexNoteApiClient
+
+    data = _stdin_json()
+    if data is None:
+        _emit(sys.stdout, {"type": "api-admin", "ok": False, "error": "invalid_payload"})
+        return 1
+    try:
+        client = UpexNoteApiClient()
+        op = args.command
+        if op == "api-admin-challenge":
+            result = client.request_admin_challenge(
+                data.get("email", ""),
+                data.get("admin_secret", ""),
+                bool(data.get("prefer_email")),
+            )
+        elif op == "api-admin-verify":
+            result = client.verify_admin_factor(data.get("email", ""), data.get("code", ""))
+        elif op == "api-admin-validate":
+            result = client.validate_admin_session(
+                data.get("email", ""), data.get("elevation_token", "")
+            )
+        elif op == "api-admin-revoke":
+            result = client.revoke_admin_session(
+                data.get("email", ""), data.get("elevation_token", "")
+            )
+        elif op == "api-admin-totp-enroll":
+            result = client.begin_totp_enrollment(
+                data.get("email", ""), data.get("elevation_token", "")
+            )
+        else:
+            result = client.confirm_totp_enrollment(
+                data.get("email", ""),
+                data.get("elevation_token", ""),
+                data.get("code", ""),
+            )
+        _emit(sys.stdout, {"type": "api-admin", **result})
+        return 0 if result.get("ok") else 1
+    except ApiConfigurationError as exc:
+        _emit(sys.stdout, {"type": "api-admin", "ok": False, "error": str(exc)})
+        return 1
+    except Exception:
+        _emit(sys.stdout, {"type": "api-admin", "ok": False, "error": "service_unavailable"})
+        return 1
+
+
+def _valid_admin_session(data: dict, actor=None) -> bool:
+    """Online proof checked by the central API; no server secret is packaged."""
+    from .api_client import UpexNoteApiClient
+
+    email = (data.get("admin_email") or "").strip().lower()
+    token = data.get("admin_token") or ""
+    if not email or not token:
+        return False
+    result = UpexNoteApiClient().validate_admin_session(email, token)
+    if not result.get("ok") or not result.get("valid"):
+        return False
+    return actor is None or int(result.get("user_id") or -1) == int(actor)
+
+
 def cmd_oauth(args):
     from . import oauth
     return oauth.run_oauth(args.provider)
@@ -300,6 +361,9 @@ def cmd_admin(args):
     actor = data.get("actor")
     op = args.command
     try:
+        if not _valid_admin_session(data, actor):
+            _emit(sys.stdout, {"type": "admin", "ok": False, "error": "mfa_required"})
+            return 1
         if op == "admin-overview":
             res = accounts.admin_overview(actor)
         elif op == "admin-users":
@@ -423,6 +487,23 @@ def _require_db():
     return None
 
 
+def _library_payload(args):
+    """Reads MFA proof through stdin for app calls; direct CLI stays compatible."""
+    from . import db
+
+    if not getattr(args, "json_stdin", False):
+        return {}, False
+    data = _stdin_json()
+    if data is None:
+        raise ValueError("invalid_payload")
+    uid = getattr(args, "user", None)
+    if db.storage_mode() == "vps" and uid is not None:
+        if not _valid_admin_session(data, uid):
+            raise PermissionError("mfa_required")
+        return data, True
+    return data, False
+
+
 def cmd_library(args):
     from . import db
     err = _require_db()
@@ -431,9 +512,11 @@ def cmd_library(args):
         return 1
     try:
         uid = getattr(args, "user", None)
-        summary = db.library_summary(user_id=uid)
+        _, admin_verified = _library_payload(args)
+        summary = db.library_summary(user_id=uid, admin_verified=admin_verified)
         items = db.library_list(limit=getattr(args, "limit", 200) or 200,
-                                search=getattr(args, "search", None), user_id=uid)
+                                search=getattr(args, "search", None), user_id=uid,
+                                admin_verified=admin_verified)
         _emit(sys.stdout, {"type": "library", "summary": summary, "items": items})
         return 0
     except Exception as e:  # noqa: BLE001
@@ -448,7 +531,9 @@ def cmd_library_item(args):
         _emit(sys.stdout, {"type": "error", "message": err})
         return 1
     try:
-        item = db.library_item(args.id, user_id=getattr(args, "user", None))
+        _, admin_verified = _library_payload(args)
+        item = db.library_item(args.id, user_id=getattr(args, "user", None),
+                               admin_verified=admin_verified)
         if item is None:
             _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
             return 1
@@ -465,10 +550,15 @@ def cmd_library_update(args):
     if err:
         _emit(sys.stdout, {"type": "error", "message": err})
         return 1
-    # O texto clean editado vem por STDIN (pode ser grande e multi-linha).
-    new_text = sys.stdin.read()
     try:
-        res = db.update_transcription(args.id, new_text, user_id=getattr(args, "user", None))
+        if getattr(args, "json_stdin", False):
+            data, admin_verified = _library_payload(args)
+            new_text = data.get("text", "")
+        else:
+            data, admin_verified = {}, False
+            new_text = sys.stdin.read()
+        res = db.update_transcription(args.id, new_text, user_id=getattr(args, "user", None),
+                                      admin_verified=admin_verified)
         if not res.get("ok"):
             _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
             return 1
@@ -521,7 +611,10 @@ def cmd_library_ack(args):
         _emit(sys.stdout, {"type": "error", "message": err})
         return 1
     try:
-        res = db.acknowledge_warnings(args.id, ack=not args.reopen, user_id=getattr(args, "user", None))
+        _, admin_verified = _library_payload(args)
+        res = db.acknowledge_warnings(args.id, ack=not args.reopen,
+                                      user_id=getattr(args, "user", None),
+                                      admin_verified=admin_verified)
         if not res.get("ok"):
             _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
             return 1
@@ -539,7 +632,9 @@ def cmd_library_delete(args):
         _emit(sys.stdout, {"type": "error", "message": err})
         return 1
     try:
-        res = db.delete_transcription(args.id, user_id=getattr(args, "user", None))
+        _, admin_verified = _library_payload(args)
+        res = db.delete_transcription(args.id, user_id=getattr(args, "user", None),
+                                      admin_verified=admin_verified)
         if not res.get("ok"):
             _emit(sys.stdout, {"type": "error", "message": f"Transcrição #{args.id} não encontrada."})
             return 1
@@ -637,23 +732,28 @@ def build_parser():
     p_lib.add_argument("--limit", type=int, default=200, help="Maximo de itens na lista.")
     p_lib.add_argument("--search", help="Filtra por nome do ficheiro (case-insensitive).")
     p_lib.add_argument("--user", type=int, help="ID (pk) da conta da sessao — admin ve tudo, user so o seu.")
+    p_lib.add_argument("--json-stdin", action="store_true", help="Prova MFA por stdin (uso da app).")
 
     p_libi = sub.add_parser("library-item", help="Uma transcricao completa, com texto (JSON).")
     p_libi.add_argument("--id", type=int, required=True, help="ID da transcricao.")
     p_libi.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+    p_libi.add_argument("--json-stdin", action="store_true", help="Prova MFA por stdin (uso da app).")
 
     p_libu = sub.add_parser("library-update", help="Edita o texto clean (le stdin); a raw fica intacta.")
     p_libu.add_argument("--id", type=int, required=True, help="ID da transcricao.")
     p_libu.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+    p_libu.add_argument("--json-stdin", action="store_true", help="Texto + prova MFA em JSON por stdin.")
 
     p_libd = sub.add_parser("library-delete", help="Apaga uma transcricao (arquiva no historico).")
     p_libd.add_argument("--id", type=int, required=True, help="ID da transcricao.")
     p_libd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+    p_libd.add_argument("--json-stdin", action="store_true", help="Prova MFA por stdin (uso da app).")
 
     p_lack = sub.add_parser("library-ack", help="Marca/desmarca os avisos de validacao como revistos.")
     p_lack.add_argument("--id", type=int, required=True, help="ID da transcricao.")
     p_lack.add_argument("--reopen", action="store_true", help="Reabre o aviso (em vez de marcar como revisto).")
     p_lack.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+    p_lack.add_argument("--json-stdin", action="store_true", help="Prova MFA por stdin (uso da app).")
 
     p_adopt = sub.add_parser("db-adopt-orphans", help="Atribui transcricoes sem dono a conta com este e-mail (migracao unica).")
     p_adopt.add_argument("--email", required=True, help="E-mail da conta que herda o legado.")
@@ -679,6 +779,10 @@ def build_parser():
 
     for name in ("api-reset-request", "api-reset-verify", "api-reset-complete"):
         sub.add_parser(name, help="Recuperacao de senha via API HTTPS (payload JSON por stdin).")
+
+    for name in ("api-admin-challenge", "api-admin-verify", "api-admin-validate",
+                 "api-admin-revoke", "api-admin-totp-enroll", "api-admin-totp-confirm"):
+        sub.add_parser(name, help="MFA administrativo via API HTTPS (payload JSON por stdin).")
 
     return parser
 
@@ -721,6 +825,12 @@ def main(argv=None):
         "api-reset-request": cmd_api_reset,
         "api-reset-verify": cmd_api_reset,
         "api-reset-complete": cmd_api_reset,
+        "api-admin-challenge": cmd_api_admin_factor,
+        "api-admin-verify": cmd_api_admin_factor,
+        "api-admin-validate": cmd_api_admin_factor,
+        "api-admin-revoke": cmd_api_admin_factor,
+        "api-admin-totp-enroll": cmd_api_admin_factor,
+        "api-admin-totp-confirm": cmd_api_admin_factor,
     }
     return handlers[args.command](args)
 

@@ -34,6 +34,12 @@ def settings() -> Settings:
         reset_rate_window_seconds=900,
         reset_rate_email_max=3,
         reset_rate_ip_max=10,
+        admin_code_ttl_seconds=600,
+        admin_session_ttl_seconds=28800,
+        admin_max_attempts=5,
+        admin_rate_window_seconds=900,
+        admin_rate_email_max=3,
+        admin_rate_ip_max=10,
     )
 
 
@@ -128,12 +134,12 @@ def test_rate_limit_keeps_generic_response(flow):
     assert len(mailer.deliveries) == 3
 
 
-def test_reserved_v1_roles_are_explicit(flow):
+def test_v1_capabilities_are_explicit(flow):
     client, _, _ = flow
     health = client.get("/health")
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
     assert client.get("/v1").json()["capabilities"]["password_reset"] == "available"
-    assert client.post("/v1/admin/elevation/challenge").status_code == 501
+    assert client.get("/v1").json()["capabilities"]["admin_elevation"] == "available"
     assert client.post("/v1/telemetry/events").status_code == 501
     assert client.post("/v1/tokens/exchange").status_code == 501

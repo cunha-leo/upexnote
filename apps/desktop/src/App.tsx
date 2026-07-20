@@ -456,15 +456,159 @@ type Session = {
   email: string;
   user_id: string | null;
   role: string;
+  admin_token?: string;
+  admin_expires_at?: string;
 };
 
 function getSession(): Session | null {
   try {
     const s = JSON.parse(localStorage.getItem("upexnote-session") || "null");
+    if (s?.profile === "admin" && (!s.admin_token || !s.admin_expires_at
+      || Date.parse(s.admin_expires_at) <= Date.now())) {
+      localStorage.removeItem("upexnote-session");
+      return null;
+    }
     return s && s.profile ? (s as Session) : null;
   } catch {
     return null;
   }
+}
+
+function adminProof() {
+  const s = getSession();
+  return {
+    adminEmail: s?.profile === "admin" ? s.email : null,
+    adminToken: s?.profile === "admin" ? s.admin_token || null : null,
+  };
+}
+
+function MfaSettingsCard() {
+  const { t } = useLang();
+  const session = getSession();
+  const [enrolled, setEnrolled] = useState<boolean | null>(null);
+  const [qr, setQr] = useState("");
+  const [manualKey, setManualKey] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState<"" | "status" | "enroll" | "confirm">("");
+  const [message, setMessage] = useState("");
+
+  async function refreshStatus() {
+    if (session?.profile !== "admin" || !session.admin_token) return;
+    setBusy("status");
+    try {
+      const res = JSON.parse(await invoke<string>("api_admin_factor", {
+        op: "validate",
+        payload: JSON.stringify({
+          email: session.email, elevation_token: session.admin_token,
+        }),
+      }));
+      setEnrolled(Boolean(res.ok && res.valid && res.totp_enrolled));
+    } catch {
+      setMessage(t("mfaSettingsError"));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  useEffect(() => { void refreshStatus(); }, []);
+
+  async function beginEnrollment() {
+    if (session?.profile !== "admin" || !session.admin_token) return;
+    setBusy("enroll"); setMessage("");
+    try {
+      const res = JSON.parse(await invoke<string>("api_admin_factor", {
+        op: "totp-enroll",
+        payload: JSON.stringify({
+          email: session.email, elevation_token: session.admin_token,
+        }),
+      }));
+      if (!res.ok || !res.qr_data_url) throw new Error("invalid_response");
+      setQr(res.qr_data_url);
+      setManualKey(res.manual_key || "");
+      setCode("");
+    } catch {
+      setMessage(t("mfaSettingsError"));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function confirmEnrollment() {
+    if (session?.profile !== "admin" || !session.admin_token || !/^\d{6}$/.test(code)) {
+      setMessage(t("loginErrCode")); return;
+    }
+    setBusy("confirm"); setMessage("");
+    try {
+      const res = JSON.parse(await invoke<string>("api_admin_factor", {
+        op: "totp-confirm",
+        payload: JSON.stringify({
+          email: session.email, elevation_token: session.admin_token, code,
+        }),
+      }));
+      if (!res.ok) throw new Error("invalid_code");
+      setEnrolled(true); setQr(""); setManualKey(""); setCode("");
+      setMessage(t("mfaSettingsUpdated"));
+    } catch {
+      setMessage(t("loginMfaInvalid"));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  if (session?.profile !== "admin") return null;
+  return (
+    <section className="card">
+      <h2>{t("mfaSettingsTitle")}</h2>
+      <p className="engine-info">{t("mfaSettingsInfo")}</p>
+      <div className="row wrap" style={{ alignItems: "center", marginBottom: 10 }}>
+        <span className={"badge " + (enrolled ? "ok" : "warn")}>
+          {busy === "status" || enrolled === null
+            ? t("credChecking") : enrolled ? t("mfaSettingsOn") : t("mfaSettingsOff")}
+        </span>
+        {!qr && (
+          <button className="secondary" onClick={beginEnrollment} disabled={busy !== ""}>
+            {busy === "enroll" ? t("mfaSettingsStarting")
+              : enrolled ? t("mfaSettingsReplace") : t("mfaSettingsSetup")}
+          </button>
+        )}
+      </div>
+      <p className="engine-info">{t("mfaSettingsFallback")}</p>
+      {qr && (
+        <div className="totp-enrollment totp-settings">
+          <div className="muted">{t("mfaSettingsQrHint")}</div>
+          <img className="totp-qr" src={qr} alt={t("loginMfaQrAlt")} />
+          <div className="totp-manual">
+            <span>{t("loginMfaManualKey")}</span>
+            <button className="link-btn" onClick={() => navigator.clipboard.writeText(manualKey)}>
+              {manualKey}
+            </button>
+          </div>
+          <div className="field" style={{ width: "100%", marginBottom: 0 }}>
+            <label>{t("loginMfaConfirmCode")}</label>
+            <input
+              type="text" inputMode="numeric" autoComplete="one-time-code" spellCheck={false}
+              value={code} maxLength={6}
+              onChange={(e) => setCode(e.currentTarget.value.replace(/\D/g, "").slice(0, 6))}
+              onPaste={(e) => {
+                e.preventDefault();
+                setCode(e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6));
+              }}
+              onKeyDown={(e) => { if (e.key === "Enter") void confirmEnrollment(); }}
+            />
+          </div>
+          <div className="row" style={{ width: "100%" }}>
+            <button onClick={confirmEnrollment} disabled={busy !== "" || code.length !== 6}>
+              {busy === "confirm" ? t("mfaSettingsConfirming") : t("loginMfaConfirmBtn")}
+            </button>
+            <button className="secondary" onClick={() => {
+              setQr(""); setManualKey(""); setCode(""); setMessage("");
+            }} disabled={busy !== ""}>{t("cancel")}</button>
+          </div>
+        </div>
+      )}
+      {message && <div className="login-success" role="status">{message}</div>}
+    </section>
+  );
 }
 
 // Cache local da Biblioteca (lista + resumo, SEM textos) para a app abrir já
@@ -523,7 +667,7 @@ function LibraryView({ active }: { active: boolean }) {
     setError("");
     try {
       const raw = await invoke<string>("library", {
-        search: searchTerm ?? null, user: getSession()?.id ?? null,
+        search: searchTerm ?? null, user: getSession()?.id ?? null, ...adminProof(),
       });
       const obj = JSON.parse(raw);
       if (obj.type === "error") {
@@ -582,7 +726,9 @@ function LibraryView({ active }: { active: boolean }) {
     setOpeningId(id);
     setActionMsg("");
     try {
-      const raw = await invoke<string>("library_item", { id, user: getSession()?.id ?? null });
+      const raw = await invoke<string>("library_item", {
+        id, user: getSession()?.id ?? null, ...adminProof(),
+      });
       const obj = JSON.parse(raw);
       if (obj.type === "library_item") {
         setDetail(obj.item);
@@ -605,7 +751,9 @@ function LibraryView({ active }: { active: boolean }) {
     setSaving(true);
     setActionMsg("");
     try {
-      const raw = await invoke<string>("library_update", { id: detail.id, text: editText, user: getSession()?.id ?? null });
+      const raw = await invoke<string>("library_update", {
+        id: detail.id, text: editText, user: getSession()?.id ?? null, ...adminProof(),
+      });
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
         setDetail({ ...detail, clean_text: editText, edited_at: new Date().toISOString() });
@@ -627,7 +775,9 @@ function LibraryView({ active }: { active: boolean }) {
     setSaving(true);
     setActionMsg("");
     try {
-      const raw = await invoke<string>("library_delete", { id: detail.id, user: getSession()?.id ?? null });
+      const raw = await invoke<string>("library_delete", {
+        id: detail.id, user: getSession()?.id ?? null, ...adminProof(),
+      });
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
         closeDetail();
@@ -649,7 +799,9 @@ function LibraryView({ active }: { active: boolean }) {
     setAckBusy(true);
     try {
       const reopen = !!detail.warnings_ack;
-      const raw = await invoke<string>("library_ack", { id: detail.id, reopen, user: getSession()?.id ?? null });
+      const raw = await invoke<string>("library_ack", {
+        id: detail.id, reopen, user: getSession()?.id ?? null, ...adminProof(),
+      });
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
         setDetail({ ...detail, warnings_ack: !reopen });
@@ -1181,7 +1333,8 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   // Login é SEMPRE o primeiro ecrã (padrão de mercado); criar conta é via link.
   // E-mail NUNCA pré-preenchido (após logout, a pessoa decide a conta).
   const [screen, setScreen] = useState<
-    "login" | "create" | "resetRequest" | "resetVerify" | "resetComplete" | "precad" | "welcome"
+    "login" | "create" | "resetRequest" | "resetVerify" | "resetComplete" |
+    "adminMfa" | "adminTotpEnroll" | "precad" | "welcome"
   >("login");
   // Conta acabada de criar, à espera do ecrã de boas-vindas (orientações)
   const [pendingUser, setPendingUser] = useState<AccountUser | null>(null);
@@ -1190,6 +1343,12 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   const [pw2, setPw2] = useState("");
   const [resetCode, setResetCode] = useState("");
   const [resetToken, setResetToken] = useState("");
+  const [pendingAdminUser, setPendingAdminUser] = useState<AccountUser | null>(null);
+  const [adminFactor, setAdminFactor] = useState<"email" | "totp">("email");
+  const [adminToken, setAdminToken] = useState("");
+  const [adminTokenExpires, setAdminTokenExpires] = useState(0);
+  const [totpQr, setTotpQr] = useState("");
+  const [totpManualKey, setTotpManualKey] = useState("");
   const [userId, setUserId] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -1212,7 +1371,10 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   adminPwRef.current = adminPw;
   const accMode = target === "admin" ? "vps" : "local";
 
-  function finish(profile: "user" | "admin", user?: AccountUser | null) {
+  function finish(
+    profile: "user" | "admin", user?: AccountUser | null,
+    elevationToken?: string, expiresIn?: number,
+  ) {
     clearLibCaches(); // cache é por conta/modo — nunca herdar de outra sessão
     localStorage.setItem(
       "upexnote-session",
@@ -1223,6 +1385,9 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         email: user?.email || email,
         user_id: user?.user_id || null,
         role: user?.role || (profile === "admin" ? "admin" : "user"),
+        admin_token: profile === "admin" ? elevationToken : undefined,
+        admin_expires_at: profile === "admin" && expiresIn
+          ? new Date(Date.now() + expiresIn * 1000).toISOString() : undefined,
       })
     );
     onDone(profile);
@@ -1231,15 +1396,98 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   // Fluxo admin: a credencial digitada segue DENTRO do payload de login/registo
   // e o worker eleva no MESMO processo (identidade + prova numa só ida à base
   // — dois spawns sequenciais duplicavam a latência; 2026-07-19).
-  async function finishAdmin(user: AccountUser) {
+  async function finishAdmin(user: AccountUser, token: string, expiresIn: number) {
     try { await invoke("set_settings", { storageMode: "vps" }); } catch { /* best-effort */ }
-    finish("admin", user);
+    finish("admin", user, token, expiresIn);
+  }
+
+  async function beginAdminMfa(user: AccountUser, preferEmail = false) {
+    setBusy("admin"); setErr(""); setNotice("");
+    setEmail(user.email);
+    try {
+      const res = JSON.parse(await invoke<string>("api_admin_factor", {
+        op: "challenge",
+        payload: JSON.stringify({
+          email: user.email, admin_secret: adminPwRef.current, prefer_email: preferEmail,
+        }),
+      }));
+      if (!res.ok) { setErr(t("loginMfaService")); return; }
+      setPendingAdminUser(user);
+      setAdminFactor(res.factor === "totp" ? "totp" : "email");
+      setResetCode("");
+      setScreen("adminMfa");
+      setNotice(res.factor === "totp" ? t("loginMfaTotpReady") : t("loginMfaEmailSent"));
+    } catch {
+      setErr(t("loginMfaService"));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function verifyAdminMfa() {
+    if (!pendingAdminUser || !/^\d{6}$/.test(resetCode)) {
+      setErr(t("loginErrCode")); return;
+    }
+    setBusy("form"); setErr(""); setNotice("");
+    try {
+      const res = JSON.parse(await invoke<string>("api_admin_factor", {
+        op: "verify",
+        payload: JSON.stringify({ email: pendingAdminUser.email, code: resetCode }),
+      }));
+      if (!res.ok || !res.elevation_token) { setErr(t("loginMfaInvalid")); return; }
+      if (res.factor === "email" && !res.totp_enrolled) {
+        setAdminToken(res.elevation_token);
+        setAdminTokenExpires(Number(res.expires_in) || 28800);
+        try {
+          const enrollment = JSON.parse(await invoke<string>("api_admin_factor", {
+            op: "totp-enroll",
+            payload: JSON.stringify({
+              email: pendingAdminUser.email, elevation_token: res.elevation_token,
+            }),
+          }));
+          if (enrollment.ok && enrollment.qr_data_url) {
+            setTotpQr(enrollment.qr_data_url);
+            setTotpManualKey(enrollment.manual_key || "");
+            setResetCode("");
+            setScreen("adminTotpEnroll");
+            return;
+          }
+        } catch { /* e-mail já validou o 3.º fator; cadastro pode ser tentado depois */ }
+      }
+      await finishAdmin(pendingAdminUser, res.elevation_token, Number(res.expires_in) || 28800);
+    } catch {
+      setErr(t("loginMfaService"));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function confirmTotpEnrollment() {
+    if (!pendingAdminUser || !adminToken || !/^\d{6}$/.test(resetCode)) {
+      setErr(t("loginErrCode")); return;
+    }
+    setBusy("form"); setErr("");
+    try {
+      const res = JSON.parse(await invoke<string>("api_admin_factor", {
+        op: "totp-confirm",
+        payload: JSON.stringify({
+          email: pendingAdminUser.email, elevation_token: adminToken, code: resetCode,
+        }),
+      }));
+      if (!res.ok) { setErr(t("loginMfaInvalid")); return; }
+      await finishAdmin(pendingAdminUser, adminToken, adminTokenExpires || 28800);
+    } catch {
+      setErr(t("loginMfaService"));
+    } finally {
+      setBusy("");
+    }
   }
 
   function mapErr(code?: string): string {
     if (code === "email_taken") return t("loginErrEmailTaken");
     if (code === "user_id_taken") return t("loginErrUserIdTaken");
     if (code === "invalid_admin_credentials") return t("loginAdminFail");
+    if (code === "not_admin") return t("loginAdminRoleRequired");
     return t("loginErrWrong");
   }
 
@@ -1282,7 +1530,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         });
         const res = JSON.parse(raw);
         if (res.ok && !res.new) {
-          if (adm) { await finishAdmin(res.user); return; }
+          if (adm) { await beginAdminMfa(res.user); return; }
           // fixa o modo local EXPLICITAMENTE — a conta pessoal nunca pode
           // depender do default da máquina (bug real de 2026-07-19)
           try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
@@ -1304,7 +1552,8 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         if (!res.ok) {
           processingRef.current = false;
           setBusy(""); setOauthMsg("");
-          setErr(res.error === "invalid_admin_credentials" ? t("loginAdminFail") : t("loginErrWrong"));
+          setErr(res.error === "invalid_admin_credentials" ? t("loginAdminFail")
+            : res.error === "not_admin" ? t("loginAdminRoleRequired") : t("loginErrWrong"));
         }
       } else if (obj.type === "error") {
         processingRef.current = false;
@@ -1367,7 +1616,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
       }
       if (res.ok) {
         if (target === "admin") {
-          await finishAdmin(res.user);
+          await beginAdminMfa(res.user);
           return;
         }
         try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
@@ -1458,6 +1707,8 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     if (screen === "resetRequest") return requestPasswordReset();
     if (screen === "resetVerify") return verifyPasswordReset();
     if (screen === "resetComplete") return completePasswordReset();
+    if (screen === "adminMfa") return verifyAdminMfa();
+    if (screen === "adminTotpEnroll") return confirmTotpEnrollment();
     return submit();
   }
 
@@ -1477,6 +1728,8 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     : screen === "resetRequest" ? t("loginResetRequestBusy")
     : screen === "resetVerify" ? t("loginResetVerifyBusy")
     : screen === "resetComplete" ? t("loginResetCompleteBusy")
+    : screen === "adminMfa" ? t("loginMfaVerifyBusy")
+    : screen === "adminTotpEnroll" ? t("loginMfaEnrollBusy")
     : screen === "create" ? t("loginCreating") : t("loginChecking");
 
   return (
@@ -1504,6 +1757,8 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         <h1 className="pg-title">
           {screen === "create" ? t("loginCreateTitle") : screen === "precad" ? t("loginPrecadTitle")
             : screen === "resetComplete" ? t("loginResetNewTitle")
+            : screen === "adminMfa" ? t("loginMfaTitle")
+            : screen === "adminTotpEnroll" ? t("loginMfaEnrollTitle")
             : screen === "resetRequest" || screen === "resetVerify" ? t("loginResetTitle")
             : target === "admin" ? t("loginAdminTitle") : t("loginTitle")}
         </h1>
@@ -1546,19 +1801,39 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         )}
         {screen === "resetRequest" && <div className="muted" style={{ textAlign: "left" }}>{t("loginResetInfo")}</div>}
         {screen === "resetVerify" && <div className="muted" style={{ textAlign: "left" }}>{t("loginResetCodeHint")}</div>}
+        {screen === "adminMfa" && (
+          <div className="muted" style={{ textAlign: "left" }}>
+            {adminFactor === "totp" ? t("loginMfaTotpHint") : t("loginMfaEmailHint")}
+          </div>
+        )}
+        {screen === "adminTotpEnroll" && (
+          <div className="totp-enrollment">
+            <div className="muted">{t("loginMfaEnrollHint")}</div>
+            <img className="totp-qr" src={totpQr} alt={t("loginMfaQrAlt")} />
+            <div className="totp-manual">
+              <span>{t("loginMfaManualKey")}</span>
+              <button className="link-btn" onClick={() => navigator.clipboard.writeText(totpManualKey)}>
+                {totpManualKey}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="field" style={{ marginBottom: 10 }}>
           <label>{t("loginEmail")}</label>
           <input
             type="text" autoComplete="off" spellCheck={false}
             value={email}
-            readOnly={screen === "precad" || screen === "resetVerify" || screen === "resetComplete"}
+            readOnly={screen === "precad" || screen === "resetVerify" || screen === "resetComplete"
+              || screen === "adminMfa" || screen === "adminTotpEnroll"}
             onChange={(e) => setEmail(e.currentTarget.value)}
             onKeyDown={(e) => { if (e.key === "Enter") primarySubmit(); }}
           />
         </div>
-        {screen === "resetVerify" && (
+        {(screen === "resetVerify" || screen === "adminMfa" || screen === "adminTotpEnroll") && (
           <div className="field" style={{ marginBottom: 10 }}>
-            <label>{t("loginResetCode")}</label>
+            <label>{screen === "adminMfa" && adminFactor === "totp"
+              ? t("loginMfaTotpCode") : screen === "adminTotpEnroll"
+                ? t("loginMfaConfirmCode") : t("loginResetCode")}</label>
             <input
               type="text" inputMode="numeric" autoComplete="one-time-code" spellCheck={false}
               value={resetCode}
@@ -1650,8 +1925,16 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
             : screen === "resetRequest" ? t("loginResetRequestBtn")
             : screen === "resetVerify" ? t("loginResetVerifyBtn")
             : screen === "resetComplete" ? t("loginResetCompleteBtn")
+            : screen === "adminMfa" ? t("loginMfaVerifyBtn")
+            : screen === "adminTotpEnroll" ? t("loginMfaConfirmBtn")
             : screen === "precad" ? t("loginFinish") : t("loginCreateBtn")}
         </button>
+        {screen === "adminTotpEnroll" && pendingAdminUser && (
+          <button
+            className="secondary" style={{ width: "100%", marginTop: 8 }} disabled={busy !== ""}
+            onClick={() => finishAdmin(pendingAdminUser, adminToken, adminTokenExpires || 28800)}
+          >{t("loginMfaSkip")}</button>
+        )}
         <div className="login-links">
           {screen === "login" ? (
             <>
@@ -1660,7 +1943,25 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
                   setErr(""); setNotice(""); setPw(""); setAdminPw(""); setScreen("resetRequest");
                 }}>{t("loginForgot")}</button>
               )}
-              <button className="link-btn" onClick={() => { setErr(""); setNotice(""); setScreen("create"); }}>{t("loginNoAccount")}</button>
+              {target !== "admin" && (
+                <button className="link-btn" onClick={() => { setErr(""); setNotice(""); setScreen("create"); }}>{t("loginNoAccount")}</button>
+              )}
+            </>
+          ) : screen === "adminMfa" ? (
+            <>
+              {adminFactor === "totp" && pendingAdminUser && (
+                <button className="link-btn" onClick={() => beginAdminMfa(pendingAdminUser, true)}>
+                  {t("loginMfaUseEmail")}
+                </button>
+              )}
+              {adminFactor === "email" && pendingAdminUser && (
+                <button className="link-btn" onClick={() => beginAdminMfa(pendingAdminUser, true)}>
+                  {t("loginMfaResend")}
+                </button>
+              )}
+              <button className="link-btn" onClick={() => {
+                setErr(""); setNotice(""); setResetCode(""); setPendingAdminUser(null); setScreen("login");
+              }}>{t("loginBack")}</button>
             </>
           ) : screen === "resetRequest" || screen === "resetVerify" || screen === "resetComplete" ? (
             <button className="link-btn" onClick={() => {
@@ -1673,7 +1974,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         </div>
       </div>
       )}
-      {screen !== "welcome" && (
+      {screen !== "welcome" && screen !== "adminMfa" && screen !== "adminTotpEnroll" && (
         <button
           className="link-btn login-admin"
           onClick={() => {
@@ -1703,7 +2004,15 @@ function SidebarProfile({ collapsed }: { collapsed: boolean }) {
   if (!sess) return null;
   const name: string = sess.user_id || sess.email || "admin";
   const initial = (name[0] || "?").toUpperCase();
-  function logout() {
+  async function logout() {
+    if (sess.profile === "admin" && sess.admin_token) {
+      try {
+        await invoke("api_admin_factor", {
+          op: "revoke",
+          payload: JSON.stringify({ email: sess.email, elevation_token: sess.admin_token }),
+        });
+      } catch { /* revogação também ocorrerá por expiração no servidor */ }
+    }
     localStorage.removeItem("upexnote-session");
     clearLibCaches();
     window.location.reload();
@@ -1787,7 +2096,12 @@ function AdminView({ active }: { active: boolean }) {
   async function call(op: string, payload: Record<string, unknown>) {
     const raw = await invoke<string>("admin", {
       op, mode: sess?.mode ?? null,
-      payload: JSON.stringify({ actor: sess?.id ?? null, ...payload }),
+      payload: JSON.stringify({
+        actor: sess?.id ?? null,
+        admin_email: sess?.email || "",
+        admin_token: sess?.admin_token || "",
+        ...payload,
+      }),
     });
     const r = JSON.parse(raw);
     // erro do worker sem campo ok → normaliza para a UI nunca engolir falhas
@@ -2243,13 +2557,25 @@ function App() {
   const font = useFontPrefs();
   // Sessão iniciada (user/admin) — null = mostrar o login
   const [session, setSession] = useState<string | null>(() => {
-    try {
-      const raw = localStorage.getItem("upexnote-session");
-      if (raw) return (JSON.parse(raw).profile as string) || null;
-    } catch { /* sessão corrompida → login */ }
+    const saved = getSession();
+    if (saved) return saved.profile;
     localStorage.removeItem("upexnote-profile"); // chave da v0.12.0, obsoleta
     return null;
   });
+  useEffect(() => {
+    if (session !== "admin") return;
+    const current = getSession();
+    if (!current?.admin_expires_at) { setSession(null); return; }
+    const remaining = Date.parse(current.admin_expires_at) - Date.now();
+    if (remaining <= 0) { setSession(null); return; }
+    const timer = window.setTimeout(() => {
+      localStorage.removeItem("upexnote-session");
+      clearLibCaches();
+      setView("transcribe");
+      setSession(null);
+    }, remaining);
+    return () => window.clearTimeout(timer);
+  }, [session]);
   const [view, setView] = useState<View>("transcribe");
   // Histórico de vistas para as setas voltar/avançar da barra de título
   const [histBack, setHistBack] = useState<View[]>([]);
@@ -2631,6 +2957,7 @@ function App() {
           <div className={"view-pane" + (view === "settings" ? "" : " hidden")}>
             <AppearanceCard {...appearance} />
             <TypographyCard prefs={font.prefs} setPrefs={font.setPrefs} />
+            <MfaSettingsCard />
             <SettingsView onChanged={loadEngines} />
             <StorageSettingsCard />
           </div>

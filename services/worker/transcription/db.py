@@ -651,13 +651,13 @@ def _rows_to_dicts(cur):
 # de ver tudo — a app envia SEMPRE o utilizador da sessão.
 # --------------------------------------------------------------------------
 
-def _actor(cur, user_id):
+def _actor(cur, user_id, admin_verified=False):
     """Devolve (filtro_sql, params, is_admin) para o utilizador da sessão."""
     if user_id is None:
         return "", [], True
     cur.execute("SELECT role FROM users WHERE id = %s AND deleted_at IS NULL", (int(user_id),))
     row = cur.fetchone()
-    if row and (row[0] or "").lower() == "admin":
+    if row and (row[0] or "").lower() == "admin" and admin_verified:
         return "", [], True
     return " AND t.user_id = %s", [int(user_id)], False
 
@@ -774,12 +774,12 @@ def list_audit(actor_id, table=None, record_id=None, since=None, limit=300):
         close_connection(conn)
 
 
-def library_summary(user_id=None):
+def library_summary(user_id=None, admin_verified=False):
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            own_sql, own_params, _ = _actor(cur, user_id)
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
             cur.execute(f"""
                 SELECT count(*)                         AS total,
                        COALESCE(sum(m.cost_usd), 0)     AS cost_total,
@@ -828,12 +828,12 @@ def library_summary(user_id=None):
         close_connection(conn)
 
 
-def library_list(limit=200, search=None, user_id=None):
+def library_list(limit=200, search=None, user_id=None, admin_verified=False):
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            own_sql, own_params, is_admin = _actor(cur, user_id)
+            own_sql, own_params, is_admin = _actor(cur, user_id, admin_verified)
             params = list(own_params)
             where = "WHERE t.deleted_at IS NULL" + own_sql
             if search:
@@ -868,12 +868,12 @@ def library_list(limit=200, search=None, user_id=None):
         close_connection(conn)
 
 
-def library_item(item_id, user_id=None):
+def library_item(item_id, user_id=None, admin_verified=False):
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            own_sql, own_params, is_admin = _actor(cur, user_id)
+            own_sql, own_params, is_admin = _actor(cur, user_id, admin_verified)
             owner_cols = (", u.email AS owner_email, u.user_id AS owner_username,"
                           " u.auth_provider AS owner_provider" if is_admin else "")
             owner_join = "LEFT JOIN users u ON u.id = t.user_id" if is_admin else ""
@@ -906,14 +906,14 @@ def library_item(item_id, user_id=None):
         close_connection(conn)
 
 
-def update_transcription(item_id, new_clean_text, user_id=None):
+def update_transcription(item_id, new_clean_text, user_id=None, admin_verified=False):
     """Edita a versão CLEAN. A raw NUNCA é tocada. Snapshot no histórico antes;
     reescreve o ficheiro clean no disco (best-effort). Só o dono ou admin."""
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            own_sql, own_params, _ = _actor(cur, user_id)
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
             cur.execute(
                 "SELECT x.clean_path FROM transcriptions t "
                 "LEFT JOIN transcript_texts x ON x.transcription_id = t.id "
@@ -945,12 +945,12 @@ def update_transcription(item_id, new_clean_text, user_id=None):
         close_connection(conn)
 
 
-def acknowledge_warnings(item_id, ack=True, user_id=None):
+def acknowledge_warnings(item_id, ack=True, user_id=None, admin_verified=False):
     conn = connect()
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            own_sql, own_params, _ = _actor(cur, user_id)
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
             cur.execute(f"SELECT 1 FROM transcriptions t WHERE t.id = %s AND t.deleted_at IS NULL{own_sql}",
                         [int(item_id)] + own_params)
             if not cur.fetchone():
@@ -962,7 +962,7 @@ def acknowledge_warnings(item_id, ack=True, user_id=None):
         close_connection(conn)
 
 
-def delete_transcription(item_id, user_id=None):
+def delete_transcription(item_id, user_id=None, admin_verified=False):
     """Soft-delete: arquiva no histórico + marca deleted_at. A identidade (id) e
     o conteúdo ficam — recuperável, e nada que aponte para este id se parte.
     Só o dono ou admin."""
@@ -970,7 +970,7 @@ def delete_transcription(item_id, user_id=None):
     try:
         ensure_schema(conn)
         with conn.cursor() as cur:
-            own_sql, own_params, _ = _actor(cur, user_id)
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
             cur.execute(f"SELECT 1 FROM transcriptions t WHERE t.id = %s AND t.deleted_at IS NULL{own_sql}",
                         [int(item_id)] + own_params)
             if not cur.fetchone():
