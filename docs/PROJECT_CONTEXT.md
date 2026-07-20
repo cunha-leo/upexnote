@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 19 de julho de 2026 (v0.20.0 — MFA administrativo TOTP OU e-mail construído, testado e empacotado; publicação/validação real em curso)
+**Última atualização:** 19 de julho de 2026 (v0.20.0 — MFA administrativo TOTP OU e-mail publicado e validado de ponta a ponta)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -245,14 +245,13 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 - **MINI-API central em produção (v0.19.0):** FastAPI `/v1` no serviço `upexnote-api` do projeto EasyPanel `upexnote`; reset de senha por código de e-mail completo; esqueletos versionados para 3º fator admin, telemetria e tokens/webhooks; Postgres apenas pela rede interna. Domínio canónico `https://api.upexflow.com`; domínio temporário removido após emissão/validação do TLS.
 - **Recuperação de senha validada de ponta a ponta (v0.19.0):** pedido genérico → e-mail SMTP → código de 6 dígitos → token de uso único → nova senha no formato PBKDF2 já usado pelo login → login bem-sucedido. Eventos `password_reset_requested` e `password_reset_completed` confirmados em `access_events`, sem expor dados sensíveis.
 - **UX de campos sensíveis (v0.19.1, VALIDADA pelo utilizador):** controlo mostrar/ocultar com Lucide em login, elevação admin, criação de conta e credenciais; validação visual real de comprimento mínimo e igualdade da confirmação; estados de espera específicos no reset/login. Mantido `type="text"` + máscara CSS + paste intercetado por compatibilidade com a WebView2. Instalador v0.19.1 gerado, copiado para o Desktop e instalado.
-- **MFA administrativo completo no código (v0.20.0, publicação/validação real em curso):** entrada admin exige identidade + senha administrativa + **TOTP OU código por e-mail**; o e-mail permanece sempre como recuperação. QR Code `otpauth://` compatível com qualquer autenticador, segredo TOTP cifrado no servidor, sessões opacas revogáveis, rate limit e 5 tentativas. Definições → Segurança permite configurar/substituir o autenticador de conta existente sem invalidar o antigo antes da confirmação. Operações administrativas e visão global da Biblioteca exigem sessão MFA central válida; autoelevação de role foi removida.
+- **MFA administrativo publicado e validado (v0.20.0):** entrada admin exige identidade + senha administrativa + **TOTP OU código por e-mail**; o e-mail permanece sempre como recuperação. QR Code `otpauth://` compatível com qualquer autenticador, segredo TOTP cifrado no servidor, sessões opacas revogáveis, rate limit e 5 tentativas. Definições → Segurança permite configurar/substituir o autenticador de conta existente sem invalidar o antigo antes da confirmação. Operações administrativas e visão global da Biblioteca exigem sessão MFA central válida; autoelevação de role foi removida. API 0.2.0 reimplantada no EasyPanel, instalador v0.20.0 aplicado e fluxo real aprovado pelo utilizador.
 
 ### Próximo trabalho (deixados em aberto)
 
-1. **Publicar e validar a v0.20.0:** reimplantar a API 0.2.0 no EasyPanel; instalar a app; validar login admin por e-mail, cadastro por QR/TOTP, login posterior por TOTP, fallback por e-mail e substituição do autenticador em Definições.
-2. **MINI-API — papéis nº 3 e 4:** evoluir os esqueletos de telemetria/eventos de instalações e tokens/webhooks da API única da Fase 2; nada de conteúdo de transcripts na telemetria e nada de n8n neste serviço.
-3. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
-4. Menor: considerar cópia periódica dos dumps para fora da VPS (a VPS é ponto único de falha). ~~Reboot pendente do Ubuntu~~ FEITO a 2026-07-15 (ver Registro). Hardening a considerar: reaplicar o firewall também a cada restart do Docker (hoje só no boot — as regras DOCKER-USER podem ser limpas quando o Docker reinicia; a 2026-07-15 sobreviveram ao upgrade do docker-ce, mas por sorte).
+1. **MINI-API — papéis nº 3 e 4:** evoluir os esqueletos de telemetria/eventos de instalações e tokens/webhooks da API única da Fase 2; nada de conteúdo de transcripts na telemetria e nada de n8n neste serviço.
+2. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
+3. Menor: considerar cópia periódica dos dumps para fora da VPS (a VPS é ponto único de falha). ~~Reboot pendente do Ubuntu~~ FEITO a 2026-07-15 (ver Registro). Hardening a considerar: reaplicar o firewall também a cada restart do Docker (hoje só no boot — as regras DOCKER-USER podem ser limpas quando o Docker reinicia; a 2026-07-15 sobreviveram ao upgrade do docker-ce, mas por sorte).
 
 ### Backlog de melhorias da Biblioteca (levantado 2026-07-14, IDEIAS — não agendado, não implementar sem confirmar)
 
@@ -393,7 +392,9 @@ Ao trabalhar neste projeto, uma IA deve:
 - Worker: `4` testes `unittest` aprovados; comprovam também que senha administrativa e token de sessão ficam no corpo JSON, nunca na URL/argv. `compileall` concluído.
 - Frontend: TypeScript + i18n tipado + Vite aprovados (1810 módulos); Rust/Tauri `cargo check` aprovado.
 - Ordem de entrega respeitada: `services/worker/build_worker.ps1` concluiu primeiro; depois `npm run tauri build` gerou `UpexNote_0.20.0_x64-setup.exe` (57.327.737 bytes; SHA-256 `5A26D8DE9E41EED6D449A763216C307BCEA2ACA51182CC10F087474F911DF3B3`) e a cópia foi colocada no Desktop.
-- Pendente neste registro: reimplantação da API 0.2.0 e validação humana ponta a ponta dos dois ramos.
+- Produção: API 0.2.0 reimplantada pelo EasyPanel; `GET /health` respondeu `status=ok`, `version=0.2.0`, e `GET /v1` confirmou `admin_elevation=available`.
+- Aplicação: instalador `UpexNote_0.20.0_x64-setup.exe` aplicado; binário instalado confirmou `ProductVersion=0.20.0`.
+- **Validação humana final (utilizador):** fluxo real executado e aprovado de ponta a ponta, incluindo entrada administrativa, recebimento do código por e-mail, cadastro por QR/TOTP e funcionamento da alternativa de recuperação. O utilizador declarou: “validado, acabei de testar”.
 
 ### Decisão
 - TOTP é o caminho primário quando cadastrado; e-mail é uma alternativa permanente e explícita. Perder o telefone nunca bloqueia a conta: usa-se e-mail, entra-se e substitui-se o autenticador em Definições.
@@ -405,7 +406,7 @@ Ao trabalhar neste projeto, uma IA deve:
 - Sem nova porta, firewall, n8n ou exposição do Postgres. E-mail só é enviado quando escolhido como fator; TOTP não tem custo por uso.
 
 ### Próximo passo
-- Reimplantar a API pelo EasyPanel, instalar a v0.20.0 e validar na app: e-mail → QR → TOTP, novo login TOTP, fallback e-mail e substituição nas Definições. Depois atualizar este mesmo registro com a evidência real.
+- Marco MFA encerrado. Retomar o próximo item priorizado da secção 10: MINI-API — papéis nº 3 e 4 (telemetria/eventos e base de tokens/webhooks), preservando privacidade e sem n8n neste serviço.
 
 ### Registro — 2026-07-19 (j): campos sensíveis verificáveis + feedback de espera — v0.19.1
 
