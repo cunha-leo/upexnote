@@ -971,6 +971,51 @@ textarea.edit-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px va
 .login-card .pg-title { text-align: left; margin-bottom: 10px; }
 /* WebView2 desta máquina crasha com type="password" → máscara via CSS */
 .pw-mask { -webkit-text-security: disc; }
+.secret-field { width: 100%; min-width: 0; }
+.row > .secret-field { flex: 1; min-width: 0; }
+.secret-input { position: relative; width: 100%; }
+.secret-input input { padding-right: 68px; }
+.secret-input-actions {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.secret-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-dim);
+  background: transparent;
+}
+.secret-toggle:hover:not(:disabled) { color: var(--text); background: var(--accent-soft); }
+.secret-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.secret-validation { display: inline-flex; align-items: center; justify-content: center; }
+.secret-validation.valid, .secret-feedback.valid { color: var(--ok); }
+.secret-validation.invalid, .secret-feedback.invalid { color: var(--danger); }
+.secret-input.is-valid input { border-color: color-mix(in srgb, var(--ok) 65%, var(--border)); }
+.secret-input.is-invalid input { border-color: color-mix(in srgb, var(--danger) 65%, var(--border)); }
+.secret-feedback {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+}
+.login-primary { display: flex; align-items: center; justify-content: center; gap: 7px; }
+.login-primary .spinner {
+  border-color: color-mix(in srgb, var(--on-accent) 35%, transparent);
+  border-top-color: var(--on-accent);
+}
 .login-success {
   margin-bottom: 8px;
   padding: 9px 10px;

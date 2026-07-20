@@ -1,4 +1,4 @@
-import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -7,6 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
   Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
+  Eye, EyeOff, CircleCheck, CircleX,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
@@ -47,6 +48,88 @@ function BrandMark({ size = 22 }: { size?: number }) {
       <line x1="12" y1="8.5" x2="12" y2="14.5" />
       <line x1="15" y1="10" x2="15" y2="13" />
     </svg>
+  );
+}
+
+type SecretValidation = "valid" | "invalid";
+type SecretInputProps = {
+  value: string;
+  onChange: (value: string) => void;
+  onPaste?: (event: ClipboardEvent<HTMLInputElement>) => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  autoComplete?: string;
+  disabled?: boolean;
+  validation?: SecretValidation;
+  validationMessage?: string;
+};
+
+/**
+ * Campo sensível compatível com a WebView2 desta máquina. O input permanece
+ * type="text"; a máscara visual é ligada/desligada sem acionar o caminho
+ * nativo de password/paste que já demonstrou instabilidade.
+ */
+function SecretInput({
+  value, onChange, onPaste, onKeyDown, placeholder, autoComplete = "off",
+  disabled = false, validation, validationMessage,
+}: SecretInputProps) {
+  const { t } = useLang();
+  const [revealed, setRevealed] = useState(false);
+  const revealLabel = revealed ? t("secretHide") : t("secretShow");
+  useEffect(() => {
+    if (!value) setRevealed(false);
+  }, [value]);
+
+  return (
+    <div className="secret-field">
+      <div className={`secret-input${validation ? ` is-${validation}` : ""}`}>
+        <input
+          type="text"
+          className={revealed ? undefined : "pw-mask"}
+          autoComplete={autoComplete}
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          placeholder={placeholder}
+          value={value}
+          disabled={disabled}
+          aria-invalid={validation === "invalid" ? true : undefined}
+          onChange={(e) => onChange(e.currentTarget.value)}
+          onPaste={onPaste}
+          onKeyDown={onKeyDown}
+        />
+        <div className="secret-input-actions">
+          {validation === "valid" && (
+            <span className="secret-validation valid" title={validationMessage} aria-label={validationMessage}>
+              <CircleCheck size={17} aria-hidden="true" />
+            </span>
+          )}
+          {validation === "invalid" && (
+            <span className="secret-validation invalid" title={validationMessage} aria-label={validationMessage}>
+              <CircleX size={17} aria-hidden="true" />
+            </span>
+          )}
+          <button
+            type="button"
+            className="secret-toggle"
+            aria-label={revealLabel}
+            title={revealLabel}
+            aria-pressed={revealed}
+            disabled={disabled}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setRevealed((current) => !current)}
+          >
+            {revealed ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+          </button>
+        </div>
+      </div>
+      {validation && validationMessage && (
+        <div className={`secret-feedback ${validation}`} role="status">
+          {validation === "valid" ? <CircleCheck size={13} aria-hidden="true" /> : <CircleX size={13} aria-hidden="true" />}
+          <span>{validationMessage}</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1034,12 +1117,7 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
             </span>
           </div>
           <div className="row">
-            <input
-              type="text"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
+            <SecretInput
               placeholder={status[c.name] ? t("credPlaceholderSet") : t("credPlaceholderEmpty")}
               value={inputs[c.name] || ""}
               onPaste={(e) => {
@@ -1050,7 +1128,7 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
                 const text = e.clipboardData.getData("text");
                 setInputs((i) => ({ ...i, [c.name]: text.trim() }));
               }}
-              onChange={(e) => setInputs((i) => ({ ...i, [c.name]: e.currentTarget.value }))}
+              onChange={(value) => setInputs((i) => ({ ...i, [c.name]: value }))}
             />
             <button onClick={() => save(c.name)} disabled={busy[c.name]}>{t("save")}</button>
             {status[c.name] && (
@@ -1390,6 +1468,17 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     };
   }
 
+  const passwordMinimum = screen === "resetComplete" ? 8 : 6;
+  const passwordStarted = pw.length > 0;
+  const passwordValid = pw.length >= passwordMinimum;
+  const confirmationStarted = pw2.length > 0;
+  const confirmationValid = confirmationStarted && pw2 === pw;
+  const formBusyLabel = screen === "login" ? t("loginSigningIn")
+    : screen === "resetRequest" ? t("loginResetRequestBusy")
+    : screen === "resetVerify" ? t("loginResetVerifyBusy")
+    : screen === "resetComplete" ? t("loginResetCompleteBusy")
+    : screen === "create" ? t("loginCreating") : t("loginChecking");
+
   return (
     <div className="profile-gate">
       <div className="pg-head">
@@ -1421,10 +1510,9 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         {target === "admin" && (screen === "login" || screen === "create") && (
           <div className="field" style={{ marginBottom: 12 }}>
             <label>{t("loginAdminPw")}</label>
-            <input
-              type="text" className="pw-mask" autoComplete="off" spellCheck={false}
+            <SecretInput
               value={adminPw}
-              onChange={(e) => setAdminPw(e.currentTarget.value)}
+              onChange={setAdminPw}
               onPaste={maskedPaste(setAdminPw)}
             />
             <div className="engine-info">{t("loginAdminHint")}</div>
@@ -1525,31 +1613,40 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         {(screen === "login" || screen === "create" || screen === "resetComplete") && (
           <div className="field" style={{ marginBottom: 10 }}>
             <label>{t("loginPassword")}</label>
-            <input
-              type="text" className="pw-mask" autoComplete="off" spellCheck={false}
+            <SecretInput
+              key={`password-${screen}`}
               value={pw}
-              onChange={(e) => setPw(e.currentTarget.value)}
+              onChange={setPw}
               onPaste={maskedPaste(setPw)}
               onKeyDown={(e) => { if (e.key === "Enter") primarySubmit(); }}
+              validation={screen !== "login" && passwordStarted ? (passwordValid ? "valid" : "invalid") : undefined}
+              validationMessage={screen !== "login" && passwordStarted
+                ? passwordValid ? t("loginPwPolicyOk")
+                  : screen === "resetComplete" ? t("loginResetPwShort") : t("loginErrPwShort")
+                : undefined}
             />
           </div>
         )}
         {(screen === "create" || screen === "resetComplete") && (
           <div className="field" style={{ marginBottom: 10 }}>
             <label>{t("loginPasswordConfirm")}</label>
-            <input
-              type="text" className="pw-mask" autoComplete="off" spellCheck={false}
+            <SecretInput
+              key={`confirmation-${screen}`}
               value={pw2}
-              onChange={(e) => setPw2(e.currentTarget.value)}
+              onChange={setPw2}
               onPaste={maskedPaste(setPw2)}
               onKeyDown={(e) => { if (e.key === "Enter") primarySubmit(); }}
+              validation={confirmationStarted ? (confirmationValid ? "valid" : "invalid") : undefined}
+              validationMessage={confirmationStarted
+                ? confirmationValid ? t("loginPwMatchOk") : t("loginErrPwMatch")
+                : undefined}
             />
           </div>
         )}
         {notice && <div className="login-success" role="status">{notice}</div>}
         {err && <div className="key-warn" style={{ marginBottom: 8 }}>{err}</div>}
-        <button style={{ width: "100%" }} onClick={primarySubmit} disabled={busy !== ""}>
-          {busy === "form" ? t("loginChecking") : screen === "login" ? t("loginBtn")
+        <button className="login-primary" style={{ width: "100%" }} onClick={primarySubmit} disabled={busy !== ""}>
+          {busy === "form" ? <><span className="spinner" /> {formBusyLabel}</> : screen === "login" ? t("loginBtn")
             : screen === "resetRequest" ? t("loginResetRequestBtn")
             : screen === "resetVerify" ? t("loginResetVerifyBtn")
             : screen === "resetComplete" ? t("loginResetCompleteBtn")
@@ -1867,7 +1964,15 @@ function AdminView({ active }: { active: boolean }) {
               </div>
               <div className="field" style={{ flex: 1, marginBottom: 0 }}>
                 <label>{t("loginPassword")}</label>
-                <input type="text" className="pw-mask" value={cPw} onChange={(e) => setCPw(e.currentTarget.value)} />
+                <SecretInput
+                  value={cPw}
+                  onChange={setCPw}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    setCPw(e.clipboardData.getData("text"));
+                  }}
+                  validation={cPw.length > 0 ? (cPw.length >= 6 ? "valid" : "invalid") : undefined}
+                />
               </div>
               <button onClick={createUser} disabled={busy}>{t("admCreateBtn")}</button>
             </div>

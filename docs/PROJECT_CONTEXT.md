@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 19 de julho de 2026 (v0.18.4 — sessão VALIDADA de ponta a ponta: OAuth Google+GitHub, isolamento por utilizador, multi-admin, aba Administração. Próximo: mini-API na VPS)  
+**Última atualização:** 19 de julho de 2026 (v0.19.1 — MINI-API e recuperação de senha por e-mail VALIDADAS de ponta a ponta; UX de campos sensíveis melhorada e instalada. Próximo: 3º fator da elevação admin)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -241,11 +241,17 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 - **Worker Python empacotado como sidecar** (PyInstaller onedir): a app usa `worker\upexnote-worker.exe` ao lado do próprio `.exe`, com fallback de dev para o repo. Deixou de depender do caminho fixo desta máquina e do Python do sistema (ver Registro 2026-07-13 (b)).
 - **Sistema de Aparência completo (item 5 do backlog, v0.6.0-v0.8.0):** galeria de 12 temas por variáveis CSS (`[data-theme]` no App.css + registo `THEMES` no App.tsx — tema novo = 1 bloco + 1 linha), densidade Compacto (default)/Confortável (`[data-density]`), **titlebar custom** (decorations:false, arrastar/min/max/fechar próprios, setas voltar/avançar), ícones Lucide (NUNCA emojis — regra do utilizador), tipografia Segoe UI Variable. Preferências em localStorage.
 - **Biblioteca com cache local (v0.8.1):** abre instantaneamente com a última sessão (localStorage, metadados sem textos) e atualiza em fundo pelo túnel (stale-while-revalidate); overlay de carga só na primeira execução de sempre.
+- **Identidade e administração completas até v0.18.4:** login e-mail/Google/GitHub, isolamento por utilizador, multi-admin, auditoria e eventos de acesso, com fluxos reais validados pelo utilizador.
+- **MINI-API central em produção (v0.19.0):** FastAPI `/v1` no serviço `upexnote-api` do projeto EasyPanel `upexnote`; reset de senha por código de e-mail completo; esqueletos versionados para 3º fator admin, telemetria e tokens/webhooks; Postgres apenas pela rede interna. Domínio canónico `https://api.upexflow.com`; domínio temporário removido após emissão/validação do TLS.
+- **Recuperação de senha validada de ponta a ponta (v0.19.0):** pedido genérico → e-mail SMTP → código de 6 dígitos → token de uso único → nova senha no formato PBKDF2 já usado pelo login → login bem-sucedido. Eventos `password_reset_requested` e `password_reset_completed` confirmados em `access_events`, sem expor dados sensíveis.
+- **UX de campos sensíveis (v0.19.1, VALIDADA pelo utilizador):** controlo mostrar/ocultar com Lucide em login, elevação admin, criação de conta e credenciais; validação visual real de comprimento mínimo e igualdade da confirmação; estados de espera específicos no reset/login. Mantido `type="text"` + máscara CSS + paste intercetado por compatibilidade com a WebView2. Instalador v0.19.1 gerado, copiado para o Desktop e instalado.
 
 ### Próximo trabalho (deixados em aberto)
 
-1. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
-2. Menor: considerar cópia periódica dos dumps para fora da VPS (a VPS é ponto único de falha). ~~Reboot pendente do Ubuntu~~ FEITO a 2026-07-15 (ver Registro). Hardening a considerar: reaplicar o firewall também a cada restart do Docker (hoje só no boot — as regras DOCKER-USER podem ser limpas quando o Docker reinicia; a 2026-07-15 sobreviveram ao upgrade do docker-ce, mas por sorte).
+1. **MINI-API — papel nº 2:** implementar o 3º fator da elevação admin por código de e-mail; TOTP fica para uma etapa posterior. O endpoint `/v1/admin/elevation/challenge` já existe apenas como esqueleto reservado.
+2. **MINI-API — papéis nº 3 e 4:** evoluir os esqueletos de telemetria/eventos de instalações e tokens/webhooks da API única da Fase 2; nada de conteúdo de transcripts na telemetria e nada de n8n neste serviço.
+3. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
+4. Menor: considerar cópia periódica dos dumps para fora da VPS (a VPS é ponto único de falha). ~~Reboot pendente do Ubuntu~~ FEITO a 2026-07-15 (ver Registro). Hardening a considerar: reaplicar o firewall também a cada restart do Docker (hoje só no boot — as regras DOCKER-USER podem ser limpas quando o Docker reinicia; a 2026-07-15 sobreviveram ao upgrade do docker-ce, mas por sorte).
 
 ### Backlog de melhorias da Biblioteca (levantado 2026-07-14, IDEIAS — não agendado, não implementar sem confirmar)
 
@@ -370,6 +376,55 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-19 (j): campos sensíveis verificáveis + feedback de espera — v0.19.1
+
+### O que mudou
+- Criado `SecretInput`, componente reutilizável que acrescenta mostrar/ocultar com ícones Lucide aos campos sensíveis do login, elevação admin, criação de conta de teste e quatro credenciais das Definições (incluindo a credencial do Postgres).
+- Mantida a correção obrigatória desta máquina: o elemento continua `type="text"`, com `-webkit-text-security` quando oculto e paste intercetado; não se reintroduziu o caminho nativo de password/paste que crasha a WebView2.
+- Nova senha e confirmação ganharam validação imediata e honesta: comprimento mínimo (6 no cadastro, 8 no reset) e igualdade entre os dois campos, com check verde/erro vermelho e texto acessível. A credencial do Postgres continua a mostrar apenas o estado real “Configurada”; não se simula teste de ligação.
+- Os botões do fluxo agora exibem spinner e estado específico durante rede/processamento: iniciar sessão, criar conta, enviar código, validar código e guardar nova senha. Todas as strings foram acrescentadas aos dicionários PT/EN/ES.
+
+### Evidência / teste
+- `npm run build`: TypeScript + i18n tipado + Vite concluíram com sucesso (1810 módulos).
+- Suites de regressão: API `5 passed`; worker `2 passed`. Aviso único: depreciação futura do adaptador `httpx`/`TestClient`, sem falha funcional.
+- `npm run tauri build`: release Rust + NSIS concluídos; pacote final `UpexNote_0.19.1_x64-setup.exe` (50.822.160 bytes; SHA-256 `68E77354C71A1A4106030D35F742FD4704161570445946AF8C61C50884DA256C`) copiado para o Desktop. Instalação silenciosa concluída; executável instalado reporta ProductVersion/FileVersion 0.19.1 e está em execução.
+- **Validação visual real pelo utilizador:** controlo de mostrar/ocultar, checks dos campos e fluxo resultante aprovados na app instalada.
+
+### Decisão
+- Um check visual só representa uma condição comprovada localmente. Não validar uma credencial externa apenas por ter sido digitada/guardada; manter o badge de configuração existente e o erro real quando a ligação for usada.
+- Melhorar a percepção de latência com feedback explícito, sem mudar rate limit, criptografia, tokens ou o contrato seguro do reset já validado.
+
+### Impacto em dados, custo ou privacidade
+- Nenhuma chamada paga, alteração de schema ou dado de utilizador novo. O valor sensível continua apenas em memória durante a digitação e segue pelos canais já existentes; nunca é registado ou enviado por argv.
+
+### Próximo passo
+- Implementar o 3º fator da elevação admin sobre o esqueleto `/v1/admin/elevation/challenge`.
+
+### Registro — 2026-07-19 (i): MINI-API + recuperação de senha por e-mail — v0.19.0
+
+### O que mudou
+- Novo serviço `services/api/` em FastAPI, Dockerfile próprio e contrato `/v1`. Papel nº 1 entregue por completo: `POST /v1/auth/reset/request`, `/verify` e `/complete`; `GET /health`. Papéis nº 2-4 reservados em routers separados (3º fator admin, telemetria e tokens/webhooks).
+- Pedido responde sempre genericamente; código de 6 dígitos guardado somente como hash com expiração de 10 minutos, máximo de 5 tentativas, rate limit por e-mail/IP e token final de uso único. A nova senha usa exatamente PBKDF2-HMAC-SHA256, 120.000 iterações e salt aleatório de 16 bytes no formato do `accounts.py`.
+- Tabela `reset_codes` criada idempotentemente; eventos de pedido/conclusão/falha integrados em `access_events`. SMTP encapsulado e configuração integral por variáveis de ambiente.
+- Worker ganhou cliente HTTPS com `urllib` stdlib e comando `api-reset` por stdin; frontend restaurou “Esqueci-me da senha” com pedido → código → nova senha, i18n PT/EN/ES e URL pública empacotada. Nenhum segredo em argv/ficheiros.
+- Serviço `upexnote-api` criado no projeto EasyPanel `upexnote`, ao lado de `upexnote-db` e `drawio`; build pelo GitHub/Dockerfile, proxy interno 8000, Postgres exclusivamente pela rede interna. O domínio canónico `api.upexflow.com` recebeu DNS e certificado Let's Encrypt; o domínio temporário gerado pelo painel foi removido depois da validação.
+
+### Evidência / teste
+- Unidade: API `5 passed`; worker `2 passed`; TypeScript/Vite, worker PyInstaller e Tauri/NSIS concluídos no marco 0.19.0.
+- Produção: `/health` respondeu `status=ok`, `version=0.1.0`; serviço Docker 1/1.
+- **Validação real do utilizador:** e-mail recebido corretamente, código aceite, nova senha gravada e login concluído com sucesso. A auditoria confirmou `password_reset_requested` e `password_reset_completed` com sucesso, sem revelar código, senha ou conteúdo do e-mail.
+
+### Decisão
+- API própria FastAPI, sem n8n, como início da API única da Fase 2. Segredos apenas nas variáveis do EasyPanel; Postgres não ganhou porta nova nem mudança de firewall.
+- Manter somente o domínio canónico depois de o TLS estar operacional; o gerado pelo EasyPanel serviu apenas ao bootstrap.
+
+### Impacto em dados, custo ou privacidade
+- Armazenamento novo limitado a hashes/tokens de reset e eventos operacionais. Senha, código em claro e credenciais SMTP/DB/HMAC nunca entram em Git/log/chat.
+- Envio SMTP pelo domínio do proprietário; sem custo adicional de infraestrutura além da VPS já existente.
+
+### Próximo passo
+- Refinar a UX dos campos sensíveis/espera (entregue em v0.19.1) e avançar para o 3º fator da elevação admin.
 
 ### ✅ VALIDAÇÃO FINAL DA SESSÃO 2026-07-19 (utilizador, v0.18.4)
 - **Tudo aprovado:** GitHub Device Flow completo (código em destaque na app → página do GitHub → autorizado → pré-cadastro admin → conta criada); consola mostra os **2 admins** dele — `cunhaleonardo.en` (google, dono das 10 transcrições) e `cunhaleonardo.pt` (github) — multi-admin conforme desenhado, auditoria distingue as identidades. Google pessoal+admin ✔, e-mail+senha ✔, arranque solto ✔, aba Administração ✔.
@@ -1134,4 +1189,3 @@ No mesmo dia, a allowlist de IP foi substituída por túnel SSH e a porta fechad
 
 ### Próximo passo
 - Construir o ponto de entrada (CLI/IPC) que liga `apps/desktop` a `services/worker`.
-
