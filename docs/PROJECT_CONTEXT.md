@@ -246,12 +246,13 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 - **Recuperação de senha validada de ponta a ponta (v0.19.0):** pedido genérico → e-mail SMTP → código de 6 dígitos → token de uso único → nova senha no formato PBKDF2 já usado pelo login → login bem-sucedido. Eventos `password_reset_requested` e `password_reset_completed` confirmados em `access_events`, sem expor dados sensíveis.
 - **UX de campos sensíveis (v0.19.1, VALIDADA pelo utilizador):** controlo mostrar/ocultar com Lucide em login, elevação admin, criação de conta e credenciais; validação visual real de comprimento mínimo e igualdade da confirmação; estados de espera específicos no reset/login. Mantido `type="text"` + máscara CSS + paste intercetado por compatibilidade com a WebView2. Instalador v0.19.1 gerado, copiado para o Desktop e instalado.
 - **MFA administrativo publicado e validado (v0.20.0):** entrada admin exige identidade + senha administrativa + **TOTP OU código por e-mail**; o e-mail permanece sempre como recuperação. QR Code `otpauth://` compatível com qualquer autenticador, segredo TOTP cifrado no servidor, sessões opacas revogáveis, rate limit e 5 tentativas. Definições → Segurança permite configurar/substituir o autenticador de conta existente sem invalidar o antigo antes da confirmação. Operações administrativas e visão global da Biblioteca exigem sessão MFA central válida; autoelevação de role foi removida. API 0.2.0 reimplantada no EasyPanel, instalador v0.20.0 aplicado e fluxo real aprovado pelo utilizador.
+- **Backup externo e firewall resiliente a restart do Docker (2026-07-22):** dump diário às 03:30 UTC continua local por 14 dias e agora é copiado para o Google Drive pessoal em `Projects/upexflow/upexnote/storage/backups/postgres`, com validação gzip e checksum; 9 dumps históricos confirmados sem diferenças. O `docker.service` ganhou drop-in que reagenda `upexnote-firewall.service` após cada start/restart, preservando o DROP total da porta 55433 em IPv4/IPv6. Implementação versionada em `ops/vps/`; sem n8n, sem porta nova e sem retenção destrutiva no Drive.
 
 ### Próximo trabalho (deixados em aberto)
 
 1. **MINI-API — papéis nº 3 e 4:** evoluir os esqueletos de telemetria/eventos de instalações e tokens/webhooks da API única da Fase 2; nada de conteúdo de transcripts na telemetria e nada de n8n neste serviço.
 2. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
-3. Menor: considerar cópia periódica dos dumps para fora da VPS (a VPS é ponto único de falha). ~~Reboot pendente do Ubuntu~~ FEITO a 2026-07-15 (ver Registro). Hardening a considerar: reaplicar o firewall também a cada restart do Docker (hoje só no boot — as regras DOCKER-USER podem ser limpas quando o Docker reinicia; a 2026-07-15 sobreviveram ao upgrade do docker-ce, mas por sorte).
+3. **Manutenção do backup externo:** substituir o `client_id` OAuth partilhado do rclone por um cliente Google próprio do UpexNote antes da descontinuação anunciada durante 2026. O backup off-site e o hardening após restart do Docker estão concluídos e operacionais desde 2026-07-22 (ver Registro); a migração de cliente não muda o destino nem exige n8n.
 
 ### Backlog de melhorias da Biblioteca (levantado 2026-07-14, IDEIAS — não agendado, não implementar sem confirmar)
 
@@ -376,6 +377,35 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-22 (a): backup off-site + firewall após restart do Docker
+
+### O que mudou
+- Instalado `rclone` 1.74.4 na VPS e autorizado o Google Drive pessoal por OAuth. O token ficou exclusivamente em `/root/.config/rclone/rclone.conf`, modo `600`; não passou por Git, chat, argumentos ou logs partilhados.
+- Criado o destino externo `My Drive/Projects/upexflow/upexnote/storage/backups/postgres`. Os 9 dumps locais existentes foram copiados e o job diário passou a executar `pg_dump` com `pipefail`, gerar ficheiro parcial, validar `gzip -t`, promover atomicamente, enviar por TLS e comparar checksum antes da retenção local.
+- Mantidos cron e horário existentes (`/etc/cron.d/upexnote-backup`, 03:30 UTC) e retenção local de 14 dias. Não há eliminação automática no Drive: qualquer retenção destrutiva externa exige decisão explícita.
+- Os artefactos operacionais passaram a ser versionados em `ops/vps/`; o script ativo continua em `/usr/local/sbin/upexnote-backup.sh` e a versão anterior foi preservada na VPS para reversão.
+- Instalado drop-in de `docker.service` que executa `systemctl --no-block restart upexnote-firewall.service` após cada start/restart do Docker. O Docker não foi reiniciado durante a instalação; nenhum container sofreu interrupção.
+
+### Evidência / teste
+- `rclone check` do histórico: **0 diferenças, 9 ficheiros correspondentes** entre `/root/backups/upexnote` e o Drive.
+- Execução manual do novo job em 2026-07-22: `backup local e off-site confirmado`; validação do dump do dia: **0 diferenças, 1 ficheiro correspondente**.
+- `bash -n` aprovou o script. A primeira execução revelou que `rclone check` não aceita ficheiro único combinado com filtro; a verificação foi corrigida para diretório + nome do dia e o teste completo passou.
+- `systemd-analyze verify docker.service upexnote-firewall.service`: sem erros. `docker.service` reconhece o drop-in e o `ExecStartPost`; `upexnote-firewall.service` terminou com `ExecMainStatus=0`, estado `active/exited`.
+- Regras finais confirmadas: DROP da porta publicada `55433` em `DOCKER-USER` tanto no `iptables` quanto no `ip6tables`. O hook será exercitado naturalmente no próximo restart do Docker, sem provocar downtime apenas para teste.
+
+### Decisão
+- **Sem n8n:** backup de infraestrutura é responsabilidade direta de cron + `pg_dump` + `rclone`; tem menos dependências, menor superfície de falha e não mistura o projeto `upexflow` do EasyPanel com o `upexnote`.
+- Google Drive é o destino off-site dos dados; GitHub continua reservado a código/documentação. O dump contém o banco completo e, portanto, texto de transcripts: fica somente no Drive pessoal autorizado pelo proprietário, nunca no repositório ou por e-mail.
+- O hook do Docker agenda o serviço de firewall com `--no-block`: falhas ficam auditáveis no journal/estado do serviço de firewall sem derrubar o daemon Docker.
+
+### Impacto em dados, custo ou privacidade
+- Custo incremental zero com a infraestrutura atual. Há uma cópia adicional cifrada em trânsito no Google Drive pessoal; nenhum vídeo/áudio bruto foi movido.
+- Nenhuma porta nova, mudança no Postgres, firewall externo ou n8n. O OAuth pode gravar apenas via conta Google autorizada e a configuração é acessível somente ao root.
+- O rclone avisou que o seu cliente OAuth partilhado será descontinuado durante 2026. O backup está operacional, mas deve migrar para `client_id` próprio do UpexNote antes dessa retirada para evitar interrupção futura.
+
+### Próximo passo
+- Marco de backup/hardening encerrado. Próximo desenvolvimento funcional continua a ser MINI-API — papéis nº 3 e 4; manutenção paralela curta: criar e aplicar `client_id` Google próprio ao rclone.
 
 ### Registro — 2026-07-19 (k): MFA admin TOTP OU e-mail + gestão do autenticador — v0.20.0
 
