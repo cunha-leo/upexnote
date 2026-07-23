@@ -221,6 +221,22 @@ class PostgresSupportRepository:
                 identity_id = cur.fetchone()[0]
         return {"id": identity_id, "email": email.lower(), "username": username, "display_name": local}
 
+    def official_support_identity(self) -> dict[str, Any]:
+        """The public sender for team replies: stable, professional and separate from customers."""
+        email, username, label = "support@upexflow.com", "upexnote", "@upexnote"
+        marker = "official:" + hashlib.sha256(email.encode("utf-8")).hexdigest()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM support.identities WHERE email=%s", (email,))
+                row = cur.fetchone()
+                if row:
+                    identity_id = row[0]
+                    cur.execute("UPDATE support.identities SET username=%s,display_name=%s,role='support',lifecycle_state='active',updated_at=now(),last_seen_at=now() WHERE id=%s", (username, label, identity_id))
+                else:
+                    cur.execute("INSERT INTO support.identities(username,email,display_name,role,credential_hash) VALUES (%s,%s,%s,'support',%s) RETURNING id", (username, email, label, marker))
+                    identity_id = cur.fetchone()[0]
+        return {"id": identity_id, "email": email, "username": username, "display_name": label}
+
     def create_ticket(self, identity_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         with self._connect() as conn:
             with conn.cursor() as cur:

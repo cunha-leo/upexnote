@@ -2914,13 +2914,14 @@ function App() {
   const navItems: { id: View; icon: ReactNode; label: string }[] = [
     { id: "transcribe", icon: <Mic size={16} strokeWidth={1.75} />, label: t("navTranscribe") },
     { id: "library", icon: <LibraryBig size={16} strokeWidth={1.75} />, label: t("navLibrary") },
-    { id: "support", icon: <MessageCircle size={16} strokeWidth={1.75} />, label: t("navSupport") },
     { id: "settings", icon: <Settings size={16} strokeWidth={1.75} />, label: t("navSettings") },
   ];
   // A aba de Administração só existe para sessões admin (o worker revalida na
   // base de qualquer forma — isto é apresentação, não segurança).
   if (getSession()?.role === "admin") {
     navItems.push({ id: "admin", icon: <ShieldCheck size={16} strokeWidth={1.75} />, label: t("navAdmin") });
+  } else {
+    navItems.splice(2, 0, { id: "support", icon: <MessageCircle size={16} strokeWidth={1.75} />, label: t("navSupport") });
   }
 
   if (session === null) {
@@ -3130,9 +3131,9 @@ function App() {
             <LibraryView active={view === "library"} />
           </div>
 
-          <div className={"view-pane" + (view === "support" ? "" : " hidden")}>
+          {getSession()?.role !== "admin" && <div className={"view-pane" + (view === "support" ? "" : " hidden")}>
             <SupportView active={view === "support"} />
-          </div>
+          </div>}
 
           {getSession()?.role === "admin" && (
             <div className={"view-pane" + (view === "admin" ? "" : " hidden")}>

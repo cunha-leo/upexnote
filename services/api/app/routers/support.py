@@ -137,7 +137,7 @@ def customer_comment(payload: AddComment, repo: PostgresSupportRepository = Depe
 def _admin(payload: AdminAccess, service: AdminElevationService, repo: PostgresSupportRepository) -> dict[str, Any]:
     if not service.validate_session(payload.email, payload.elevation_token).valid:
         raise HTTPException(status_code=403, detail="mfa_required")
-    return repo.provision_staff_identity(email=payload.email, role="admin")
+    return repo.official_support_identity()
 
 
 @router.post("/admin/tickets")
@@ -157,7 +157,7 @@ def admin_ticket_detail(payload: AdminTicketAccess, repo: PostgresSupportReposit
 @router.post("/admin/tickets/comment")
 def admin_comment(payload: AdminComment, repo: PostgresSupportRepository = Depends(get_support_repository), admin: AdminElevationService = Depends(get_admin_elevation_service)) -> dict[str, Any]:
     actor = _admin(payload, admin, repo)
-    comment = repo.add_comment(payload.ticket_id, body=payload.body, author_kind="admin", author_identity_id=actor["id"], author_label=actor.get("display_name") or actor["email"])
+    comment = repo.add_comment(payload.ticket_id, body=payload.body, author_kind="support", author_identity_id=actor["id"], author_label="@upexnote")
     if not comment: raise HTTPException(status_code=404, detail="ticket_not_found")
     ticket = repo.ticket_detail(payload.ticket_id)
     if ticket:
@@ -169,7 +169,7 @@ def admin_comment(payload: AdminComment, repo: PostgresSupportRepository = Depen
 @router.post("/admin/tickets/status")
 def admin_status(payload: AdminStatus, repo: PostgresSupportRepository = Depends(get_support_repository), admin: AdminElevationService = Depends(get_admin_elevation_service)) -> dict[str, Any]:
     actor = _admin(payload, admin, repo)
-    ticket = repo.transition_status(payload.ticket_id, to_status=payload.status, actor_kind="admin", actor_identity_id=actor["id"], reason=payload.reason)
+    ticket = repo.transition_status(payload.ticket_id, to_status=payload.status, actor_kind="support", actor_identity_id=actor["id"], reason=payload.reason)
     if not ticket: raise HTTPException(status_code=404, detail="ticket_not_found")
     return {"ok": True, "ticket": ticket}
 
