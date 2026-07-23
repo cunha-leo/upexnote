@@ -1,6 +1,6 @@
 [package]
 name = "upexnote"
-version = "0.1.0"
+version = "0.21.0"
 description = "UpexNote — transcrição, contexto e estudo"
 authors = ["Leonardo Cunha"]
 edition = "2021"
@@ -26,4 +26,3 @@ serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
-

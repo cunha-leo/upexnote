@@ -10,6 +10,10 @@ from .admin_service import AdminElevationService
 from .db import PostgresResetRepository
 from .emailer import SmtpResetMailer
 from .service import PasswordResetService
+from .telemetry_db import PostgresTelemetryRepository
+from .telemetry_service import TelemetryService
+from .token_db import PostgresTokenRepository
+from .token_service import InstallationTokenService
 
 
 @lru_cache(maxsize=1)
@@ -30,3 +34,14 @@ def get_admin_elevation_service() -> AdminElevationService:
         PostgresAdminElevationRepository(settings),
         SmtpResetMailer(settings),
     )
+
+
+@lru_cache(maxsize=1)
+def get_telemetry_service() -> TelemetryService:
+    settings = get_settings()
+    return TelemetryService(settings, PostgresTelemetryRepository(settings))
+
+@lru_cache(maxsize=1)
+def get_installation_token_service() -> InstallationTokenService:
+    settings = get_settings()
+    return InstallationTokenService(settings, PostgresTokenRepository(settings))

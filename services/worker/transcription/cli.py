@@ -52,6 +52,7 @@ import argparse
 import json
 import sys
 import time
+import uuid
 from pathlib import Path
 
 from . import paths
@@ -658,6 +659,7 @@ def cmd_get_settings(args):
         "organize_by_day_engine": paths.organize_by_day_engine(),
         "storage_mode": db.storage_mode(),
         "vps_configured": db.is_configured(),
+        "telemetry_consent": bool(s.get("telemetry_consent", False)),
     })
     return 0
 
@@ -678,6 +680,10 @@ def cmd_set_settings(args):
         s["organize_by_day_engine"] = args.organize == "on"
     if getattr(args, "storage_mode", None) in ("local", "vps"):
         s["storage_mode"] = args.storage_mode
+    if getattr(args, "telemetry_consent", None) in ("on", "off"):
+        s["telemetry_consent"] = args.telemetry_consent == "on"
+        if s["telemetry_consent"]:
+            s.setdefault("telemetry_installation_id", str(uuid.uuid4()))
     paths.save_settings(s)
     return cmd_get_settings(args)
 
@@ -709,6 +715,7 @@ def build_parser():
     p_ss.add_argument("--storage-dir", help="Pasta padrao dos transcripts.")
     p_ss.add_argument("--clear-storage-dir", action="store_true", help="Volta a pasta padrao de fabrica.")
     p_ss.add_argument("--organize", choices=["on", "off"], help="Organizar em subpastas dia/motor.")
+    p_ss.add_argument("--telemetry-consent", choices=["on", "off"], help="Consentimento explícito para telemetria técnica privada.")
 
     p_sk = sub.add_parser("set-key", help="Guarda uma chave (getpass no terminal, ou --stdin para a interface).")
     p_sk.add_argument("--name", required=True, help=f"Nome da chave: {', '.join(KNOWN_KEYS)}")

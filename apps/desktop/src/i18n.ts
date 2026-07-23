@@ -220,6 +220,9 @@ const pt = {
   stoOrganize: "Organizar em subpastas por dia e motor (ex.: 2026-07-14\\assemblyai\\)",
   stoOrganizeInfo: "Desligado: os ficheiros ficam diretamente na pasta padrão. O nome já inclui origem, data, motor e tipo, por isso identificam-se sozinhos.",
   stoLoadErr: "Erro a carregar: {err}",
+  telemetryTitle: "Telemetria privada",
+  telemetryOptIn: "Partilhar eventos técnicos anónimos",
+  telemetryInfo: "Envia apenas versão, motor, duração, custo estimado e códigos de erro. Nunca envia transcripts, áudio, vídeo ou caminhos de ficheiros.",
 
   // Aparência
   appTitle: "Aparência",
@@ -559,6 +562,9 @@ const en: Record<Key, string> = {
   stoOrganize: "Organize into subfolders by day and engine (e.g. 2026-07-14\\assemblyai\\)",
   stoOrganizeInfo: "Off: files go directly into the default folder. The name already includes source, date, engine and type, so they identify themselves.",
   stoLoadErr: "Error loading: {err}",
+  telemetryTitle: "Private telemetry",
+  telemetryOptIn: "Share anonymous technical events",
+  telemetryInfo: "Sends only version, engine, duration, estimated cost and error codes. It never sends transcripts, audio, video or file paths.",
 
   appTitle: "Appearance",
   appTheme: "Theme",
@@ -891,6 +897,9 @@ const es: Record<Key, string> = {
   stoOrganize: "Organizar en subcarpetas por día y motor (ej.: 2026-07-14\\assemblyai\\)",
   stoOrganizeInfo: "Desactivado: los archivos van directamente a la carpeta predeterminada. El nombre ya incluye origen, fecha, motor y tipo, así que se identifican solos.",
   stoLoadErr: "Error al cargar: {err}",
+  telemetryTitle: "Telemetría privada",
+  telemetryOptIn: "Compartir eventos técnicos anónimos",
+  telemetryInfo: "Envía solo versión, motor, duración, coste estimado y códigos de error. Nunca envía transcripciones, audio, vídeo ni rutas de archivos.",
 
   appTitle: "Apariencia",
   appTheme: "Tema",

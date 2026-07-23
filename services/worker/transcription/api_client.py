@@ -45,12 +45,15 @@ class UpexNoteApiClient:
         self.base_url = (base_url or _load_base_url()).rstrip("/")
         self.timeout = timeout
 
-    def _post(self, path: str, payload: dict) -> dict:
+    def _post(self, path: str, payload: dict, authorization: str | None = None) -> dict:
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        if authorization:
+            headers["Authorization"] = f"Bearer {authorization}"
         request = urllib.request.Request(
             self.base_url + path,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             method="POST",
-            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            headers=headers,
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -109,3 +112,11 @@ class UpexNoteApiClient:
             "/v1/admin/elevation/totp/confirm",
             {"email": email, "elevation_token": elevation_token, "code": code},
         )
+
+    def exchange_installation_token(self, installation_id: str, app_version: str) -> dict:
+        return self._post("/v1/tokens/exchange", {
+            "installation_id": installation_id, "consent": True, "app_version": app_version,
+        })
+
+    def send_telemetry(self, event: dict, installation_token: str) -> dict:
+        return self._post("/v1/telemetry/events", event, authorization=installation_token)

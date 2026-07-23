@@ -1,4 +1,4 @@
-# Empacota o worker Python como pasta autonoma (PyInstaller onedir) e
+﻿# Empacota o worker Python como pasta autonoma (PyInstaller onedir) e
 # copia-a para junto do executavel da app desktop.
 #
 # Onedir (e nao onefile): a app lanca o worker muitas vezes em chamadas

@@ -560,6 +560,7 @@ async fn set_settings(
     clear_storage_dir: Option<bool>,
     organize: Option<bool>,
     storage_mode: Option<String>,
+    telemetry_consent: Option<bool>,
 ) -> Result<String, String> {
     let mut args: Vec<String> = vec!["set-settings".into()];
     if clear_storage_dir.unwrap_or(false) {
@@ -575,6 +576,10 @@ async fn set_settings(
     if let Some(mode) = storage_mode {
         args.push("--storage-mode".into());
         args.push(mode);
+    }
+    if let Some(consent) = telemetry_consent {
+        args.push("--telemetry-consent".into());
+        args.push(if consent { "on".into() } else { "off".into() });
     }
     run_cli_async(args).await
 }

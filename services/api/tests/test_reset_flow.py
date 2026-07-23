@@ -6,9 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.dependencies import get_reset_service
+from app.dependencies import get_reset_service, get_telemetry_service, get_installation_token_service
 from app.main import create_app
 from app.service import PasswordResetService
+from app.telemetry_service import TelemetryService
+from app.token_service import InstallationTokenService
 from tests.fakes import FakeMailer, FakeRepository
 
 
@@ -48,8 +50,21 @@ def flow():
     repository = FakeRepository()
     mailer = FakeMailer()
     service = PasswordResetService(settings(), repository, mailer)
+    class TelemetryRepository:
+        def __init__(self): self.events = []
+        def ensure_schema(self): pass
+        def ingest(self, **kwargs): self.events.append(kwargs)
+    telemetry_repository = TelemetryRepository()
+    class TokenRepository:
+        def __init__(self): self.tokens = set()
+        def ensure_schema(self): pass
+        def issue(self, **kwargs): self.tokens.add((kwargs["installation_hash"], kwargs["token_hash"]))
+        def valid(self, **kwargs): return (kwargs["installation_hash"], kwargs["token_hash"]) in self.tokens
+    token_service = InstallationTokenService(settings(), TokenRepository())
     app = create_app(initialize_schema=False)
     app.dependency_overrides[get_reset_service] = lambda: service
+    app.dependency_overrides[get_telemetry_service] = lambda: TelemetryService(settings(), telemetry_repository)
+    app.dependency_overrides[get_installation_token_service] = lambda: token_service
     with TestClient(app) as client:
         yield client, repository, mailer
 
@@ -141,5 +156,22 @@ def test_v1_capabilities_are_explicit(flow):
     assert health.json()["status"] == "ok"
     assert client.get("/v1").json()["capabilities"]["password_reset"] == "available"
     assert client.get("/v1").json()["capabilities"]["admin_elevation"] == "available"
-    assert client.post("/v1/telemetry/events").status_code == 501
-    assert client.post("/v1/tokens/exchange").status_code == 501
+    assert client.get("/v1").json()["capabilities"]["telemetry"] == "available"
+    assert client.post("/v1/tokens/exchange").status_code == 422
+
+
+def test_telemetry_requires_explicit_consent_and_rejects_unexpected_content(flow):
+    client, _, _ = flow
+    event = {
+        "installation_id": "11111111-1111-4111-8111-111111111111",
+        "consent": True,
+        "event": "transcription_completed",
+        "app_version": "0.20.0",
+        "engine": "assemblyai",
+        "duration_seconds": 42,
+        "estimated_cost_micros": 120000,
+        "region": "PT",
+    }
+    token = client.post("/v1/tokens/exchange", json={"installation_id": event["installation_id"], "consent": True, "app_version": event["app_version"]}).json()["access_token"]
+    assert client.post("/v1/telemetry/events", json=event, headers={"Authorization": f"Bearer {token}"}).status_code == 202
+    assert client.post("/v1/telemetry/events", json={**event, "transcript": "never"}, headers={"Authorization": f"Bearer {token}"}).status_code == 422

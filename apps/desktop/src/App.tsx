@@ -1096,6 +1096,7 @@ type StorageSettings = {
   organize_by_day_engine: boolean;
   storage_mode?: "local" | "vps";
   vps_configured?: boolean;
+  telemetry_consent?: boolean;
 };
 
 function StorageSettingsCard() {
@@ -1188,6 +1189,14 @@ function StorageSettingsCard() {
           {t("stoOrganizeInfo")}
           {msg ? " — " + msg : ""}
         </div>
+      </div>
+      <div className="field">
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input type="checkbox" checked={!!s?.telemetry_consent} disabled={busy || !s}
+            onChange={(e) => apply({ telemetryConsent: e.currentTarget.checked }, t("savedTick"))} style={{ width: "auto" }} />
+          <span>{t("telemetryOptIn")}</span>
+        </label>
+        <div className="engine-info">{t("telemetryInfo")}</div>
       </div>
     </section>
   );

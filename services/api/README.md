@@ -4,8 +4,15 @@ FastAPI service for the central, versioned UpexNote API. Release `0.2.0`
 delivers password reset and administrative MFA. Administrative elevation uses
 identity + administrator password + **TOTP or e-mail code**. TOTP is compatible
 with standard authenticator apps through an `otpauth://` QR Code, while e-mail
-always remains available as the recovery alternative. Explicit `/v1` routes
-remain reserved for installation telemetry and Phase 2 tokens/webhooks.
+always remains available as the recovery alternative.
+
+Installation telemetry is privacy-preserving: it records only a hashed
+installation identifier plus approved operational fields (version, engine,
+duration, estimated cost, region and error code). It never accepts transcript,
+audio, video, file path, credential or arbitrary diagnostic payloads.
+Installations explicitly opt in, exchange their local anonymous ID for an
+opaque 90-day token, then use that token to submit telemetry. Webhooks remain
+reserved until their concrete product contract is defined.
 
 ## Local tests
 

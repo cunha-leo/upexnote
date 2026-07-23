@@ -110,3 +110,32 @@ class AdminTotpConfirmed(StrictModel):
 
 class SkeletonResponse(StrictModel):
     detail: str = "Not implemented in this release"
+
+
+class TelemetryEvent(StrictModel):
+    """Privacy-preserving operational event; no user content is accepted."""
+
+    installation_id: str = Field(pattern=r"^[a-f0-9-]{36}$")
+    consent: bool
+    event: str = Field(pattern=r"^(app_started|transcription_completed|transcription_failed|login_succeeded|login_failed)$")
+    app_version: str = Field(min_length=1, max_length=64)
+    engine: str | None = Field(default=None, max_length=64)
+    duration_seconds: int | None = Field(default=None, ge=0, le=172800)
+    estimated_cost_micros: int | None = Field(default=None, ge=0, le=10_000_000_000)
+    region: str | None = Field(default=None, pattern=r"^[A-Z]{2}$")
+    error_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_:-]{1,96}$")
+
+
+class TelemetryAccepted(StrictModel):
+    ok: bool = True
+
+
+class InstallationTokenExchange(StrictModel):
+    installation_id: str = Field(pattern=r"^[a-f0-9-]{36}$")
+    consent: bool
+    app_version: str = Field(min_length=1, max_length=64)
+
+
+class InstallationToken(StrictModel):
+    access_token: str
+    expires_in: int
