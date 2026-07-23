@@ -1521,6 +1521,43 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   // há 2-3 chamadas à base — o "done" do OAuth NÃO pode limpar o estado ocupado
   // nesse intervalo (parecia erro/silêncio; visto na validação da v0.18.1).
   const processingRef = useRef(false);
+  async function completeOauth(obj: any) {
+    processingRef.current = true;
+    setGhCode("");
+    setOauthMsg(t("loginFinishing"));
+    try {
+      const adm = targetRef.current === "admin";
+      const raw = await invoke<string>("account", {
+        op: "oauth-login", mode: adm ? "vps" : "local",
+        payload: JSON.stringify(adm ? { ...obj, admin_secret: adminPwRef.current } : obj),
+      });
+      const res = JSON.parse(raw);
+      if (res.ok && !res.new) {
+        if (adm) { await beginAdminMfa(res.user); return; }
+        try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
+        finish("user", res.user);
+        return;
+      }
+      if (res.ok && res.new) {
+        processingRef.current = false;
+        setBusy(""); setOauthMsg("");
+        setOauthPending(obj as OauthPayload);
+        setEmail(obj.email || "");
+        setFirstName(obj.first_name || "");
+        setLastName(obj.last_name || "");
+        setUserId((obj.email || "").split("@")[0].replace(/[^a-z0-9._-]/gi, "").toLowerCase());
+        setErr(""); setScreen("precad");
+        return;
+      }
+      processingRef.current = false;
+      setBusy(""); setOauthMsg("");
+      setErr(res.error === "invalid_admin_credentials" ? t("loginAdminFail")
+        : res.error === "not_admin" ? t("loginAdminRoleRequired") : t("loginErrWrong"));
+    } catch {
+      processingRef.current = false;
+      setBusy(""); setOauthMsg(""); setErr(t("loginErrWrong"));
+    }
+  }
   useEffect(() => {
     const unEvent = listen<string>("oauth://event", async (ev) => {
       let obj: any;
@@ -1529,41 +1566,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         setOauthMsg(obj.message || t("loginOauthWaiting"));
         if (obj.user_code) setGhCode(obj.user_code);
       } else if (obj.type === "oauth") {
-        processingRef.current = true;
-        setGhCode("");
-        setOauthMsg(t("loginFinishing"));
-        const adm = targetRef.current === "admin";
-        const raw = await invoke<string>("account", {
-          op: "oauth-login", mode: adm ? "vps" : "local",
-          payload: JSON.stringify(adm ? { ...obj, admin_secret: adminPwRef.current } : obj),
-        });
-        const res = JSON.parse(raw);
-        if (res.ok && !res.new) {
-          if (adm) { await beginAdminMfa(res.user); return; }
-          // fixa o modo local EXPLICITAMENTE — a conta pessoal nunca pode
-          // depender do default da máquina (bug real de 2026-07-19)
-          try { await invoke("set_settings", { storageMode: "local" }); } catch { /* best-effort */ }
-          finish("user", res.user);
-          return;
-        }
-        if (res.ok && res.new) {
-          processingRef.current = false;
-          setBusy("");
-          setOauthMsg("");
-          setOauthPending(obj as OauthPayload);
-          setEmail(obj.email || "");
-          setFirstName(obj.first_name || "");
-          setLastName(obj.last_name || "");
-          setUserId((obj.email || "").split("@")[0].replace(/[^a-z0-9._-]/gi, "").toLowerCase());
-          setErr("");
-          setScreen("precad");
-        }
-        if (!res.ok) {
-          processingRef.current = false;
-          setBusy(""); setOauthMsg("");
-          setErr(res.error === "invalid_admin_credentials" ? t("loginAdminFail")
-            : res.error === "not_admin" ? t("loginAdminRoleRequired") : t("loginErrWrong"));
-        }
+        await completeOauth(obj);
       } else if (obj.type === "error") {
         processingRef.current = false;
         setBusy(""); setOauthMsg("");
@@ -1582,7 +1585,21 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   async function social(provider: "google" | "github") {
     if (target === "admin" && !adminPw) { setErr(t("loginAdminNeedPw")); return; }
     setErr(""); setOauthMsg(t("loginOauthWaiting")); setBusy(provider);
-    try { await invoke("oauth_start", { provider }); } catch { setBusy(""); setErr(t("loginErrWrong")); }
+    processingRef.current = false;
+    try {
+      if (provider === "google") {
+        const raw = await invoke<string>("oauth_google");
+        const lines = raw.trim().split(/\r?\n/).filter(Boolean);
+        const obj = JSON.parse(lines[lines.length - 1] || "");
+        if (obj.type === "oauth") await completeOauth(obj);
+        else throw new Error("OAuth Google sem resultado válido");
+        return;
+      }
+      await invoke("oauth_start", { provider });
+    } catch {
+      processingRef.current = false;
+      setBusy(""); setOauthMsg(""); setErr(t("loginErrWrong"));
+    }
   }
 
   async function submit() {

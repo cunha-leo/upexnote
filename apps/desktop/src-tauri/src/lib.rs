@@ -500,6 +500,14 @@ fn oauth_start(app: AppHandle, provider: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Google devolve o resultado pela própria chamada, sem depender do evento da
+/// WebView depois de o navegador fechar. O GitHub continua no fluxo de eventos
+/// porque precisa mostrar o código device-flow durante a autenticação.
+#[tauri::command]
+async fn oauth_google() -> Result<String, String> {
+    run_cli_async(vec!["oauth".into(), "--provider".into(), "google".into()]).await
+}
+
 /// Testa a ligação à base. `mode` opcional ("local"/"vps") testa um modo
 /// específico SEM o gravar — o ecrã de perfis valida a config de administrador
 /// com isto antes de trocar o modo.
@@ -669,7 +677,7 @@ pub fn run() {
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
             list_system_fonts, db_check, db_check_secret, account, api_reset, api_admin_factor,
-            account_suggest, admin, oauth_start, transcribe
+            account_suggest, admin, oauth_start, oauth_google, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
