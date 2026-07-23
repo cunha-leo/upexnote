@@ -393,11 +393,13 @@ Ao trabalhar neste projeto, uma IA deve:
 - Busca literal no repositório atual: zero ocorrências do nome/caminho antigo.
 - Persistência Windows: zero tarefas agendadas e zero entradas de startup correspondentes.
 - Migração: `Copied=22`, `Verified=22`, `Mismatches=0`; segunda verificação antes da remoção também aprovada. Resultado final: origem local inexistente e 24 ficheiros no destino (os 22 migrados mais 2 históricos já presentes).
-- `get-settings` após a alteração: `storage_dir=G:\My Drive\Projects\upexflow\upexnote\storage\transcripts`, `storage_dir_custom=true`, `organize_by_day_engine=true`, `storage_mode=vps`.
+- O primeiro `set-settings` executado pelo Python da Microsoft Store foi corretamente identificado como virtualizado no `LocalCache` do pacote e não afetou a app. A configuração falsa foi removida; a alteração final foi feita pelo `upexnote-worker.exe` instalado (v0.20.0), no mesmo contexto da aplicação.
+- `get-settings` do worker instalado após a alteração: `storage_dir=G:\My Drive\Projects\upexflow\upexnote\storage\transcripts`, `storage_dir_custom=true`, `organize_by_day_engine=true`, `storage_mode=vps`. O `%APPDATA%\UpexNote\settings.json` real foi relido depois e confirmou persistência.
 
 ### Decisão
 - Separar código, dados e workspace: código ativo continua em `C:\Users\cunha\Projects\upexflow\upexnote` + GitHub; transcripts ficam na pasta sincronizada do Google Drive e fora do Git; `TrancriptAutomation` não deve ser usado como projeto nem como destino de dados.
 - Não hardcodar o caminho pessoal no produto. A instalação usa a opção de pasta padrão já existente em `settings.json`, alterada pela CLI/UI oficial; o padrão de fábrica continua portátil para outras máquinas.
+- Em operações de produção no Windows, alterar/verificar settings pelo worker empacotado ou pela UI. O Python instalado pela Microsoft Store virtualiza `%APPDATA%` no seu `LocalCache` e pode dar uma confirmação enganosa quando se executa o módulo fonte diretamente.
 - Não apagar o workspace fantasma durante uma tarefa ainda vinculada a ele, porque o Codex pode recriá-lo. A remoção definitiva ocorre depois de abrir/registar o repositório real como projeto do Codex.
 
 ### Impacto em dados, custo ou privacidade
