@@ -3,6 +3,7 @@
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
 **Última atualização:** 19 de julho de 2026 (v0.20.0 — MFA administrativo TOTP OU e-mail publicado e validado de ponta a ponta)
+**Estado mais recente:** 23 de julho de 2026 (v0.23.2 - suporte, telemetria e administracao em validacao visual)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -17,6 +18,40 @@ UpexNote é uma aplicação local-first que transforma vídeos e áudios em tran
 O protótipo anterior comprovou a qualidade dos motores de transcrição e dos mecanismos de validação. O projeto atual começa a transformação desse protótipo numa aplicação visual, acessível, moderna e evolutiva.
 
 O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente). Captura de áudio ao vivo e tradução simultânea são fases posteriores.
+
+---
+
+## 1.1. Estado atual - 23 de julho de 2026
+
+- A transcricao e a Biblioteca foram validadas como base funcional do produto.
+- A versao desktop instalada e **v0.23.2**. Instalador: `UpexNote_0.23.2_x64-setup.exe`.
+- O repositorio esta sincronizado no `main`; commit mais recente antes deste registro: `5722b1e` (`Refine administration workspace usability`).
+- Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
+- A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry e Support.
+- O suporte possui back-end funcional isolado no schema PostgreSQL ingles `support`, com identidades, tickets, descricoes, comentarios, anexos, historico de status, atribuicoes, notificacoes e auditoria.
+- Respostas administrativas de suporte usam a identidade oficial `@upexnote`; o solicitante conserva sua identidade de utilizador.
+- Evidencias nao ficam como BLOB no banco. O banco guarda metadados e referencias; o desenho previsto usa spool persistente na VPS e arquivamento por job/rclone no Google Drive, com manifesto do caso.
+- A interface de suporte segue o fluxo: **dashboard operacional -> caixa de entrada tabular -> caso detalhado**.
+- A v0.23.2 corrigiu: campo de busca comprimido, metadados do caso desalinhados, editor de resposta desproporcional, scroll horizontal administrativo, acoes antigas de utilizador, filtros de Activity, JSON cru no Audit e contraste da Biblioteca.
+- Build Tauri de producao, TypeScript/Vite e `cargo check` passaram. A v0.23.2 foi instalada e aberta para nova validacao visual.
+
+### Decisoes de produto e UX vigentes
+
+- UI/UX e requisito arquitetural: cada novo submodulo precisa de jornada, hierarquia visual, estados, acessibilidade, responsividade e consistencia antes de ser considerado concluido.
+- A Administracao nao deve voltar a usar abas horizontais como menu principal. Submodulos vivem recolhidos/expandidos no menu lateral.
+- Tabelas operacionais devem ser legiveis sem barras horizontais expostas em resolucao desktop normal; acoes secundarias usam icones com rotulos acessiveis.
+- O Audit nao pode revelar tokens, chaves, hashes, escopos OAuth ou snapshots crus. Detalhes devem ser filtrados e apresentados semanticamente.
+- Telemetria consentida continua privada/anonima e nao deve revelar e-mail. Investigacao individual futura deve usar diagnostico consentido, identificador pseudonimo e ligacao explicita com chamado.
+- Webhooks nao pertencem ao Audit. Precisam de um futuro submodulo de Integracoes com chaves protegidas, entradas/saidas, tentativas, status de entrega e trilha de auditoria.
+- Regra de banco: cada dominio/prateleira do produto usa schema PostgreSQL separado, nomeado em ingles; nao misturar suporte, estudo, chat ou futuros departamentos no `public`.
+
+### Pendencias imediatas
+
+1. Validar visualmente a v0.23.2 em todas as telas marcadas pelo proprietario e corrigir qualquer regressao restante.
+2. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
+3. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
+4. Projetar e implementar Integracoes/Webhooks como modulo separado, sem campos falsos de front-end.
+5. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
 
 ---
 
