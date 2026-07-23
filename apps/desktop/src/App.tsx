@@ -2623,10 +2623,25 @@ function App() {
     try {
       await invoke("set_settings", { telemetryConsent: consent });
       setTelemetryPrompt(false);
+      if (consent) void telemetry("app_started");
     } finally {
       setTelemetryPromptBusy(false);
     }
   }
+  type TelemetryFields = { engine?: string; durationSeconds?: number; estimatedCostMicros?: number; errorCode?: string };
+  async function telemetry(event: "app_started" | "transcription_completed" | "transcription_failed", fields: TelemetryFields = {}) {
+    try {
+      const appVersion = await getVersion();
+      await invoke("telemetry_event", { event, appVersion, ...fields });
+    } catch {
+      // Telemetria nunca altera o percurso da pessoa nem mostra falhas na UI.
+    }
+  }
+  useEffect(() => {
+    if (session) void telemetry("app_started");
+    // Só reenvia ao abrir uma nova sessão; o worker ignora se não houver opt-in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
   const [view, setView] = useState<View>("transcribe");
   // Histórico de vistas para as setas voltar/avançar da barra de título
   const [histBack, setHistBack] = useState<View[]>([]);
@@ -2734,8 +2749,16 @@ function App() {
       } else if (obj.type === "result") {
         setResult(obj as ResultData);
         setStatus(obj.ok ? t("trDone") : t("trDoneWarn"));
+        const costMicros = Number.isFinite(Number(obj.cost)) ? Math.max(0, Math.round(Number(obj.cost) * 1_000_000)) : undefined;
+        void telemetry(obj.ok ? "transcription_completed" : "transcription_failed", {
+          engine: selected?.id,
+          durationSeconds: Number.isFinite(Number(obj.duration_s)) ? Math.max(0, Math.round(Number(obj.duration_s))) : undefined,
+          estimatedCostMicros: costMicros,
+          errorCode: obj.ok ? undefined : "TRANSCRIPTION_VALIDATION_FAILED",
+        });
       } else if (obj.type === "error") {
         setStatus(t("errPrefix") + obj.message);
+        void telemetry("transcription_failed", { engine: selected?.id, errorCode: "TRANSCRIPTION_ERROR" });
       }
     });
     const unlistenDone = listen("worker://done", () => setRunning(false));
@@ -2744,7 +2767,7 @@ function App() {
       unlistenDone.then((f) => f());
     };
     // re-subscreve quando o idioma muda, para o t do closure não ficar velho
-  }, [t]);
+  }, [t, selected]);
 
   useEffect(() => {
     if (!running) return;
@@ -2774,6 +2797,7 @@ function App() {
     } catch (e) {
       setStatus(t("errPrefix") + String(e));
       setRunning(false);
+      void telemetry("transcription_failed", { engine: selected.id, errorCode: "TRANSCRIPTION_START_FAILED" });
     }
   }
 

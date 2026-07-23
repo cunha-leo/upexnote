@@ -283,6 +283,45 @@ def cmd_api_reset(args):
         return 1
 
 
+def cmd_telemetry(args):
+    """Send one strictly allow-listed, consented technical event.
+
+    There is no generic JSON payload: a path, transcript, exception text or
+    credential cannot accidentally reach the central API.
+    """
+    from .api_client import ApiConfigurationError, UpexNoteApiClient
+
+    settings = paths.load_settings()
+    installation_id = settings.get("telemetry_installation_id")
+    if not settings.get("telemetry_consent") or not installation_id:
+        _emit(sys.stdout, {"type": "telemetry", "ok": True, "skipped": "no_consent"})
+        return 0
+    event = {
+        "installation_id": installation_id,
+        "consent": True,
+        "event": args.event,
+        "app_version": args.app_version,
+    }
+    for name in ("engine", "duration_seconds", "estimated_cost_micros", "error_code"):
+        value = getattr(args, name, None)
+        if value is not None:
+            event[name] = value
+    try:
+        client = UpexNoteApiClient()
+        # Token is held only in this worker process; a fresh capability token
+        # is exchanged per event instead of persisting a bearer credential.
+        token = client.exchange_installation_token(installation_id, args.app_version)["access_token"]
+        client.send_telemetry(event, token)
+        _emit(sys.stdout, {"type": "telemetry", "ok": True})
+        return 0
+    except (ApiConfigurationError, KeyError):
+        _emit(sys.stdout, {"type": "telemetry", "ok": False, "error": "service_unavailable"})
+        return 1
+    except Exception:
+        _emit(sys.stdout, {"type": "telemetry", "ok": False, "error": "service_unavailable"})
+        return 1
+
+
 def cmd_api_admin_factor(args):
     """Administrative MFA via HTTPS; every sensitive value is stdin-only."""
     from .api_client import ApiConfigurationError, UpexNoteApiClient
@@ -721,6 +760,14 @@ def build_parser():
     p_ss.add_argument("--organize", choices=["on", "off"], help="Organizar em subpastas dia/motor.")
     p_ss.add_argument("--telemetry-consent", choices=["on", "off"], help="Consentimento explícito para telemetria técnica privada.")
 
+    p_tel = sub.add_parser("telemetry", help="Envia um evento técnico permitido após consentimento.")
+    p_tel.add_argument("--event", choices=["app_started", "transcription_completed", "transcription_failed", "login_succeeded", "login_failed"], required=True)
+    p_tel.add_argument("--app-version", required=True)
+    p_tel.add_argument("--engine")
+    p_tel.add_argument("--duration-seconds", type=int)
+    p_tel.add_argument("--estimated-cost-micros", type=int)
+    p_tel.add_argument("--error-code")
+
     p_sk = sub.add_parser("set-key", help="Guarda uma chave (getpass no terminal, ou --stdin para a interface).")
     p_sk.add_argument("--name", required=True, help=f"Nome da chave: {', '.join(KNOWN_KEYS)}")
     p_sk.add_argument("--stdin", action="store_true", help="Le o valor por stdin (uso pela interface).")
@@ -812,6 +859,7 @@ def main(argv=None):
         "db-migrate": cmd_db_migrate,
         "get-settings": cmd_get_settings,
         "set-settings": cmd_set_settings,
+        "telemetry": cmd_telemetry,
         "library": cmd_library,
         "library-item": cmd_library_item,
         "library-update": cmd_library_update,

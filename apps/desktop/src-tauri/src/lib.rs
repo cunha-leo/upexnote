@@ -508,6 +508,25 @@ async fn oauth_google() -> Result<String, String> {
     run_cli_async(vec!["oauth".into(), "--provider".into(), "google".into()]).await
 }
 
+/// Telemetria privada: a UI só pode fornecer os campos estritamente tipados
+/// que a API aceita. O worker confirma o consentimento antes de qualquer rede.
+#[tauri::command]
+async fn telemetry_event(
+    event: String,
+    app_version: String,
+    engine: Option<String>,
+    duration_seconds: Option<i64>,
+    estimated_cost_micros: Option<i64>,
+    error_code: Option<String>,
+) -> Result<String, String> {
+    let mut args = vec!["telemetry".into(), "--event".into(), event, "--app-version".into(), app_version];
+    if let Some(value) = engine { args.extend(["--engine".into(), value]); }
+    if let Some(value) = duration_seconds { args.extend(["--duration-seconds".into(), value.to_string()]); }
+    if let Some(value) = estimated_cost_micros { args.extend(["--estimated-cost-micros".into(), value.to_string()]); }
+    if let Some(value) = error_code { args.extend(["--error-code".into(), value]); }
+    run_cli_async(args).await
+}
+
 /// Testa a ligação à base. `mode` opcional ("local"/"vps") testa um modo
 /// específico SEM o gravar — o ecrã de perfis valida a config de administrador
 /// com isto antes de trocar o modo.
@@ -677,7 +696,7 @@ pub fn run() {
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
             list_system_fonts, db_check, db_check_secret, account, api_reset, api_admin_factor,
-            account_suggest, admin, oauth_start, oauth_google, transcribe
+            account_suggest, admin, oauth_start, oauth_google, telemetry_event, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
