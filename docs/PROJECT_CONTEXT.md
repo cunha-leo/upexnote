@@ -247,12 +247,14 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 - **UX de campos sensíveis (v0.19.1, VALIDADA pelo utilizador):** controlo mostrar/ocultar com Lucide em login, elevação admin, criação de conta e credenciais; validação visual real de comprimento mínimo e igualdade da confirmação; estados de espera específicos no reset/login. Mantido `type="text"` + máscara CSS + paste intercetado por compatibilidade com a WebView2. Instalador v0.19.1 gerado, copiado para o Desktop e instalado.
 - **MFA administrativo publicado e validado (v0.20.0):** entrada admin exige identidade + senha administrativa + **TOTP OU código por e-mail**; o e-mail permanece sempre como recuperação. QR Code `otpauth://` compatível com qualquer autenticador, segredo TOTP cifrado no servidor, sessões opacas revogáveis, rate limit e 5 tentativas. Definições → Segurança permite configurar/substituir o autenticador de conta existente sem invalidar o antigo antes da confirmação. Operações administrativas e visão global da Biblioteca exigem sessão MFA central válida; autoelevação de role foi removida. API 0.2.0 reimplantada no EasyPanel, instalador v0.20.0 aplicado e fluxo real aprovado pelo utilizador.
 - **Backup externo e firewall resiliente a restart do Docker (2026-07-22):** dump diário às 03:30 UTC continua local por 14 dias e agora é copiado para o Google Drive pessoal em `Projects/upexflow/upexnote/storage/backups/postgres`, com validação gzip e checksum; 9 dumps históricos confirmados sem diferenças. O `docker.service` ganhou drop-in que reagenda `upexnote-firewall.service` após cada start/restart, preservando o DROP total da porta 55433 em IPv4/IPv6. Implementação versionada em `ops/vps/`; sem n8n, sem porta nova e sem retenção destrutiva no Drive.
+- **Cópia local dos transcripts centralizada no Google Drive pessoal (2026-07-23):** a instalação passou a usar `G:\My Drive\Projects\upexflow\upexnote\storage\transcripts` como `storage_dir`; 22 artefactos locais foram copiados, validados individualmente por SHA-256 e só então removidos de `C:\Users\cunha\Documents\UpexNote\storage\transcripts`. O destino contém 24 ficheiros (22 migrados + 2 históricos), sem colisões. A pasta fantasma `OneDrive\Documentos\TrancriptAutomation` foi diagnosticada como projeto antigo salvo no Codex, não como rotina do UpexNote.
 
 ### Próximo trabalho (deixados em aberto)
 
 1. **MINI-API — papéis nº 3 e 4:** evoluir os esqueletos de telemetria/eventos de instalações e tokens/webhooks da API única da Fase 2; nada de conteúdo de transcripts na telemetria e nada de n8n neste serviço.
 2. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
 3. **Manutenção do backup externo:** substituir o `client_id` OAuth partilhado do rclone por um cliente Google próprio do UpexNote antes da descontinuação anunciada durante 2026. O backup off-site e o hardening após restart do Docker estão concluídos e operacionais desde 2026-07-22 (ver Registro); a migração de cliente não muda o destino nem exige n8n.
+4. **Higiene do workspace Codex:** abrir/registar `C:\Users\cunha\Projects\upexflow\upexnote` como projeto do Codex e deixar de usar o projeto salvo `TrancriptAutomation`; depois apagar definitivamente a pasta antiga, que contém apenas `.git` e `.agents` vazios. Enquanto esta tarefa continuar vinculada ao caminho antigo, apagá-lo é apenas temporário e ele pode ser recriado pelo ambiente.
 
 ### Backlog de melhorias da Biblioteca (levantado 2026-07-14, IDEIAS — não agendado, não implementar sem confirmar)
 
@@ -377,6 +379,34 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-23 (a): destino local dos transcripts no Drive + diagnóstico do workspace fantasma
+
+### O que mudou
+- Auditadas separadamente a aplicação e a pasta `C:\Users\cunha\OneDrive\Documentos\TrancriptAutomation`. Não existe referência a `TrancriptAutomation`, `TranscriptAutomation` ou ao caminho do OneDrive no código atual do UpexNote.
+- O diretório antigo continha somente `.git` e `.agents` vazios, ambos criados junto com o workspace em 2026-07-22. Nenhuma tarefa agendada ou entrada de arranque do Windows referencia esse caminho.
+- A lista de projetos do Codex confirmou a causa: `TrancriptAutomation` continua registado como projeto local e é a raiz desta tarefa. Portanto, a recriação não vem do worker, do Git do UpexNote ou de uma transcrição; vem do vínculo do ambiente Codex ao workspace antigo.
+- A configuração da instalação não tinha `storage_dir` personalizado: apesar de `storage_mode=vps`, a cópia em ficheiro continuava no padrão `C:\Users\cunha\Documents\UpexNote\storage\transcripts`. Os 22 artefactos ali existentes foram copiados para `G:\My Drive\Projects\upexflow\upexnote\storage\transcripts`.
+- Depois da cópia, cada par origem/destino foi comparado por SHA-256. Com 22/22 correspondências e zero colisões, a pasta de origem local foi removida. O comando oficial `set-settings` do worker gravou o Google Drive como destino padrão; organização por dia/motor permanece ativa.
+
+### Evidência / teste
+- Busca literal no repositório atual: zero ocorrências do nome/caminho antigo.
+- Persistência Windows: zero tarefas agendadas e zero entradas de startup correspondentes.
+- Migração: `Copied=22`, `Verified=22`, `Mismatches=0`; segunda verificação antes da remoção também aprovada. Resultado final: origem local inexistente e 24 ficheiros no destino (os 22 migrados mais 2 históricos já presentes).
+- `get-settings` após a alteração: `storage_dir=G:\My Drive\Projects\upexflow\upexnote\storage\transcripts`, `storage_dir_custom=true`, `organize_by_day_engine=true`, `storage_mode=vps`.
+
+### Decisão
+- Separar código, dados e workspace: código ativo continua em `C:\Users\cunha\Projects\upexflow\upexnote` + GitHub; transcripts ficam na pasta sincronizada do Google Drive e fora do Git; `TrancriptAutomation` não deve ser usado como projeto nem como destino de dados.
+- Não hardcodar o caminho pessoal no produto. A instalação usa a opção de pasta padrão já existente em `settings.json`, alterada pela CLI/UI oficial; o padrão de fábrica continua portátil para outras máquinas.
+- Não apagar o workspace fantasma durante uma tarefa ainda vinculada a ele, porque o Codex pode recriá-lo. A remoção definitiva ocorre depois de abrir/registar o repositório real como projeto do Codex.
+
+### Impacto em dados, custo ou privacidade
+- Nenhum vídeo ou áudio foi movido. Foram transferidos somente transcripts e artefactos derivados já autorizados pelo proprietário.
+- Integridade preservada por SHA-256 antes da remoção local. Google Drive é pessoal; nenhum desses dados entra no GitHub.
+- Sem chamada paga, n8n, alteração na VPS, banco, firewall ou API.
+
+### Próximo passo
+- Reabrir o trabalho no Codex com `C:\Users\cunha\Projects\upexflow\upexnote` como raiz; remover o projeto/pasta `TrancriptAutomation`; então retomar os papéis nº 3 e 4 da MINI-API ou a prioridade escolhida pelo utilizador.
 
 ### Registro — 2026-07-22 (a): backup off-site + firewall após restart do Docker
 
