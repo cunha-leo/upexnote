@@ -1278,9 +1278,9 @@ input[type="range"] {
 .icon-action { display: inline-flex; align-items: center; justify-content: center; width: 31px; height: 31px; padding: 0; border: 1px solid var(--border); background: transparent; color: var(--text-dim); border-radius: var(--radius-ctl); cursor: pointer; }
 .icon-action:hover { color: var(--text); background: var(--panel-2); border-color: var(--accent); }
 .icon-action.danger:hover { color: #f29b9b; border-color: #b76060; }
-.admin-filterbar { display: grid; grid-template-columns: minmax(130px,.65fr) repeat(3, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--panel-2); }
-.admin-filterbar .field { margin: 0; }
-.admin-filterbar select { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-filterbar { display: grid; grid-template-columns: minmax(0, .65fr) repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-ctl); background: var(--panel-2); }
+.admin-filterbar .field { min-width: 0; margin: 0; }
+.admin-filterbar select { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .activity-summary { display: none; }
 .audit-detail-grid { display: grid; grid-template-columns: minmax(140px, .45fr) minmax(0, 1.55fr); gap: 8px 16px; margin: 0; padding: 12px; border-radius: var(--radius-ctl); background: var(--panel-2); }
 .audit-detail-grid dt { color: var(--text-dim); text-transform: capitalize; }
