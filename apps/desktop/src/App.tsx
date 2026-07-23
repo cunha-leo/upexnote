@@ -7,7 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
   Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
-  Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight,
+  Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight, Pencil, Archive, Trash2,
   Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
@@ -2126,6 +2126,9 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
   const [notice, setNotice] = useState("");
 
   const [period, setPeriod] = useState<"day" | "week" | "month" | "all">("week");
+  const [activityEvent, setActivityEvent] = useState("");
+  const [activityEmail, setActivityEmail] = useState("");
+  const [activityDetail, setActivityDetail] = useState("");
   const [aTable, setATable] = useState("");
   const [aId, setAId] = useState("");
   const [openSnap, setOpenSnap] = useState<number | null>(null);
@@ -2229,9 +2232,15 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
   }, [data.users, uSearch, showDeleted]);
 
   const sinceMs = period === "all" ? 0 : Date.now() - (period === "day" ? 1 : period === "week" ? 7 : 30) * 86400000;
-  const eventsFiltered = useMemo(
-    () => data.events.filter((ev) => !sinceMs || (ev.occurred_at && Date.parse(ev.occurred_at) >= sinceMs)),
-    [data.events, sinceMs]);
+  const eventsFiltered = useMemo(() => {
+    const eventQuery = activityEvent.trim().toLowerCase();
+    const emailQuery = activityEmail.trim().toLowerCase();
+    const detailQuery = activityDetail.trim().toLowerCase();
+    return data.events.filter((ev) => (!sinceMs || (ev.occurred_at && Date.parse(ev.occurred_at) >= sinceMs)) &&
+      (!eventQuery || ev.event.toLowerCase().includes(eventQuery)) &&
+      (!emailQuery || (ev.email || "").toLowerCase().includes(emailQuery)) &&
+      (!detailQuery || (ev.detail || "").toLowerCase().includes(detailQuery)));
+  }, [data.events, sinceMs, activityEvent, activityEmail, activityDetail]);
   const counts = useMemo(() => {
     const m = new Map<string, { event: string; ok: boolean | number | null; n: number }>();
     for (const ev of eventsFiltered) {
@@ -2323,6 +2332,7 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
   }
 
   const evOk = (v: boolean | number | null) => v === true || v === 1;
+  const auditSnapshotEntries = (snapshot: Record<string, unknown> | null) => Object.entries(snapshot || {}).filter(([key]) => !["provider_scopes", "provider_id", "access_token", "refresh_token", "password_hash"].includes(key));
 
   if (tab === "support") {
     return <section className="card admin-workspace">
@@ -2442,21 +2452,21 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
                     <td>{fmtDate(u.last_login_at, locale)}</td>
                     <td>
                       {!u.deleted_at ? (
-                        <span className="row" style={{ gap: 6 }}>
-                          <button className="secondary" onClick={() => {
+                        <span className="table-actions">
+                          <button className="icon-action" title={t("admEdit")} aria-label={t("admEdit")} onClick={() => {
                             setErr("");
                             setEditUser({
                               id: u.id, email: u.email, user_id: u.user_id,
                               first_name: u.first_name || "", last_name: u.last_name || "", role: u.role,
                             });
                           }}>
-                            {t("admEdit")}
+                            <Pencil size={15} />
                           </button>
-                          <button className="secondary" onClick={() => setConfirmDel({ id: u.id, purge: false })}>{t("admDelete")}</button>
-                          <button className="secondary" onClick={() => setConfirmDel({ id: u.id, purge: true })}>{t("admPurge")}</button>
+                          <button className="icon-action" title={t("admDelete")} aria-label={t("admDelete")} onClick={() => setConfirmDel({ id: u.id, purge: false })}><Archive size={15} /></button>
+                          <button className="icon-action danger" title={t("admPurge")} aria-label={t("admPurge")} onClick={() => setConfirmDel({ id: u.id, purge: true })}><Trash2 size={15} /></button>
                         </span>
                       ) : (
-                        <button className="secondary" onClick={() => setConfirmDel({ id: u.id, purge: true })}>{t("admPurge")}</button>
+                        <button className="icon-action danger" title={t("admPurge")} aria-label={t("admPurge")} onClick={() => setConfirmDel({ id: u.id, purge: true })}><Trash2 size={15} /></button>
                       )}
                     </td>
                   </tr>
@@ -2550,14 +2560,13 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
 
       {tab === "activity" && (
         <>
-          <div className="row wrap" style={{ marginBottom: 10 }}>
-            {(["day", "week", "month", "all"] as const).map((p) => (
-              <button key={p} className={period === p ? "" : "secondary"} onClick={() => setPeriod(p)}>
-                {t(p === "day" ? "admPeriodDay" : p === "week" ? "admPeriodWeek" : p === "month" ? "admPeriodMonth" : "admPeriodAll")}
-              </button>
-            ))}
-          </div>
-          <div className="row wrap" style={{ marginBottom: 12 }}>
+          <section className="admin-filterbar">
+            <div className="field"><label>{t("admPeriodAll")}</label><select value={period} onChange={(e) => setPeriod(e.currentTarget.value as typeof period)}><option value="day">{t("admPeriodDay")}</option><option value="week">{t("admPeriodWeek")}</option><option value="month">{t("admPeriodMonth")}</option><option value="all">{t("admPeriodAll")}</option></select></div>
+            <div className="field"><label>{t("admColEvent")}</label><input value={activityEvent} placeholder={t("admColEvent")} onChange={(e) => setActivityEvent(e.currentTarget.value)} /></div>
+            <div className="field"><label>{t("loginEmail")}</label><input value={activityEmail} placeholder={t("loginEmail")} onChange={(e) => setActivityEmail(e.currentTarget.value)} /></div>
+            <div className="field"><label>{t("admColDetail")}</label><input value={activityDetail} placeholder={t("admColDetail")} onChange={(e) => setActivityDetail(e.currentTarget.value)} /></div>
+          </section>
+          <div className="activity-summary" style={{ marginBottom: 12 }}>
             {counts.map((c, i) => (
               <span key={i} className={"badge " + (evOk(c.ok) ? "ok" : "warn")}>
                 {c.event} · {evOk(c.ok) ? t("admOk") : t("admFail")} · {c.n}
@@ -2616,9 +2625,9 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
                     {openSnap === a.id && (
                       <tr>
                         <td colSpan={6}>
-                          <pre style={{ whiteSpace: "pre-wrap", fontSize: "var(--fs-sm)", margin: 0 }}>
-                            {JSON.stringify(a.snapshot, null, 2)}
-                          </pre>
+                          <dl className="audit-detail-grid">
+                            {auditSnapshotEntries(a.snapshot).map(([key, value]) => <Fragment key={key}><dt>{key.split("_").join(" ")}</dt><dd>{value == null ? "—" : String(value)}</dd></Fragment>)}
+                          </dl>
                         </td>
                       </tr>
                     )}
