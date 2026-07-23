@@ -2232,6 +2232,15 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
   }, [data.users, uSearch, showDeleted]);
 
   const sinceMs = period === "all" ? 0 : Date.now() - (period === "day" ? 1 : period === "week" ? 7 : 30) * 86400000;
+  const activityOptions = useMemo(() => {
+    const values = (pick: (event: typeof data.events[number]) => string | null | undefined) =>
+      [...new Set(data.events.map(pick).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
+    return {
+      events: values((event) => event.event),
+      emails: values((event) => event.email),
+      details: values((event) => event.detail),
+    };
+  }, [data.events]);
   const eventsFiltered = useMemo(() => {
     const eventQuery = activityEvent.trim().toLowerCase();
     const emailQuery = activityEmail.trim().toLowerCase();
@@ -2430,7 +2439,7 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
             </div>
           )}
           <div className="table-scroll">
-            <table className="eng-table">
+            <table className="eng-table admin-user-table">
               <thead>
                 <tr>
                   <th>ID</th><th>{t("loginUserId")}</th><th>{t("loginEmail")}</th>
@@ -2442,8 +2451,8 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
                 {usersFiltered.map((u) => (
                   <tr key={u.id} style={u.deleted_at ? { opacity: 0.55 } : undefined}>
                     <td>#{u.id}</td>
-                    <td>{u.user_id}</td>
-                    <td>
+                    <td title={u.user_id}>{u.user_id}</td>
+                    <td title={u.email}>
                       {u.email}{u.deleted_at && <span className="badge" style={{ marginLeft: 6 }}>{t("admDeletedBadge")}</span>}
                     </td>
                     <td>{u.auth_provider}</td>
@@ -2561,10 +2570,10 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
       {tab === "activity" && (
         <>
           <section className="admin-filterbar">
-            <div className="field"><label>{t("admPeriodAll")}</label><select value={period} onChange={(e) => setPeriod(e.currentTarget.value as typeof period)}><option value="day">{t("admPeriodDay")}</option><option value="week">{t("admPeriodWeek")}</option><option value="month">{t("admPeriodMonth")}</option><option value="all">{t("admPeriodAll")}</option></select></div>
-            <div className="field"><label>{t("admColEvent")}</label><input value={activityEvent} placeholder={t("admColEvent")} onChange={(e) => setActivityEvent(e.currentTarget.value)} /></div>
-            <div className="field"><label>{t("loginEmail")}</label><input value={activityEmail} placeholder={t("loginEmail")} onChange={(e) => setActivityEmail(e.currentTarget.value)} /></div>
-            <div className="field"><label>{t("admColDetail")}</label><input value={activityDetail} placeholder={t("admColDetail")} onChange={(e) => setActivityDetail(e.currentTarget.value)} /></div>
+            <div className="field"><label>Period</label><select value={period} onChange={(e) => setPeriod(e.currentTarget.value as typeof period)}><option value="day">{t("admPeriodDay")}</option><option value="week">{t("admPeriodWeek")}</option><option value="month">{t("admPeriodMonth")}</option><option value="all">{t("admPeriodAll")}</option></select></div>
+            <div className="field"><label>{t("admColEvent")}</label><select value={activityEvent} onChange={(e) => setActivityEvent(e.currentTarget.value)}><option value="">{t("admPeriodAll")}</option>{activityOptions.events.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
+            <div className="field"><label>{t("loginEmail")}</label><select value={activityEmail} onChange={(e) => setActivityEmail(e.currentTarget.value)}><option value="">{t("admPeriodAll")}</option>{activityOptions.emails.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
+            <div className="field"><label>{t("admColDetail")}</label><select value={activityDetail} onChange={(e) => setActivityDetail(e.currentTarget.value)}><option value="">{t("admPeriodAll")}</option>{activityOptions.details.map((value) => <option key={value} value={value}>{value}</option>)}</select></div>
           </section>
           <div className="activity-summary" style={{ marginBottom: 12 }}>
             {counts.map((c, i) => (
@@ -2719,7 +2728,7 @@ function AdminSupportWorkspace(props: AdminSupportProps) {
   }
   return <div className="support-workspace">
     <section className="support-dashboard"><div><span className="eyebrow">{t("supportOverview")}</span><h3>{t("supportDashboardTitle")}</h3><p className="muted">{t("supportDashboardLead")}</p></div><div className="support-kpis"><div><span>{t("supportKpiTotal")}</span><strong>{props.stats.total}</strong></div><div><span>{t("supportOpen")}</span><strong>{props.stats.open}</strong></div><div><span>{t("supportProgress")}</span><strong>{props.stats.progress}</strong></div><div><span>{t("supportPending")}</span><strong>{props.stats.waiting}</strong></div><div><span>{t("supportResolved")}</span><strong>{props.stats.resolved}</strong></div></div></section>
-    <section className="support-queue"><div className="queue-head"><div><span className="eyebrow">{t("supportInbox")}</span><h3>{t("supportQueueTitle")}</h3></div><div className="queue-controls"><div className="queue-search"><Search size={16} /><input value={props.query} placeholder={t("supportQueueSearch")} onChange={(e) => props.onQuery(e.currentTarget.value)} /></div><select value={props.filter} onChange={(e) => props.onFilter(e.currentTarget.value)}><option value="all">{t("supportAll")}</option><option value="open">{t("supportOpen")}</option><option value="in_progress">{t("supportProgress")}</option><option value="pending_customer">{t("supportPending")}</option><option value="resolved">{t("supportResolved")}</option></select></div></div>{!props.tickets.length ? <p className="empty-queue">{t("supportNoTickets")}</p> : <div className="ticket-table" role="table"><div className="ticket-table-head" role="row"><span>{t("supportColId")}</span><span>{t("supportColSubject")}</span><span>{t("supportRequester")}</span><span>{t("supportCreatedAt")}</span><span>{t("supportStatus")}</span></div>{props.tickets.map((item) => <button className="ticket-table-row" role="row" key={item.id} onClick={() => props.onOpen(item.id)}><strong>{item.ticket_number}</strong><span className="ticket-subject">{item.subject}<small>{item.category}</small></span><span>{item.email || "—"}</span><span>{fmtDate((item as any).created_at || item.updated_at, locale)}</span><span><b className={`status-pill ${item.status}`}>{label(item.status)}</b></span></button>)}</div>}</section>
+    <section className="support-queue"><div className="queue-head"><div><span className="eyebrow">{t("supportInbox")}</span><h3>{t("supportQueueTitle")}</h3></div><div className="queue-controls"><div className="queue-search"><Search size={16} /><input type="text" value={props.query} placeholder={t("supportQueueSearch")} onChange={(e) => props.onQuery(e.currentTarget.value)} /></div><select value={props.filter} onChange={(e) => props.onFilter(e.currentTarget.value)}><option value="all">{t("supportAll")}</option><option value="open">{t("supportOpen")}</option><option value="in_progress">{t("supportProgress")}</option><option value="pending_customer">{t("supportPending")}</option><option value="resolved">{t("supportResolved")}</option></select></div></div>{!props.tickets.length ? <p className="empty-queue">{t("supportNoTickets")}</p> : <div className="ticket-table-scroll"><div className="ticket-table" role="table"><div className="ticket-table-head" role="row"><span>{t("supportColId")}</span><span>{t("supportColSubject")}</span><span>{t("supportRequester")}</span><span>{t("supportCreatedAt")}</span><span>{t("supportStatus")}</span></div>{props.tickets.map((item) => <button className="ticket-table-row" role="row" key={item.id} onClick={() => props.onOpen(item.id)}><strong>{item.ticket_number}</strong><span className="ticket-subject">{item.subject}<small>{item.category}</small></span><span>{item.email || "—"}</span><span>{fmtDate((item as any).created_at || item.updated_at, locale)}</span><span><b className={`status-pill ${item.status}`}>{label(item.status)}</b></span></button>)}</div></div>}</section>
   </div>;
 }
 
