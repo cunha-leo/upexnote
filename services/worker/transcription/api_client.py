@@ -120,3 +120,6 @@ class UpexNoteApiClient:
 
     def send_telemetry(self, event: dict, installation_token: str) -> dict:
         return self._post("/v1/telemetry/events", event, authorization=installation_token)
+
+    def telemetry_overview(self, email: str, elevation_token: str, days: int) -> dict:
+        return self._post("/v1/telemetry/overview", {"email": email, "elevation_token": elevation_token, "days": days})

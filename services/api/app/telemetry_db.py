@@ -56,3 +56,22 @@ class PostgresTelemetryRepository:
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (installation_hash, payload.event, payload.app_version, payload.engine,
                      payload.duration_seconds, payload.estimated_cost_micros, payload.region, payload.error_code))
+
+    def overview(self, days: int) -> dict:
+        interval = max(1, min(days, 90))
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""SELECT count(DISTINCT installation_hash), count(*),
+                    count(*) FILTER (WHERE event='transcription_completed'),
+                    count(*) FILTER (WHERE event='transcription_failed')
+                    FROM telemetry_events WHERE created_at >= now() - (%s || ' days')::interval""", (interval,))
+                installs, events, completed, failed = cur.fetchone()
+                cur.execute("""SELECT event, coalesce(error_code, ''), count(*) FROM telemetry_events
+                    WHERE created_at >= now() - (%s || ' days')::interval GROUP BY 1,2 ORDER BY 3 DESC LIMIT 12""", (interval,))
+                errors = [{"event": e, "error_code": c or None, "count": n} for e, c, n in cur.fetchall()]
+                cur.execute("""SELECT coalesce(engine, 'unknown'), count(*),
+                    avg(duration_seconds), sum(estimated_cost_micros)
+                    FROM telemetry_events WHERE created_at >= now() - (%s || ' days')::interval
+                    AND event IN ('transcription_completed','transcription_failed') GROUP BY 1 ORDER BY 2 DESC LIMIT 12""", (interval,))
+                engines = [{"engine": e, "count": n, "avg_duration_seconds": round(float(d or 0)), "cost_micros": int(c or 0)} for e, n, d, c in cur.fetchall()]
+        return {"installations": installs, "events": events, "completed": completed, "failed": failed, "errors": errors, "engines": engines}

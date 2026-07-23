@@ -317,6 +317,18 @@ def cmd_telemetry(args):
     except (ApiConfigurationError, KeyError):
         _emit(sys.stdout, {"type": "telemetry", "ok": False, "error": "service_unavailable"})
         return 1
+
+
+def cmd_telemetry_overview(args):
+    from .api_client import UpexNoteApiClient
+    data = _stdin_json() or {}
+    try:
+        result = UpexNoteApiClient().telemetry_overview(data.get("email", ""), data.get("elevation_token", ""), int(data.get("days", 7)))
+        _emit(sys.stdout, {"type": "telemetry-overview", **result})
+        return 0 if result.get("error") is None else 1
+    except Exception:
+        _emit(sys.stdout, {"type": "telemetry-overview", "ok": False, "error": "service_unavailable"})
+        return 1
     except Exception:
         _emit(sys.stdout, {"type": "telemetry", "ok": False, "error": "service_unavailable"})
         return 1
@@ -767,6 +779,7 @@ def build_parser():
     p_tel.add_argument("--duration-seconds", type=int)
     p_tel.add_argument("--estimated-cost-micros", type=int)
     p_tel.add_argument("--error-code")
+    sub.add_parser("telemetry-overview", help="Resumo administrativo de telemetria (MFA por stdin).")
 
     p_sk = sub.add_parser("set-key", help="Guarda uma chave (getpass no terminal, ou --stdin para a interface).")
     p_sk.add_argument("--name", required=True, help=f"Nome da chave: {', '.join(KNOWN_KEYS)}")
@@ -860,6 +873,7 @@ def main(argv=None):
         "get-settings": cmd_get_settings,
         "set-settings": cmd_set_settings,
         "telemetry": cmd_telemetry,
+        "telemetry-overview": cmd_telemetry_overview,
         "library": cmd_library,
         "library-item": cmd_library_item,
         "library-update": cmd_library_update,

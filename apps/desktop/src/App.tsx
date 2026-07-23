@@ -2094,7 +2094,9 @@ function admCacheKey(): string {
 function AdminView({ active }: { active: boolean }) {
   const { t, locale } = useLang();
   const sess = getSession();
-  const [tab, setTab] = useState<"users" | "activity" | "audit">("users");
+  const [tab, setTab] = useState<"users" | "activity" | "audit" | "telemetry">("users");
+  const [telemetry, setTelemetry] = useState<any>(null);
+  const [telemetryDays, setTelemetryDays] = useState(7);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -2150,6 +2152,14 @@ function AdminView({ active }: { active: boolean }) {
           localStorage.setItem(admCacheKey(), JSON.stringify({ ts: new Date().toISOString(), ...fresh }));
         } catch { /* cache é best-effort */ }
       } else setErr(r.error || r.message || "");
+    } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+  async function loadTelemetry(days = telemetryDays) {
+    setBusy(true); setErr("");
+    try {
+      const raw = await invoke<string>("telemetry_overview", { payload: JSON.stringify({ email: sess?.email || "", elevation_token: sess?.admin_token || "", days }) });
+      const r = JSON.parse(raw);
+      if (r.error) setErr(r.error); else setTelemetry(r);
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
   }
 
@@ -2261,11 +2271,12 @@ function AdminView({ active }: { active: boolean }) {
     <section className="card">
       <h2>{t("navAdmin")}</h2>
       <div className="row" style={{ marginBottom: 14, gap: 6 }}>
-        {(["users", "activity", "audit"] as const).map((tb) => (
+        {(["users", "activity", "audit", "telemetry"] as const).map((tb) => (
           <button key={tb} className={tab === tb ? "" : "secondary"} onClick={() => {
             setTab(tb); setErr(""); setNotice("");
+            if (tb === "telemetry") loadTelemetry();
           }}>
-            {t(tb === "users" ? "admTabUsers" : tb === "activity" ? "admTabActivity" : "admTabAudit")}
+            {tb === "telemetry" ? "Telemetry" : t(tb === "users" ? "admTabUsers" : tb === "activity" ? "admTabActivity" : "admTabAudit")}
           </button>
         ))}
         <span style={{ flex: 1 }} />
@@ -2276,6 +2287,22 @@ function AdminView({ active }: { active: boolean }) {
       </div>
       {err && <div className="key-warn" style={{ marginBottom: 10 }}>{err}</div>}
       {notice && <div className="engine-info" style={{ marginBottom: 10 }}>{notice}</div>}
+
+      {tab === "telemetry" && (
+        <div className="telemetry-dashboard">
+          <div className="row wrap" style={{ marginBottom: 14 }}>
+            <strong>Privacy-safe telemetry</strong><span className="muted">Only consented, anonymous technical events.</span><span style={{ flex: 1 }} />
+            {[1, 7, 30, 90].map((days) => <button key={days} className={telemetryDays === days ? "" : "secondary"} onClick={() => { setTelemetryDays(days); loadTelemetry(days); }}>{days}d</button>)}
+          </div>
+          {!telemetry && busy && <div className="status"><span className="spinner" /> Loading telemetry…</div>}
+          {telemetry && <>
+            <div className="telemetry-kpis">
+              <div><span>Consented installations</span><strong>{telemetry.installations}</strong></div><div><span>Events</span><strong>{telemetry.events}</strong></div><div><span>Completed</span><strong>{telemetry.completed}</strong></div><div><span>Failed</span><strong>{telemetry.failed}</strong></div>
+            </div>
+            <div className="telemetry-grid"><section><h3>Errors and outcomes</h3>{(telemetry.errors || []).map((x: any, i: number) => <div className="telemetry-row" key={i}><span>{x.error_code || x.event}</span><b>{x.count}</b></div>) || "No events yet"}</section><section><h3>Engines</h3>{(telemetry.engines || []).map((x: any) => <div className="telemetry-row" key={x.engine}><span>{x.engine} · {Math.round(x.avg_duration_seconds / 60)} min avg</span><b>{x.count}</b></div>) || "No engine activity yet"}</section></div>
+          </>}
+        </div>
+      )}
 
       {tab === "users" && (
         <>
