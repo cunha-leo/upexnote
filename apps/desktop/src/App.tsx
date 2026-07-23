@@ -7,7 +7,8 @@ import { getVersion } from "@tauri-apps/api/app";
 import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
   Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
-  Eye, EyeOff, CircleCheck, CircleX, MessageCircle,
+  Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight,
+  Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
@@ -153,6 +154,7 @@ type ResultData = {
 };
 
 type View = "transcribe" | "library" | "support" | "settings" | "admin";
+type AdminSection = "users" | "activity" | "audit" | "telemetry" | "support";
 
 // ---------------------------------------------------------------------------
 // Aparência — tema (galeria) + densidade. Cada tema é um bloco de variáveis
@@ -2091,16 +2093,18 @@ function admCacheKey(): string {
   return `${ADM_CACHE_PREFIX}::${s?.mode || "?"}::${s?.id ?? "?"}`;
 }
 
-function AdminView({ active }: { active: boolean }) {
+function AdminView({ active, section }: { active: boolean; section: AdminSection }) {
   const { t, locale } = useLang();
   const sess = getSession();
-  const [tab, setTab] = useState<"users" | "activity" | "audit" | "telemetry" | "support">("users");
+  const [tab, setTab] = useState<AdminSection>(section);
   const [telemetry, setTelemetry] = useState<any>(null);
   const [telemetryDays, setTelemetryDays] = useState(7);
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [supportTicket, setSupportTicket] = useState<SupportDetail | null>(null);
   const [supportReply, setSupportReply] = useState("");
   const [supportStatus, setSupportStatus] = useState("open");
+  const [supportQuery, setSupportQuery] = useState("");
+  const [supportFilter, setSupportFilter] = useState("all");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -2194,6 +2198,14 @@ function AdminView({ active }: { active: boolean }) {
   }
 
   useEffect(() => {
+    setTab(section);
+    setErr(""); setNotice("");
+    if (section === "telemetry") void loadTelemetry();
+    if (section === "support") void loadSupportQueue();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section]);
+
+  useEffect(() => {
     if (active && !loadedOnce) {
       setLoadedOnce(true);
       try {
@@ -2237,6 +2249,21 @@ function AdminView({ active }: { active: boolean }) {
       (!tq || a.table_name.toLowerCase().includes(tq)) &&
       (!aId.trim() || String(a.record_id) === aId.trim()));
   }, [data.audit, aTable, aId]);
+
+  const supportFiltered = useMemo(() => {
+    const q = supportQuery.trim().toLowerCase();
+    return supportTickets.filter((ticket) =>
+      (supportFilter === "all" || ticket.status === supportFilter) &&
+      (!q || [ticket.ticket_number, ticket.subject, ticket.email, ticket.category]
+        .filter(Boolean).some((value) => String(value).toLowerCase().includes(q))));
+  }, [supportTickets, supportFilter, supportQuery]);
+  const supportStats = useMemo(() => ({
+    total: supportTickets.length,
+    open: supportTickets.filter((x) => x.status === "open").length,
+    progress: supportTickets.filter((x) => x.status === "in_progress").length,
+    waiting: supportTickets.filter((x) => x.status === "pending_customer").length,
+    resolved: supportTickets.filter((x) => x.status === "resolved" || x.status === "closed").length,
+  }), [supportTickets]);
 
   function mapAdmErr(code?: string): string {
     if (code === "email_taken") return t("loginErrEmailTaken");
@@ -2297,31 +2324,41 @@ function AdminView({ active }: { active: boolean }) {
 
   const evOk = (v: boolean | number | null) => v === true || v === 1;
 
+  if (tab === "support") {
+    return <section className="card admin-workspace">
+      <header className="workspace-head">
+        <div><span className="eyebrow">{t("navAdmin")}</span><h2>{t("admTabSupport")}</h2></div>
+        <button className="secondary icon-button" onClick={loadSupportQueue} disabled={busy}>{busy ? <span className="spinner" /> : <RefreshCw size={16} />}<span>{t("libRefresh")}</span></button>
+      </header>
+      {err && <div className="key-warn">{err}</div>}
+      <AdminSupportWorkspace
+        tickets={supportFiltered} stats={supportStats} ticket={supportTicket} busy={busy}
+        query={supportQuery} filter={supportFilter} reply={supportReply} status={supportStatus}
+        onQuery={setSupportQuery} onFilter={setSupportFilter} onOpen={openSupportTicket}
+        onBack={() => setSupportTicket(null)} onReply={setSupportReply} onRespond={respondSupportTicket}
+        onStatus={setSupportStatus} onChangeStatus={changeSupportStatus}
+      />
+    </section>;
+  }
+
   return (
-    <section className="card">
-      <h2>{t("navAdmin")}</h2>
-      <div className="row" style={{ marginBottom: 14, gap: 6 }}>
-        {(["users", "activity", "audit", "telemetry", "support"] as const).map((tb) => (
-          <button key={tb} className={tab === tb ? "" : "secondary"} onClick={() => {
-            setTab(tb); setErr(""); setNotice("");
-            if (tb === "telemetry") loadTelemetry(); if (tb === "support") loadSupportQueue();
-          }}>
-            {tb === "telemetry" ? "Telemetry" : t(tb === "support" ? "admTabSupport" : tb === "users" ? "admTabUsers" : tb === "activity" ? "admTabActivity" : "admTabAudit")}
+    <section className="card admin-workspace">
+      <header className="workspace-head">
+        <div><span className="eyebrow">{t("navAdmin")}</span><h2>{tab === "telemetry" ? "Telemetry" : t(tab === "users" ? "admTabUsers" : tab === "activity" ? "admTabActivity" : "admTabAudit")}</h2></div>
+        <div className="row workspace-actions">
+          {cacheTs && <span className="muted" title={t("libCacheTitle")}>{t("libCacheUpdating", { ts: fmtDate(cacheTs, locale) })}</span>}
+          <button className="secondary icon-button" onClick={() => { loadOverview(); if (tab === "telemetry") loadTelemetry(); }} disabled={busy}>
+            {busy ? <span className="spinner" /> : <RefreshCw size={16} />}<span>{t("libRefresh")}</span>
           </button>
-        ))}
-        <span style={{ flex: 1 }} />
-        {cacheTs && <span className="muted" title={t("libCacheTitle")}>{t("libCacheUpdating", { ts: fmtDate(cacheTs, locale) })}</span>}
-        <button className="secondary" onClick={loadOverview} disabled={busy}>
-          {busy ? <span className="spinner" /> : t("libRefresh")}
-        </button>
-      </div>
+        </div>
+      </header>
       {err && <div className="key-warn" style={{ marginBottom: 10 }}>{err}</div>}
       {notice && <div className="engine-info" style={{ marginBottom: 10 }}>{notice}</div>}
 
-      {tab === "support" && <div className="support-admin">
+      {false && supportTicket && <div className="support-admin">
         <div className="support-layout">
           <div><h3>{t("admTabSupport")}</h3>{!supportTickets.length && <p className="muted">{t("supportNoTickets")}</p>}<div className="support-ticket-list">{supportTickets.map((item) => <button key={item.id} className={"support-ticket" + (supportTicket?.id === item.id ? " active" : "")} onClick={() => openSupportTicket(item.id)}><b>{item.ticket_number}</b><span>{item.subject}</span><small>{item.email} · {item.status}</small></button>)}</div></div>
-          <div>{supportTicket ? <><div className="row"><h3 style={{ flex: 1 }}>{supportTicket.ticket_number}</h3><select value={supportStatus} onChange={(e) => setSupportStatus(e.currentTarget.value)}><option value="open">{t("supportOpen")}</option><option value="in_progress">{t("supportProgress")}</option><option value="pending_customer">{t("supportPending")}</option><option value="resolved">{t("supportResolved")}</option><option value="closed">{t("supportClosed")}</option></select><button className="secondary" disabled={busy} onClick={changeSupportStatus}>{t("admSaved")}</button></div><p className="support-description">{supportTicket.description}</p><div className="support-comments">{supportTicket.comments.map((c) => <article key={c.id}><strong>{c.author_label || c.author_kind}</strong><small>{fmtDate(c.created_at, locale)}</small><p>{c.body}</p></article>)}</div><div className="field"><label>{t("supportReply")}</label><textarea rows={4} value={supportReply} onChange={(e) => setSupportReply(e.currentTarget.value)} /></div><button disabled={busy || !supportReply.trim()} onClick={respondSupportTicket}>{t("supportReplySend")}</button></> : <p className="muted">{t("supportMyTickets")}</p>}</div>
+          <div />
         </div>
       </div>}
 
@@ -2642,7 +2679,42 @@ function Titlebar({
 // ---------------------------------------------------------------------------
 // App — layout com menu lateral + roteamento de vistas
 // ---------------------------------------------------------------------------
-type SupportTicket = { id: number; ticket_number: string; subject: string; status: string; category: string; updated_at: string; comments: number; attachments: number; email?: string };
+type AdminSupportProps = {
+  tickets: SupportTicket[]; stats: { total: number; open: number; progress: number; waiting: number; resolved: number };
+  ticket: SupportDetail | null; busy: boolean; query: string; filter: string; reply: string; status: string;
+  onQuery: (value: string) => void; onFilter: (value: string) => void; onOpen: (id: number) => void; onBack: () => void;
+  onReply: (value: string) => void; onRespond: () => void; onStatus: (value: string) => void; onChangeStatus: () => void;
+};
+
+function AdminSupportWorkspace(props: AdminSupportProps) {
+  const { t, locale } = useLang();
+  const label = (status: string) => t(status === "open" ? "supportOpen" : status === "in_progress" ? "supportProgress" : status === "pending_customer" ? "supportPending" : status === "resolved" ? "supportResolved" : "supportClosed");
+  if (props.ticket) {
+    const ticket = props.ticket;
+    return <div className="case-detail">
+      <button className="link-btn back-to-queue" onClick={props.onBack}><ArrowLeft size={16} /> {t("supportBackToQueue")}</button>
+      <div className="case-title"><div><span className="eyebrow">{ticket.ticket_number}</span><h3>{ticket.subject}</h3></div><span className={`status-pill ${ticket.status}`}>{label(ticket.status)}</span></div>
+      <div className="case-layout">
+        <div className="case-main">
+          <section className="case-card"><span className="eyebrow">{t("supportMessage")}</span><p className="support-description">{ticket.description}</p></section>
+          <section className="case-card"><span className="eyebrow">{t("supportTimeline")}</span><h3>{t("supportConversation")}</h3><div className="support-comments">{ticket.comments.map((comment) => <article key={comment.id} className={comment.author_kind === "support" || comment.author_kind === "admin" ? "from-support" : ""}><strong>{comment.author_label || comment.author_kind}</strong><small>{fmtDate(comment.created_at, locale)}</small><p>{comment.body}</p></article>)}</div></section>
+          <section className="case-card composer"><span className="eyebrow">{t("supportReplyAs")}</span><h3>{t("supportReply")}</h3><textarea rows={7} value={props.reply} placeholder={t("supportReplyPlaceholder")} onChange={(e) => props.onReply(e.currentTarget.value)} /><div className="composer-actions"><span className="muted">{t("supportReplyIdentity")}</span><button disabled={props.busy || !props.reply.trim()} onClick={props.onRespond}>{t("supportReplySend")}</button></div></section>
+        </div>
+        <aside className="case-sidebar">
+          <section className="case-card"><span className="eyebrow">{t("supportCaseContext")}</span><div className="field"><label>{t("supportStatus")}</label><select value={props.status} onChange={(e) => props.onStatus(e.currentTarget.value)}><option value="open">{t("supportOpen")}</option><option value="in_progress">{t("supportProgress")}</option><option value="pending_customer">{t("supportPending")}</option><option value="resolved">{t("supportResolved")}</option><option value="closed">{t("supportClosed")}</option></select></div><button className="secondary full-width" disabled={props.busy} onClick={props.onChangeStatus}>{t("admSaved")}</button></section>
+          <section className="case-card case-meta"><span>{t("supportRequester")}</span><strong>{ticket.email || "—"}</strong><span>{t("supportCategory")}</span><strong>{ticket.category}</strong><span>{t("supportCreatedAt")}</span><strong>{fmtDate((ticket as any).created_at || ticket.updated_at, locale)}</strong></section>
+          <section className="case-card"><span className="eyebrow">{t("supportEvidenceCount", { n: ticket.attachments?.length || 0 })}</span>{ticket.attachments?.length ? ticket.attachments.map((attachment) => <div className="attachment-row" key={attachment.id}><FileText size={15} /><span>{attachment.original_filename}</span></div>) : <p className="muted">{t("supportNoEvidence")}</p>}</section>
+        </aside>
+      </div>
+    </div>;
+  }
+  return <div className="support-workspace">
+    <section className="support-dashboard"><div><span className="eyebrow">{t("supportOverview")}</span><h3>{t("supportDashboardTitle")}</h3><p className="muted">{t("supportDashboardLead")}</p></div><div className="support-kpis"><div><span>{t("supportKpiTotal")}</span><strong>{props.stats.total}</strong></div><div><span>{t("supportOpen")}</span><strong>{props.stats.open}</strong></div><div><span>{t("supportProgress")}</span><strong>{props.stats.progress}</strong></div><div><span>{t("supportPending")}</span><strong>{props.stats.waiting}</strong></div><div><span>{t("supportResolved")}</span><strong>{props.stats.resolved}</strong></div></div></section>
+    <section className="support-queue"><div className="queue-head"><div><span className="eyebrow">{t("supportInbox")}</span><h3>{t("supportQueueTitle")}</h3></div><div className="queue-controls"><div className="queue-search"><Search size={16} /><input value={props.query} placeholder={t("supportQueueSearch")} onChange={(e) => props.onQuery(e.currentTarget.value)} /></div><select value={props.filter} onChange={(e) => props.onFilter(e.currentTarget.value)}><option value="all">{t("supportAll")}</option><option value="open">{t("supportOpen")}</option><option value="in_progress">{t("supportProgress")}</option><option value="pending_customer">{t("supportPending")}</option><option value="resolved">{t("supportResolved")}</option></select></div></div>{!props.tickets.length ? <p className="empty-queue">{t("supportNoTickets")}</p> : <div className="ticket-table" role="table"><div className="ticket-table-head" role="row"><span>{t("supportColId")}</span><span>{t("supportColSubject")}</span><span>{t("supportRequester")}</span><span>{t("supportCreatedAt")}</span><span>{t("supportStatus")}</span></div>{props.tickets.map((item) => <button className="ticket-table-row" role="row" key={item.id} onClick={() => props.onOpen(item.id)}><strong>{item.ticket_number}</strong><span className="ticket-subject">{item.subject}<small>{item.category}</small></span><span>{item.email || "—"}</span><span>{fmtDate((item as any).created_at || item.updated_at, locale)}</span><span><b className={`status-pill ${item.status}`}>{label(item.status)}</b></span></button>)}</div>}</section>
+  </div>;
+}
+
+type SupportTicket = { id: number; ticket_number: string; subject: string; status: string; category: string; updated_at: string; created_at?: string; comments: number; attachments: number; email?: string };
 type SupportDetail = SupportTicket & { description: string; comments: { id: number; author_kind: string; author_label: string | null; body: string; created_at: string }[]; attachments: { id: number; original_filename: string; archive_state: string; created_at: string }[] };
 
 function SupportView({ active }: { active: boolean }) {
@@ -2727,6 +2799,8 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
   const [view, setView] = useState<View>("transcribe");
+  const [adminExpanded, setAdminExpanded] = useState(true);
+  const [adminSection, setAdminSection] = useState<AdminSection>("users");
   // Histórico de vistas para as setas voltar/avançar da barra de título
   const [histBack, setHistBack] = useState<View[]>([]);
   const [histFwd, setHistFwd] = useState<View[]>([]);
@@ -2735,6 +2809,10 @@ function App() {
     setHistBack((h) => [...h, view]);
     setHistFwd([]);
     setView(v);
+  }
+  function openAdmin(section?: AdminSection) {
+    if (section) setAdminSection(section);
+    if (view !== "admin") navTo("admin");
   }
   function goBack() {
     if (!histBack.length) return;
@@ -2918,9 +2996,7 @@ function App() {
   ];
   // A aba de Administração só existe para sessões admin (o worker revalida na
   // base de qualquer forma — isto é apresentação, não segurança).
-  if (getSession()?.role === "admin") {
-    navItems.push({ id: "admin", icon: <ShieldCheck size={16} strokeWidth={1.75} />, label: t("navAdmin") });
-  } else {
+  if (getSession()?.role !== "admin") {
     navItems.splice(2, 0, { id: "support", icon: <MessageCircle size={16} strokeWidth={1.75} />, label: t("navSupport") });
   }
 
@@ -2986,6 +3062,21 @@ function App() {
               {!collapsed && <span>{it.label}</span>}
             </button>
           ))}
+          {getSession()?.role === "admin" && <>
+            <button className={"nav-item admin-parent" + (view === "admin" ? " active" : "")} onClick={() => { setAdminExpanded((expanded) => !expanded); openAdmin(); }} title={t("navAdmin")} aria-expanded={adminExpanded}>
+              <span className="nav-ico"><ShieldCheck size={16} strokeWidth={1.75} /></span>
+              {!collapsed && <><span>{t("navAdmin")}</span><span className="nav-expand">{adminExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span></>}
+            </button>
+            {!collapsed && adminExpanded && <div className="admin-subnav">
+              {([
+                ["users", <Users size={15} />, t("admTabUsers")],
+                ["activity", <Activity size={15} />, t("admTabActivity")],
+                ["audit", <FileText size={15} />, t("admTabAudit")],
+                ["telemetry", <BarChart3 size={15} />, "Telemetry"],
+                ["support", <LifeBuoy size={15} />, t("admTabSupport")],
+              ] as const).map(([section, icon, label]) => <button key={section} className={"admin-subnav-item" + (view === "admin" && adminSection === section ? " active" : "")} onClick={() => openAdmin(section)}><span>{icon}</span>{label}</button>)}
+            </div>}
+          </>}
         </nav>
 
         <div className="sidebar-foot">
@@ -3137,7 +3228,7 @@ function App() {
 
           {getSession()?.role === "admin" && (
             <div className={"view-pane" + (view === "admin" ? "" : " hidden")}>
-              <AdminView active={view === "admin"} />
+              <AdminView active={view === "admin"} section={adminSection} />
             </div>
           )}
 
