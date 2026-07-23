@@ -254,6 +254,8 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 - **Login administrativo Google + MFA validado (v0.21.2 / 2026-07-23):** a interface Windows perdia o evento final de OAuth depois de o browser concluir o Google, embora Google, worker e VPS já estivessem corretos. O Google passou a devolver o resultado pela própria chamada Tauri, sem depender daquele evento; GitHub mantém o fluxo de eventos para mostrar o código device-flow. O utilizador validou o percurso completo: senha administrativa pessoal → Google → TOTP Microsoft Authenticator → sessão administrativa. Instalador `UpexNote_0.21.2_x64-setup.exe` instalado; commit `c535608` em `main`.
 
+- **Consentimento inicial de telemetria publicado (v0.22.0 / 2026-07-23):** após o login, quem ainda não decidiu vê uma tela inicial clara e não bloqueante: pode ajudar a melhorar o UpexNote (opt-in explícito), usar somente o necessário (recusa explícita) ou abrir as configurações para personalizar. Não há caixas pré-marcadas; a decisão é persistente e revogável nas Definições. O worker distingue a primeira utilização de uma recusa, portanto não repete o pedido após escolha. Textos PT/EN/ES explicam valor prático, limites de dados e caminho para revogar. Instalador `UpexNote_0.22.0_x64-setup.exe` instalado e copiado para o Desktop.
+
 ### Próximo trabalho (deixados em aberto)
 
 1. **MINI-API — webhooks:** definir os eventos externos reais e então implementar emissão/receção autenticada; telemetria e token de instalação já foram entregues. Nada de conteúdo de transcripts e nada de n8n dentro deste serviço.

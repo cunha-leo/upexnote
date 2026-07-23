@@ -804,6 +804,19 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
   padding: 22px 24px; max-width: 420px; width: calc(100% - 48px);
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
 }
+.telemetry-consent { max-width: 500px; }
+.telemetry-consent > svg { color: var(--accent); margin-bottom: 8px; }
+.telemetry-consent h2 { margin: 0 0 10px; }
+.telemetry-consent p { line-height: 1.55; margin: 0 0 12px; }
+.telemetry-consent-detail {
+  font-size: var(--fs-sm); color: var(--text-dim);
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel-2);
+}
+.telemetry-consent-control { font-size: var(--fs-sm); color: var(--text-dim); }
+.telemetry-consent-actions { display: grid; gap: 9px; margin-top: 18px; }
+.telemetry-consent-actions button { width: 100%; }
+.telemetry-customize { display: block; margin: 12px auto 0; }
 
 /* Código do Device Flow do GitHub: é o UTILIZADOR que o escreve na página do
    GitHub — tem de ser impossível de não ver (feedback 2026-07-19) */

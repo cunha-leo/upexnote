@@ -660,6 +660,10 @@ def cmd_get_settings(args):
         "storage_mode": db.storage_mode(),
         "vps_configured": db.is_configured(),
         "telemetry_consent": bool(s.get("telemetry_consent", False)),
+        # Distingue a recusa explícita da primeira utilização, quando ainda
+        # não houve decisão. A UI só mostra o pedido de consentimento neste
+        # segundo caso; uma recusa não volta a incomodar a pessoa.
+        "telemetry_consent_set": "telemetry_consent" in s,
     })
     return 0
 

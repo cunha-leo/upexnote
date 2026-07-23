@@ -1097,6 +1097,7 @@ type StorageSettings = {
   storage_mode?: "local" | "vps";
   vps_configured?: boolean;
   telemetry_consent?: boolean;
+  telemetry_consent_set?: boolean;
 };
 
 function StorageSettingsCard() {
@@ -2602,6 +2603,30 @@ function App() {
     }, remaining);
     return () => window.clearTimeout(timer);
   }, [session]);
+  // Telemetria de melhoria é opcional: perguntar uma única vez após o login,
+  // sem caixas pré-marcadas e sem impedir o uso de quem recusar.
+  const [telemetryPrompt, setTelemetryPrompt] = useState(false);
+  const [telemetryPromptBusy, setTelemetryPromptBusy] = useState(false);
+  useEffect(() => {
+    if (!session) { setTelemetryPrompt(false); return; }
+    let active = true;
+    invoke<string>("get_settings")
+      .then((raw) => {
+        const settings = JSON.parse(raw) as StorageSettings;
+        if (active) setTelemetryPrompt(!settings.telemetry_consent_set);
+      })
+      .catch(() => { if (active) setTelemetryPrompt(false); });
+    return () => { active = false; };
+  }, [session]);
+  async function chooseTelemetry(consent: boolean) {
+    setTelemetryPromptBusy(true);
+    try {
+      await invoke("set_settings", { telemetryConsent: consent });
+      setTelemetryPrompt(false);
+    } finally {
+      setTelemetryPromptBusy(false);
+    }
+  }
   const [view, setView] = useState<View>("transcribe");
   // Histórico de vistas para as setas voltar/avançar da barra de título
   const [histBack, setHistBack] = useState<View[]>([]);
@@ -2801,6 +2826,28 @@ function App() {
   return (
     <div className="shell">
       <Titlebar canBack={histBack.length > 0} canFwd={histFwd.length > 0} onBack={goBack} onFwd={goFwd} />
+      {telemetryPrompt && (
+        <div className="modal-overlay" role="presentation">
+          <section className="modal-card telemetry-consent" role="dialog" aria-modal="true" aria-labelledby="telemetry-consent-title">
+            <BrandMark size={30} />
+            <h2 id="telemetry-consent-title">{t("telemetryConsentTitle")}</h2>
+            <p>{t("telemetryConsentLead")}</p>
+            <p className="telemetry-consent-detail">{t("telemetryConsentData")}</p>
+            <p className="telemetry-consent-control">{t("telemetryConsentControl")}</p>
+            <div className="telemetry-consent-actions">
+              <button onClick={() => chooseTelemetry(true)} disabled={telemetryPromptBusy}>
+                {t("telemetryConsentAccept")}
+              </button>
+              <button className="secondary" onClick={() => chooseTelemetry(false)} disabled={telemetryPromptBusy}>
+                {t("telemetryConsentEssential")}
+              </button>
+            </div>
+            <button className="link-btn telemetry-customize" disabled={telemetryPromptBusy} onClick={() => { setTelemetryPrompt(false); navTo("settings"); }}>
+              {telemetryPromptBusy ? t("telemetryConsentSaving") : t("telemetryConsentCustomize")}
+            </button>
+          </section>
+        </div>
+      )}
       <div className="layout">
       <aside className={"sidebar" + (collapsed ? " collapsed" : "")}>
         <div className="sidebar-brand">
