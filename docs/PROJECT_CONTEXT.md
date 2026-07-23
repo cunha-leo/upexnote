@@ -3,7 +3,7 @@
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
 **Última atualização:** 19 de julho de 2026 (v0.20.0 — MFA administrativo TOTP OU e-mail publicado e validado de ponta a ponta)
-**Estado mais recente:** 23 de julho de 2026 (v0.23.2 - suporte, telemetria e administracao em validacao visual)
+**Estado mais recente:** 23 de julho de 2026 (v0.23.6 - administracao e suporte validados visualmente para o encerramento da sessao)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,16 +24,16 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 23 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.23.2**. Instalador: `UpexNote_0.23.2_x64-setup.exe`.
-- O repositorio esta sincronizado no `main`; commit mais recente antes deste registro: `5722b1e` (`Refine administration workspace usability`).
+- A versao desktop instalada e **v0.23.6**. Instalador: `UpexNote_0.23.6_x64-setup.exe`.
+- O repositorio esta sincronizado no `main`; a sessao foi encerrada apos validacao visual da administracao e do suporte.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry e Support.
 - O suporte possui back-end funcional isolado no schema PostgreSQL ingles `support`, com identidades, tickets, descricoes, comentarios, anexos, historico de status, atribuicoes, notificacoes e auditoria.
 - Respostas administrativas de suporte usam a identidade oficial `@upexnote`; o solicitante conserva sua identidade de utilizador.
 - Evidencias nao ficam como BLOB no banco. O banco guarda metadados e referencias; o desenho previsto usa spool persistente na VPS e arquivamento por job/rclone no Google Drive, com manifesto do caso.
 - A interface de suporte segue o fluxo: **dashboard operacional -> caixa de entrada tabular -> caso detalhado**.
-- A v0.23.2 corrigiu: campo de busca comprimido, metadados do caso desalinhados, editor de resposta desproporcional, scroll horizontal administrativo, acoes antigas de utilizador, filtros de Activity, JSON cru no Audit e contraste da Biblioteca.
-- Build Tauri de producao, TypeScript/Vite e `cargo check` passaram. A v0.23.2 foi instalada e aberta para nova validacao visual.
+- As versoes v0.23.2 a v0.23.6 consolidaram: navegacao administrativa lateral, Support como dashboard -> inbox -> caso, controles e campos no tema, barras de rolagem discretas, filtros de Activity por opcoes reais, tabelas administrativas responsivas e a fila de suporte com distribuicao equilibrada de ID, assunto, solicitante, data e status.
+- Build Tauri de producao e TypeScript/Vite passaram nas entregas da sessao. A v0.23.6 foi instalada e validada visualmente.
 
 ### Decisoes de produto e UX vigentes
 
@@ -48,11 +48,11 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 
 ### Pendencias imediatas
 
-1. Validar visualmente a v0.23.2 em todas as telas marcadas pelo proprietario e corrigir qualquer regressao restante.
-2. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
-3. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
-4. Projetar e implementar Integracoes/Webhooks como modulo separado, sem campos falsos de front-end.
-5. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
+1. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
+2. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
+3. Projetar e implementar Integracoes/Webhooks como modulo separado, sem campos falsos de front-end.
+4. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
+5. Projetar o perfil do rodape como etapa propria: nome completo, papel, modal padrao de informacoes e suporte futuro a avatar/foto; nao tratar como ajuste isolado.
 
 ---
 
