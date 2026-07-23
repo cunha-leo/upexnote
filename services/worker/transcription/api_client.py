@@ -11,6 +11,8 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import mimetypes
+import uuid
 from pathlib import Path
 
 
@@ -123,3 +125,42 @@ class UpexNoteApiClient:
 
     def telemetry_overview(self, email: str, elevation_token: str, days: int) -> dict:
         return self._post("/v1/telemetry/overview", {"email": email, "elevation_token": elevation_token, "days": days})
+
+    def support(self, operation: str, payload: dict) -> dict:
+        routes = {
+            "identity": "/v1/support/identity", "create": "/v1/support/tickets",
+            "list": "/v1/support/tickets/list", "detail": "/v1/support/tickets/detail",
+            "comment": "/v1/support/tickets/comment", "admin-list": "/v1/support/admin/tickets",
+            "admin-detail": "/v1/support/admin/tickets/detail", "admin-comment": "/v1/support/admin/tickets/comment",
+            "admin-status": "/v1/support/admin/tickets/status", "admin-assignment": "/v1/support/admin/tickets/assignment",
+        }
+        path = routes.get(operation)
+        if not path:
+            return {"ok": False, "error": "unsupported_operation"}
+        return self._post(path, payload)
+
+    def support_attachment(self, payload: dict, file_path: str) -> dict:
+        """Bounded multipart upload; the worker never prints the file path or bytes."""
+        path = Path(file_path)
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            return {"ok": False, "error": "evidence_unavailable"}
+        if len(raw) > 10 * 1024 * 1024:
+            return {"ok": False, "error": "evidence_too_large"}
+        boundary = "----UpexNote" + uuid.uuid4().hex
+        parts: list[bytes] = []
+        def field(name: str, value: object) -> None:
+            parts.extend([f"--{boundary}\r\n".encode(), f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(), str(value).encode("utf-8"), b"\r\n"])
+        for key in ("email", "username", "display_name", "client_secret", "ticket_id"):
+            field(key, payload.get(key, ""))
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        parts.extend([f"--{boundary}\r\n".encode(), f'Content-Disposition: form-data; name="file"; filename="{path.name}"\r\n'.encode(), f"Content-Type: {content_type}\r\n\r\n".encode(), raw, b"\r\n", f"--{boundary}--\r\n".encode()])
+        request = urllib.request.Request(self.base_url + "/v1/support/tickets/attachment", data=b"".join(parts), method="POST", headers={"Accept": "application/json", "Content-Type": f"multipart/form-data; boundary={boundary}"})
+        try:
+            with urllib.request.urlopen(request, timeout=max(self.timeout, 45)) as response:
+                result = json.loads(response.read().decode("utf-8")); return result if isinstance(result, dict) else {"ok": False, "error": "invalid_response"}
+        except urllib.error.HTTPError as exc:
+            return {"ok": False, "error": "evidence_too_large" if exc.code == 413 else "unsupported_evidence_type" if exc.code == 415 else "service_unavailable"}
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            return {"ok": False, "error": "service_unavailable"}

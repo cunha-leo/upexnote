@@ -7,8 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 
 from . import __version__
-from .dependencies import get_admin_elevation_service, get_reset_service, get_telemetry_service, get_installation_token_service
-from .routers import admin_factor, auth_reset, telemetry, tokens
+from .dependencies import get_admin_elevation_service, get_reset_service, get_telemetry_service, get_installation_token_service, get_support_repository
+from .routers import admin_factor, auth_reset, telemetry, tokens, support
 from .service import PasswordResetService
 
 
@@ -20,6 +20,7 @@ def create_app(initialize_schema: bool = True) -> FastAPI:
             get_admin_elevation_service().ensure_schema()
             get_telemetry_service().ensure_schema()
             get_installation_token_service().ensure_schema()
+            get_support_repository().ensure_schema()
         yield
 
     application = FastAPI(
@@ -48,6 +49,7 @@ def create_app(initialize_schema: bool = True) -> FastAPI:
                 "admin_elevation": "available",
                 "telemetry": "available",
                 "tokens_webhooks": "installation_tokens_available",
+                "support": "available",
             },
         }
 
@@ -55,6 +57,7 @@ def create_app(initialize_schema: bool = True) -> FastAPI:
     application.include_router(admin_factor.router, prefix="/v1")
     application.include_router(telemetry.router, prefix="/v1")
     application.include_router(tokens.router, prefix="/v1")
+    application.include_router(support.router, prefix="/v1")
     return application
 
 

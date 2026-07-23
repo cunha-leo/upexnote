@@ -53,6 +53,7 @@ import json
 import sys
 import time
 import uuid
+import secrets
 from pathlib import Path
 
 from . import paths
@@ -281,6 +282,33 @@ def cmd_api_reset(args):
     except Exception:  # never serialize exception details from a sensitive flow
         _emit(sys.stdout, {"type": "api-reset", "ok": False, "error": "service_unavailable"})
         return 1
+
+
+def cmd_support(args):
+    """Support API bridge. The opaque per-installation secret stays in the OS vault."""
+    from .api_client import ApiConfigurationError, UpexNoteApiClient
+    from .credentials import get_key, set_key
+    data = _stdin_json()
+    if data is None:
+        _emit(sys.stdout, {"type": "support", "ok": False, "error": "invalid_payload"}); return 1
+    operation = args.command.removeprefix("support-")
+    secret = get_key("UPEXNOTE_SUPPORT_CLIENT_SECRET")
+    if not secret:
+        secret = secrets.token_urlsafe(32)
+        set_key("UPEXNOTE_SUPPORT_CLIENT_SECRET", secret)
+    if operation.startswith("admin-"):
+        payload = data
+    else:
+        payload = {**data, "client_secret": secret}
+    try:
+        client = UpexNoteApiClient()
+        result = client.support_attachment(payload, data.get("file_path", "")) if operation == "attachment" else client.support(operation, payload)
+        _emit(sys.stdout, {"type": "support", **result})
+        return 0 if result.get("ok") else 1
+    except ApiConfigurationError as exc:
+        _emit(sys.stdout, {"type": "support", "ok": False, "error": str(exc)}); return 1
+    except Exception:
+        _emit(sys.stdout, {"type": "support", "ok": False, "error": "service_unavailable"}); return 1
 
 
 def cmd_telemetry(args):
@@ -851,6 +879,10 @@ def build_parser():
     for name in ("api-reset-request", "api-reset-verify", "api-reset-complete"):
         sub.add_parser(name, help="Recuperacao de senha via API HTTPS (payload JSON por stdin).")
 
+    for name in ("support-identity", "support-create", "support-list", "support-detail", "support-comment", "support-attachment",
+                 "support-admin-list", "support-admin-detail", "support-admin-comment", "support-admin-status", "support-admin-assignment"):
+        sub.add_parser(name, help="Chamados de suporte via API HTTPS (payload JSON por stdin).")
+
     for name in ("api-admin-challenge", "api-admin-verify", "api-admin-validate",
                  "api-admin-revoke", "api-admin-totp-enroll", "api-admin-totp-confirm"):
         sub.add_parser(name, help="MFA administrativo via API HTTPS (payload JSON por stdin).")
@@ -898,6 +930,17 @@ def main(argv=None):
         "api-reset-request": cmd_api_reset,
         "api-reset-verify": cmd_api_reset,
         "api-reset-complete": cmd_api_reset,
+        "support-identity": cmd_support,
+        "support-create": cmd_support,
+        "support-list": cmd_support,
+        "support-detail": cmd_support,
+        "support-comment": cmd_support,
+        "support-attachment": cmd_support,
+        "support-admin-list": cmd_support,
+        "support-admin-detail": cmd_support,
+        "support-admin-comment": cmd_support,
+        "support-admin-status": cmd_support,
+        "support-admin-assignment": cmd_support,
         "api-admin-challenge": cmd_api_admin_factor,
         "api-admin-verify": cmd_api_admin_factor,
         "api-admin-validate": cmd_api_admin_factor,

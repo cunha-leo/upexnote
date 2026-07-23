@@ -345,6 +345,18 @@ async fn api_reset(op: String, payload: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Support requests use the central API. Customer identity secrets are held by
+/// the worker in Windows Credential Manager; the UI only supplies profile and
+/// ticket fields through stdin.
+#[tauri::command]
+async fn support(op: String, payload: String) -> Result<String, String> {
+    const OPS: [&str; 11] = ["identity", "create", "list", "detail", "comment", "attachment", "admin-list", "admin-detail", "admin-comment", "admin-status", "admin-assignment"];
+    if !OPS.contains(&op.as_str()) {
+        return Err(format!("operaÃ§Ã£o de suporte desconhecida: {op}"));
+    }
+    run_cli_stdin_async(vec![format!("support-{op}")], payload).await
+}
+
 /// Administrative e-mail/TOTP factor through the central HTTPS API. Secrets,
 /// one-time codes and session tokens stay in the stdin JSON pipe.
 #[tauri::command]
@@ -701,7 +713,7 @@ pub fn run() {
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
             list_system_fonts, db_check, db_check_secret, account, api_reset, api_admin_factor,
-            account_suggest, admin, oauth_start, oauth_google, telemetry_event, telemetry_overview, transcribe
+            account_suggest, admin, oauth_start, oauth_google, telemetry_event, telemetry_overview, support, transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

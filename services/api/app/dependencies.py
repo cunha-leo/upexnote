@@ -14,6 +14,7 @@ from .telemetry_db import PostgresTelemetryRepository
 from .telemetry_service import TelemetryService
 from .token_db import PostgresTokenRepository
 from .token_service import InstallationTokenService
+from .support_db import PostgresSupportRepository
 
 
 @lru_cache(maxsize=1)
@@ -45,3 +46,9 @@ def get_telemetry_service() -> TelemetryService:
 def get_installation_token_service() -> InstallationTokenService:
     settings = get_settings()
     return InstallationTokenService(settings, PostgresTokenRepository(settings))
+
+
+@lru_cache(maxsize=1)
+def get_support_repository() -> PostgresSupportRepository:
+    """The support schema is deliberately independent from API public tables."""
+    return PostgresSupportRepository(get_settings())

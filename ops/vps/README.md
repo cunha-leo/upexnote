@@ -53,6 +53,26 @@ um pode ganhar um identificador por execução, logs próprios, índices por dat
 ou verificações específicas. Isso é independente de n8n; n8n pode ser usado
 mais tarde quando fizer sentido para orquestração visual e integrações.
 
+## Arquivo de evidências de suporte
+
+`upexnote-support-archive.sh` consome apenas anexos pendentes do schema
+`support`: o binário sai da fila temporária da VPS somente depois de
+`rclone copyto` e `rclone check`. O Drive conserva a pasta do chamado, as
+evidências e os ficheiros `case.json`/`case.md`; o Postgres conserva o índice,
+hash, estados e interações.
+
+Instalação prevista na VPS (nunca colocar estes valores no Git):
+
+```text
+/usr/local/sbin/upexnote-support-archive.sh
+/etc/upexnote-support.env              (root, modo 600)
+/etc/cron.d/upexnote-support-archive   (a cada 5 minutos)
+bind mount: /opt/upexnote/support-spool -> API /data/support-spool
+```
+
+Antes de ativar, validar sem executar: `bash -n /usr/local/sbin/upexnote-support-archive.sh`.
+O job não apaga arquivos do Drive, mesmo depois do encerramento de um chamado.
+
 ## Firewall após restart do Docker
 
 `docker.service.d/upexnote-firewall.conf` é instalado como drop-in de

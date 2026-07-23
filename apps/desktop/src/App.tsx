@@ -7,7 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
   Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
-  Eye, EyeOff, CircleCheck, CircleX,
+  Eye, EyeOff, CircleCheck, CircleX, MessageCircle,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
@@ -152,7 +152,7 @@ type ResultData = {
   language: string | null;
 };
 
-type View = "transcribe" | "library" | "settings" | "admin";
+type View = "transcribe" | "library" | "support" | "settings" | "admin";
 
 // ---------------------------------------------------------------------------
 // Aparência — tema (galeria) + densidade. Cada tema é um bloco de variáveis
@@ -2094,9 +2094,13 @@ function admCacheKey(): string {
 function AdminView({ active }: { active: boolean }) {
   const { t, locale } = useLang();
   const sess = getSession();
-  const [tab, setTab] = useState<"users" | "activity" | "audit" | "telemetry">("users");
+  const [tab, setTab] = useState<"users" | "activity" | "audit" | "telemetry" | "support">("users");
   const [telemetry, setTelemetry] = useState<any>(null);
   const [telemetryDays, setTelemetryDays] = useState(7);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [supportTicket, setSupportTicket] = useState<SupportDetail | null>(null);
+  const [supportReply, setSupportReply] = useState("");
+  const [supportStatus, setSupportStatus] = useState("open");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -2161,6 +2165,32 @@ function AdminView({ active }: { active: boolean }) {
       const r = JSON.parse(raw);
       if (r.error) setErr(r.error); else setTelemetry(r);
     } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+  async function supportCall(op: string, payload: Record<string, unknown> = {}) {
+    const raw = await invoke<string>("support", { op, payload: JSON.stringify({ email: sess?.email || "", elevation_token: sess?.admin_token || "", ...payload }) });
+    return JSON.parse(raw);
+  }
+  async function loadSupportQueue() {
+    setBusy(true); setErr("");
+    try { const r = await supportCall("admin-list"); if (r.ok) setSupportTickets(r.tickets || []); else setErr(r.error || "mfa_required"); }
+    catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+  async function openSupportTicket(id: number) {
+    setBusy(true); setErr("");
+    try { const r = await supportCall("admin-detail", { ticket_id: id }); if (r.ok) { setSupportTicket(r.ticket); setSupportStatus(r.ticket.status); } else setErr(r.error || "ticket_not_found"); }
+    catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+  async function respondSupportTicket() {
+    if (!supportTicket || !supportReply.trim()) return;
+    setBusy(true); setErr("");
+    try { const r = await supportCall("admin-comment", { ticket_id: supportTicket.id, body: supportReply.trim() }); if (r.ok) { setSupportReply(""); await openSupportTicket(supportTicket.id); await loadSupportQueue(); } else setErr(r.error || "service_unavailable"); }
+    catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  }
+  async function changeSupportStatus() {
+    if (!supportTicket) return;
+    setBusy(true); setErr("");
+    try { const r = await supportCall("admin-status", { ticket_id: supportTicket.id, status: supportStatus }); if (r.ok) { await openSupportTicket(supportTicket.id); await loadSupportQueue(); } else setErr(r.error || "service_unavailable"); }
+    catch (e) { setErr(String(e)); } finally { setBusy(false); }
   }
 
   useEffect(() => {
@@ -2271,12 +2301,12 @@ function AdminView({ active }: { active: boolean }) {
     <section className="card">
       <h2>{t("navAdmin")}</h2>
       <div className="row" style={{ marginBottom: 14, gap: 6 }}>
-        {(["users", "activity", "audit", "telemetry"] as const).map((tb) => (
+        {(["users", "activity", "audit", "telemetry", "support"] as const).map((tb) => (
           <button key={tb} className={tab === tb ? "" : "secondary"} onClick={() => {
             setTab(tb); setErr(""); setNotice("");
-            if (tb === "telemetry") loadTelemetry();
+            if (tb === "telemetry") loadTelemetry(); if (tb === "support") loadSupportQueue();
           }}>
-            {tb === "telemetry" ? "Telemetry" : t(tb === "users" ? "admTabUsers" : tb === "activity" ? "admTabActivity" : "admTabAudit")}
+            {tb === "telemetry" ? "Telemetry" : t(tb === "support" ? "admTabSupport" : tb === "users" ? "admTabUsers" : tb === "activity" ? "admTabActivity" : "admTabAudit")}
           </button>
         ))}
         <span style={{ flex: 1 }} />
@@ -2287,6 +2317,13 @@ function AdminView({ active }: { active: boolean }) {
       </div>
       {err && <div className="key-warn" style={{ marginBottom: 10 }}>{err}</div>}
       {notice && <div className="engine-info" style={{ marginBottom: 10 }}>{notice}</div>}
+
+      {tab === "support" && <div className="support-admin">
+        <div className="support-layout">
+          <div><h3>{t("admTabSupport")}</h3>{!supportTickets.length && <p className="muted">{t("supportNoTickets")}</p>}<div className="support-ticket-list">{supportTickets.map((item) => <button key={item.id} className={"support-ticket" + (supportTicket?.id === item.id ? " active" : "")} onClick={() => openSupportTicket(item.id)}><b>{item.ticket_number}</b><span>{item.subject}</span><small>{item.email} · {item.status}</small></button>)}</div></div>
+          <div>{supportTicket ? <><div className="row"><h3 style={{ flex: 1 }}>{supportTicket.ticket_number}</h3><select value={supportStatus} onChange={(e) => setSupportStatus(e.currentTarget.value)}><option value="open">{t("supportOpen")}</option><option value="in_progress">{t("supportProgress")}</option><option value="pending_customer">{t("supportPending")}</option><option value="resolved">{t("supportResolved")}</option><option value="closed">{t("supportClosed")}</option></select><button className="secondary" disabled={busy} onClick={changeSupportStatus}>{t("admSaved")}</button></div><p className="support-description">{supportTicket.description}</p><div className="support-comments">{supportTicket.comments.map((c) => <article key={c.id}><strong>{c.author_label || c.author_kind}</strong><small>{fmtDate(c.created_at, locale)}</small><p>{c.body}</p></article>)}</div><div className="field"><label>{t("supportReply")}</label><textarea rows={4} value={supportReply} onChange={(e) => setSupportReply(e.currentTarget.value)} /></div><button disabled={busy || !supportReply.trim()} onClick={respondSupportTicket}>{t("supportReplySend")}</button></> : <p className="muted">{t("supportMyTickets")}</p>}</div>
+        </div>
+      </div>}
 
       {tab === "telemetry" && (
         <div className="telemetry-dashboard">
@@ -2605,6 +2642,26 @@ function Titlebar({
 // ---------------------------------------------------------------------------
 // App — layout com menu lateral + roteamento de vistas
 // ---------------------------------------------------------------------------
+type SupportTicket = { id: number; ticket_number: string; subject: string; status: string; category: string; updated_at: string; comments: number; attachments: number; email?: string };
+type SupportDetail = SupportTicket & { description: string; comments: { id: number; author_kind: string; author_label: string | null; body: string; created_at: string }[]; attachments: { id: number; original_filename: string; archive_state: string; created_at: string }[] };
+
+function SupportView({ active }: { active: boolean }) {
+  const { t, locale } = useLang(); const sess = getSession();
+  const [tickets, setTickets] = useState<SupportTicket[]>([]); const [selected, setSelected] = useState<SupportDetail | null>(null);
+  const [subject, setSubject] = useState(""); const [category, setCategory] = useState("general"); const [body, setBody] = useState(""); const [reply, setReply] = useState("");
+  const [busy, setBusy] = useState(false); const [notice, setNotice] = useState("");
+  const identity = () => ({ email: sess?.email || "", username: sess?.user_id || (sess?.email || "guest").split("@")[0].replace(/[^a-zA-Z0-9._-]/g, ""), display_name: sess?.user_id || sess?.email || "UpexNote user" });
+  async function call(op: string, payload: Record<string, unknown> = {}) { return JSON.parse(await invoke<string>("support", { op, payload: JSON.stringify({ ...identity(), ...payload }) })); }
+  async function load() { if (!sess?.email) return; setBusy(true); try { const r = await call("list"); if (r.ok) setTickets(r.tickets || []); else setNotice(t("supportError")); } catch { setNotice(t("supportError")); } finally { setBusy(false); } }
+  async function openTicket(ticketId: number) { setBusy(true); setNotice(""); try { const r = await call("detail", { ticket_id: ticketId }); if (r.ok) setSelected(r.ticket); else setNotice(t("supportError")); } catch { setNotice(t("supportError")); } finally { setBusy(false); } }
+  async function create() { if (subject.trim().length < 4 || body.trim().length < 8) return; setBusy(true); setNotice(""); try { const r = await call("create", { subject: subject.trim(), body: body.trim(), category, priority: "normal", app_version: await getVersion(), platform: "desktop", locale }); if (r.ok) { setSubject(""); setBody(""); setNotice(t("supportCreated", { n: r.ticket.ticket_number })); await load(); await openTicket(r.ticket.id); } else setNotice(t("supportError")); } catch { setNotice(t("supportError")); } finally { setBusy(false); } }
+  async function sendReply() { if (!selected || !reply.trim()) return; setBusy(true); setNotice(""); try { const r = await call("comment", { ticket_id: selected.id, body: reply.trim() }); if (r.ok) { setReply(""); await openTicket(selected.id); await load(); } else setNotice(t("supportError")); } catch { setNotice(t("supportError")); } finally { setBusy(false); } }
+  async function addEvidence() { if (!selected) return; const path = await open({ multiple: false, directory: false, title: t("supportAddEvidence"), filters: [{ name: "Evidence", extensions: ["png", "jpg", "jpeg", "webp", "pdf"] }] }); if (typeof path !== "string") return; setBusy(true); setNotice(""); try { const r = await call("attachment", { ticket_id: selected.id, file_path: path }); if (r.ok) { await openTicket(selected.id); await load(); } else setNotice(t("supportError")); } catch { setNotice(t("supportError")); } finally { setBusy(false); } }
+  useEffect(() => { if (active) void load(); }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  const statusLabel = (status: string) => t(status === "open" ? "supportOpen" : status === "in_progress" ? "supportProgress" : status === "pending_customer" ? "supportPending" : status === "resolved" ? "supportResolved" : "supportClosed");
+  return <section className="card support-view"><h2>{t("supportTitle")}</h2><p className="engine-info">{t("supportLead")}</p>{notice && <div className="engine-info">{notice}</div>}<div className="support-layout"><div><h3>{t("supportNew")}</h3><div className="field"><label>{t("supportSubject")}</label><input value={subject} onChange={(e) => setSubject(e.currentTarget.value)} maxLength={240} /></div><div className="field"><label>{t("supportCategory")}</label><select value={category} onChange={(e) => setCategory(e.currentTarget.value)}><option value="general">General</option><option value="account">Account</option><option value="transcription">Transcription</option><option value="billing">Billing</option><option value="bug">Bug</option></select></div><div className="field"><label>{t("supportMessage")}</label><textarea rows={7} value={body} onChange={(e) => setBody(e.currentTarget.value)} /></div><p className="muted">{t("supportEvidence")}</p><button disabled={busy || subject.trim().length < 4 || body.trim().length < 8} onClick={create}>{busy ? t("supportSending") : t("supportSend")}</button></div><div><div className="row"><h3 style={{ flex: 1 }}>{t("supportMyTickets")}</h3><button className="secondary" disabled={busy} onClick={load}>{t("libRefresh")}</button></div>{!tickets.length && <p className="muted">{t("supportNoTickets")}</p>}<div className="support-ticket-list">{tickets.map((item) => <button key={item.id} className={"support-ticket" + (selected?.id === item.id ? " active" : "")} onClick={() => openTicket(item.id)}><b>{item.ticket_number}</b><span>{item.subject}</span><small>{statusLabel(item.status)} · {fmtDate(item.updated_at, locale)}</small></button>)}</div></div></div>{selected && <section className="support-detail"><div className="row"><h3 style={{ flex: 1 }}>{selected.ticket_number} · {selected.subject}</h3><span className="badge">{statusLabel(selected.status)}</span></div><p className="support-description">{selected.description}</p><div className="row"><strong>{selected.attachments?.length || 0} evidence</strong><button className="secondary" disabled={busy} onClick={addEvidence}>{busy ? t("supportEvidenceUploading") : t("supportAddEvidence")}</button></div>{(selected.attachments || []).map((a) => <p className="muted" key={a.id}>{a.original_filename} · {a.archive_state}</p>)}<div className="support-comments">{selected.comments.map((c) => <article key={c.id}><strong>{c.author_label || c.author_kind}</strong><small>{fmtDate(c.created_at, locale)}</small><p>{c.body}</p></article>)}</div><div className="field"><label>{t("supportReply")}</label><textarea rows={3} value={reply} onChange={(e) => setReply(e.currentTarget.value)} /></div><button disabled={busy || !reply.trim()} onClick={sendReply}>{t("supportReplySend")}</button></section>}</section>;
+}
+
 function App() {
   const { t } = useLang();
   const appearance = useAppearance();
@@ -2857,6 +2914,7 @@ function App() {
   const navItems: { id: View; icon: ReactNode; label: string }[] = [
     { id: "transcribe", icon: <Mic size={16} strokeWidth={1.75} />, label: t("navTranscribe") },
     { id: "library", icon: <LibraryBig size={16} strokeWidth={1.75} />, label: t("navLibrary") },
+    { id: "support", icon: <MessageCircle size={16} strokeWidth={1.75} />, label: t("navSupport") },
     { id: "settings", icon: <Settings size={16} strokeWidth={1.75} />, label: t("navSettings") },
   ];
   // A aba de Administração só existe para sessões admin (o worker revalida na
@@ -3070,6 +3128,10 @@ function App() {
 
           <div className={"view-pane" + (view === "library" ? "" : " hidden")}>
             <LibraryView active={view === "library"} />
+          </div>
+
+          <div className={"view-pane" + (view === "support" ? "" : " hidden")}>
+            <SupportView active={view === "support"} />
           </div>
 
           {getSession()?.role === "admin" && (

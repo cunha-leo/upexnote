@@ -1,4 +1,5 @@
 fastapi[standard]>=0.115,<1.0
+python-multipart>=0.0.18,<1.0
 psycopg2-binary>=2.9.10,<3.0
 cryptography>=43,<47
 qrcode>=8,<9

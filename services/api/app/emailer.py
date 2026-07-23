@@ -42,6 +42,18 @@ class SmtpResetMailer:
             "Recebemos um pedido para abrir uma sessão administrativa no UpexNote.",
         )
 
+    def send_support_message(self, recipient: str, subject: str, heading: str, introduction: str) -> None:
+        """Operational e-mail only; ticket content remains in the platform."""
+        message = EmailMessage()
+        message["Subject"] = subject
+        message["From"] = f"UpexNote Support <{self.settings.smtp_from_email}>"
+        message["To"] = recipient
+        message.set_content(f"{heading}\n\n{introduction}\n\nOpen UpexNote to view the complete ticket history.")
+        message.add_alternative("<html><body style=\"font-family:Arial,sans-serif;color:#201c2b\">"
+            f"<h2>{escape(heading)}</h2><p>{escape(introduction)}</p>"
+            "<p>Open UpexNote to view the complete ticket history.</p></body></html>", subtype="html")
+        self._send_message(message)
+
     def _send_code(
         self,
         recipient: str,
@@ -74,6 +86,9 @@ class SmtpResetMailer:
             subtype="html",
         )
 
+        self._send_message(message)
+
+    def _send_message(self, message: EmailMessage) -> None:
         smtp_class = smtplib.SMTP_SSL if self.settings.smtp_ssl else smtplib.SMTP
         with smtp_class(
             self.settings.smtp_host,

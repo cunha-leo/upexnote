@@ -66,6 +66,9 @@ class Settings:
     admin_rate_window_seconds: int
     admin_rate_email_max: int
     admin_rate_ip_max: int
+    support_spool_dir: str = "/data/support-spool"
+    support_attachment_max_bytes: int = 10 * 1024 * 1024
+    support_admin_email: str = "support@upexflow.com"
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -103,6 +106,9 @@ class Settings:
             admin_rate_window_seconds=_integer("UPEXNOTE_ADMIN_RATE_WINDOW_SECONDS", 900, 60),
             admin_rate_email_max=_integer("UPEXNOTE_ADMIN_RATE_EMAIL_MAX", 3),
             admin_rate_ip_max=_integer("UPEXNOTE_ADMIN_RATE_IP_MAX", 10),
+            support_spool_dir=os.getenv("UPEXNOTE_SUPPORT_SPOOL_DIR", "/data/support-spool").strip() or "/data/support-spool",
+            support_attachment_max_bytes=_integer("UPEXNOTE_SUPPORT_ATTACHMENT_MAX_BYTES", 10 * 1024 * 1024, 1),
+            support_admin_email=os.getenv("UPEXNOTE_SUPPORT_ADMIN_EMAIL", "support@upexflow.com").strip() or "support@upexflow.com",
         )
 
 
