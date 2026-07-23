@@ -38,6 +38,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ### Decisoes de produto e UX vigentes
 
 - UI/UX e requisito arquitetural: cada novo submodulo precisa de jornada, hierarquia visual, estados, acessibilidade, responsividade e consistencia antes de ser considerado concluido.
+- O documento `docs/UX_PRODUCT_STANDARD.md` define o criterio de aceite de experiencia para modulos novos e revisoes de telas existentes.
 - A Administracao nao deve voltar a usar abas horizontais como menu principal. Submodulos vivem recolhidos/expandidos no menu lateral.
 - Tabelas operacionais devem ser legiveis sem barras horizontais expostas em resolucao desktop normal; acoes secundarias usam icones com rotulos acessiveis.
 - O Audit nao pode revelar tokens, chaves, hashes, escopos OAuth ou snapshots crus. Detalhes devem ser filtrados e apresentados semanticamente.

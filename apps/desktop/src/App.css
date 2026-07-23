@@ -285,8 +285,12 @@
   -webkit-font-smoothing: antialiased;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-color: var(--border) var(--bg); scrollbar-width: thin; }
 body { margin: 0; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--bg); }
+*::-webkit-scrollbar-thumb { background: var(--border); border: 3px solid var(--bg); border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -534,7 +538,7 @@ body { margin: 0; }
 .field.cred .row input { flex: 1; min-width: 0; }
 
 /* ---- Controlos ---- */
-input[type="text"], select {
+input[type="text"], select, textarea {
   width: 100%;
   border-radius: var(--radius-ctl);
   border: 1px solid var(--border);
@@ -544,9 +548,10 @@ input[type="text"], select {
   color: var(--text);
   background: var(--panel-2);
   outline: none;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
 }
-input[type="text"]:focus, select:focus {
+textarea { line-height: 1.5; resize: vertical; min-height: 96px; }
+input[type="text"]:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
