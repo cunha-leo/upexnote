@@ -483,6 +483,9 @@ fn oauth_start(app: AppHandle, provider: String) -> Result<(), String> {
             }
         }
         let _ = child.wait();
+        // The event bus is asynchronous: give the UI time to process the
+        // OAuth payload before emitting the terminal completion event.
+        std::thread::sleep(std::time::Duration::from_millis(250));
         // Traz a janela da app para a frente — a pessoa autenticou no browser
         // e o retorno deve "aterrar" no UpexNote sem cliques (2026-07-19).
         {
