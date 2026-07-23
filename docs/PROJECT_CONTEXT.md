@@ -256,6 +256,8 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 - **Consentimento inicial de telemetria publicado (v0.22.0 / 2026-07-23):** após o login, quem ainda não decidiu vê uma tela inicial clara e não bloqueante: pode ajudar a melhorar o UpexNote (opt-in explícito), usar somente o necessário (recusa explícita) ou abrir as configurações para personalizar. Não há caixas pré-marcadas; a decisão é persistente e revogável nas Definições. O worker distingue a primeira utilização de uma recusa, portanto não repete o pedido após escolha. Textos PT/EN/ES explicam valor prático, limites de dados e caminho para revogar. Instalador `UpexNote_0.22.0_x64-setup.exe` instalado e copiado para o Desktop.
 
+- **Sessão operacional em browser interno do Codex (2026-07-23):** para painéis e serviços externos autorizados pelo utilizador (EasyPanel, Hostinger, Google, GitHub etc.), trabalhar exclusivamente nas abas do navegador interno do Codex em que ele já abriu sessão. Não abrir/controlar navegador externo como alternativa, salvo pedido explícito. Isto mantém o escopo de acesso visível, direto e estável para o utilizador.
+
 ### Próximo trabalho (deixados em aberto)
 
 1. **MINI-API — webhooks:** definir os eventos externos reais e então implementar emissão/receção autenticada; telemetria e token de instalação já foram entregues. Nada de conteúdo de transcripts e nada de n8n dentro deste serviço.
