@@ -24,7 +24,7 @@ Administration
 
 Não usa abas horizontais como navegação principal. Dentro do workspace, abas contextuais podem alternar representações do mesmo objeto, como dados, estrutura, relações e índices.
 
-## Fundação v0.25.0, construtor v0.25.1 e fluxo simplificado v0.25.2
+## Fundação v0.25, SQL Editor v0.26 e Saved Queries v0.27
 
 A fundação v0.25.0 entregou a exploração somente leitura:
 
@@ -53,12 +53,24 @@ O construtor visual v0.25.1 acrescenta:
 
 A revisão v0.25.2 define a jornada principal como tabela → filtros → ordenação → execução → resultado inline. Campos específicos e joins são refinamentos no mesmo workspace; detalhes SQL ficam recolhidos e aliases internos não são apresentados como conceitos necessários ao utilizador.
 
-Não fazem parte da linha v0.25:
+A v0.26 acrescentou o editor PostgreSQL manual com autocomplete baseado no catálogo,
+oito temas, três estilos de formatação, fontes configuráveis, execução protegida e
+resultado inline.
 
-- SQL livre;
-- criação do schema `data_studio`;
-- consultas salvas;
-- SQL livre digitado manualmente;
+A v0.27 acrescenta:
+
+- biblioteca de consultas nomeadas, pesquisáveis e categorizadas;
+- criação e edição a partir do SQL Editor;
+- parâmetros `:nome` vinculados pelo driver, sem interpolação;
+- preview e confirmação obrigatória para mutações;
+- execução inline com limite de 500 linhas e mascaramento de campos sensíveis;
+- histórico operacional sem guardar os valores dos parâmetros;
+- arquivamento, restauração e exclusão explícita;
+- armazenamento isolado em `data_studio.saved_queries` e
+  `data_studio.saved_query_runs`.
+
+Ainda não fazem parte desta fase:
+
 - scheduler, jobs, eventos ou entregas;
 - API, Webhooks ou conectores externos.
 
@@ -71,7 +83,7 @@ UI administrativa
   → payload por stdin
   → validação da sessão administrativa na API
   → revalidação de role=admin no PostgreSQL
-  → operação somente leitura
+  → operação protegida e auditável
 ```
 
 - Credenciais permanecem no Windows Credential Manager.
@@ -80,12 +92,13 @@ UI administrativa
 - Schemas de sistema não aparecem.
 - Só aparecem objetos para os quais o utilizador PostgreSQL possui `SELECT`.
 - Colunas com nomes associados a password, token, secret, credential, salt e chaves privadas são mascaradas.
-- Nenhuma consulta ou resultado é gravado nesta fase.
+- SQL salvo fica restrito ao proprietário. Resultados e valores de parâmetros não
+  são persistidos; o histórico guarda apenas operação, sucesso, duração e contagem.
 
 ## Evolução prevista
 
-1. v0.26: SQL Editor manual com autocomplete local e execução protegida.
-2. Saved Ad Hocs e parâmetros no schema inglês isolado `data_studio`.
+1. v0.26: SQL Editor manual com autocomplete local e execução protegida — concluído.
+2. v0.27: Saved Queries e parâmetros no schema inglês isolado `data_studio` — concluído.
 3. Scheduler, jobs, eventos e entregas.
 4. APIs, Webhooks, CRM, n8n e conectores.
 

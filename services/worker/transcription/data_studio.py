@@ -10,6 +10,7 @@ from decimal import Decimal
 import hashlib
 import json
 import re
+from time import perf_counter
 from uuid import UUID
 
 from psycopg2 import sql
@@ -42,6 +43,7 @@ _SQL_FORBIDDEN = re.compile(
     r"load|call|do|execute|prepare|deallocate|reset|discard|security\s+definer)\b",
     re.IGNORECASE,
 )
+_SAVED_QUERY_NAME = re.compile(r"^[^\x00-\x1f]{2,100}$")
 
 
 def _protected(column: str) -> bool:
@@ -153,6 +155,280 @@ def _raw_sql_plan(value):
             structural_sql, re.IGNORECASE):
         raise ValueError("operation_not_allowed")
     return statement, operation, operation in _SQL_MUTATION_OPS
+
+
+def _named_parameters(statement):
+    """Return named :parameters outside strings/identifiers and PostgreSQL casts."""
+    names, index, quote = [], 0, None
+    while index < len(statement):
+        char = statement[index]
+        if quote:
+            if char == quote:
+                if index + 1 < len(statement) and statement[index + 1] == quote:
+                    index += 2; continue
+                quote = None
+            index += 1; continue
+        if char in {"'", '"'}:
+            quote = char; index += 1; continue
+        if char == ":" and (index == 0 or statement[index - 1] != ":"):
+            match = re.match(r":([a-z][a-z0-9_]{0,62})", statement[index:], re.IGNORECASE)
+            if match:
+                name = match.group(1)
+                if name not in names:
+                    names.append(name)
+                index += len(match.group(0)); continue
+        index += 1
+    return names
+
+
+def _bind_named_parameters(statement, values):
+    """Convert :name placeholders to driver parameters without string interpolation."""
+    provided = values if isinstance(values, dict) else {}
+    output, params, index, quote = [], [], 0, None
+    while index < len(statement):
+        char = statement[index]
+        if quote:
+            output.append(char)
+            if char == quote:
+                if index + 1 < len(statement) and statement[index + 1] == quote:
+                    output.append(statement[index + 1]); index += 2; continue
+                quote = None
+            index += 1; continue
+        if char in {"'", '"'}:
+            quote = char; output.append(char); index += 1; continue
+        if char == ":" and (index == 0 or statement[index - 1] != ":"):
+            match = re.match(r":([a-z][a-z0-9_]{0,62})", statement[index:], re.IGNORECASE)
+            if match:
+                name = match.group(1)
+                if name not in provided:
+                    raise ValueError(f"parameter_required:{name}")
+                output.append("%s"); params.append(provided[name])
+                index += len(match.group(0)); continue
+        output.append(char); index += 1
+    return "".join(output), params
+
+
+def _ensure_saved_query_schema(cur):
+    cur.execute("CREATE SCHEMA IF NOT EXISTS data_studio")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS data_studio.saved_queries (
+            id BIGSERIAL PRIMARY KEY,
+            owner_user_id BIGINT NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            description VARCHAR(500) NOT NULL DEFAULT '',
+            category VARCHAR(60) NOT NULL DEFAULT 'General',
+            sql_text TEXT NOT NULL,
+            operation VARCHAR(16) NOT NULL,
+            parameter_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+            archived_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_run_at TIMESTAMPTZ,
+            run_count INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS saved_queries_owner_name_active_idx
+        ON data_studio.saved_queries (owner_user_id, LOWER(name))
+        WHERE archived_at IS NULL
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS data_studio.saved_query_runs (
+            id BIGSERIAL PRIMARY KEY,
+            saved_query_id BIGINT NOT NULL REFERENCES data_studio.saved_queries(id) ON DELETE CASCADE,
+            actor_user_id BIGINT NOT NULL,
+            succeeded BOOLEAN NOT NULL,
+            operation VARCHAR(16) NOT NULL,
+            row_count INTEGER NOT NULL DEFAULT 0,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            parameter_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+            error_code VARCHAR(80),
+            executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """)
+
+
+def saved_queries(actor_id, data):
+    """Manage reusable SQL safely in the isolated data_studio schema."""
+    action = str(data.get("action") or "list").lower()
+    conn = db.connect()
+    try:
+        with conn.cursor() as cur:
+            denied = _guard(cur, actor_id)
+            if denied:
+                return denied
+            _ensure_saved_query_schema(cur)
+            # Persist the idempotent schema bootstrap even for read-only actions.
+            # Subsequent query execution still runs in its own transaction.
+            conn.commit()
+
+            if action == "list":
+                include_archived = bool(data.get("include_archived"))
+                search = str(data.get("search") or "").strip()
+                conditions = ["owner_user_id = %s"]
+                params = [actor_id]
+                if not include_archived:
+                    conditions.append("archived_at IS NULL")
+                if search:
+                    conditions.append("(name ILIKE %s OR description ILIKE %s OR category ILIKE %s)")
+                    params.extend([f"%{search}%"] * 3)
+                cur.execute(f"""
+                    SELECT id, name, description, category, sql_text, operation,
+                           parameter_names, archived_at, created_at, updated_at,
+                           last_run_at, run_count
+                      FROM data_studio.saved_queries
+                     WHERE {' AND '.join(conditions)}
+                     ORDER BY archived_at NULLS FIRST, updated_at DESC, name
+                """, params)
+                columns = [item[0] for item in cur.description]
+                return {"ok": True, "queries": [
+                    {key: _json_value(value) for key, value in zip(columns, row)}
+                    for row in cur.fetchall()
+                ]}
+
+            if action == "save":
+                query_id = data.get("id")
+                name = str(data.get("name") or "").strip()
+                description = str(data.get("description") or "").strip()
+                category = str(data.get("category") or "General").strip() or "General"
+                if not _SAVED_QUERY_NAME.fullmatch(name) or len(description) > 500 or len(category) > 60:
+                    raise ValueError("invalid_saved_query_metadata")
+                statement, operation, _mutation = _raw_sql_plan(data.get("sql"))
+                parameter_names = _named_parameters(statement)
+                if query_id:
+                    cur.execute("""
+                        UPDATE data_studio.saved_queries
+                           SET name=%s, description=%s, category=%s, sql_text=%s,
+                               operation=%s, parameter_names=%s::jsonb, updated_at=NOW()
+                         WHERE id=%s AND owner_user_id=%s
+                     RETURNING id
+                    """, (name, description, category, statement, operation,
+                          json.dumps(parameter_names), int(query_id), actor_id))
+                else:
+                    cur.execute("""
+                        INSERT INTO data_studio.saved_queries
+                            (owner_user_id, name, description, category, sql_text,
+                             operation, parameter_names)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb)
+                        RETURNING id
+                    """, (actor_id, name, description, category, statement,
+                          operation, json.dumps(parameter_names)))
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError("saved_query_not_found")
+                query_id = row[0]
+                db.audit(conn, actor_id, "data_studio_saved_query_saved",
+                         "data_studio.saved_queries", query_id, {
+                             "operation": operation, "parameter_names": parameter_names,
+                         })
+                conn.commit()
+                return {"ok": True, "id": query_id, "parameter_names": parameter_names}
+
+            query_id = int(data.get("id") or 0)
+            cur.execute("""
+                SELECT id, name, sql_text, operation, parameter_names, archived_at
+                  FROM data_studio.saved_queries
+                 WHERE id=%s AND owner_user_id=%s
+            """, (query_id, actor_id))
+            item = cur.fetchone()
+            if not item:
+                raise ValueError("saved_query_not_found")
+
+            if action in {"archive", "restore"}:
+                archived = action == "archive"
+                cur.execute("""
+                    UPDATE data_studio.saved_queries
+                       SET archived_at = CASE WHEN %s THEN NOW() ELSE NULL END, updated_at=NOW()
+                     WHERE id=%s AND owner_user_id=%s
+                """, (archived, query_id, actor_id))
+                db.audit(conn, actor_id, f"data_studio_saved_query_{action}",
+                         "data_studio.saved_queries", query_id, {})
+                conn.commit()
+                return {"ok": True}
+
+            if action == "delete":
+                cur.execute("DELETE FROM data_studio.saved_queries WHERE id=%s AND owner_user_id=%s",
+                            (query_id, actor_id))
+                db.audit(conn, actor_id, "data_studio_saved_query_deleted",
+                         "data_studio.saved_queries", query_id, {})
+                conn.commit()
+                return {"ok": True}
+
+            if action == "history":
+                cur.execute("""
+                    SELECT succeeded, operation, row_count, duration_ms,
+                           parameter_names, error_code, executed_at
+                      FROM data_studio.saved_query_runs
+                     WHERE saved_query_id=%s
+                     ORDER BY executed_at DESC LIMIT 20
+                """, (query_id,))
+                columns = [entry[0] for entry in cur.description]
+                return {"ok": True, "history": [
+                    {key: _json_value(value) for key, value in zip(columns, row)}
+                    for row in cur.fetchall()
+                ]}
+
+            if action != "run":
+                raise ValueError("invalid_saved_query_action")
+            statement, operation, mutation = _raw_sql_plan(item[2])
+            bound_sql, params = _bind_named_parameters(statement, data.get("parameters"))
+            value_digest = hashlib.sha256(json.dumps(
+                params, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
+            plan_hash = hashlib.sha256(f"{query_id}:{statement}:{value_digest}".encode()).hexdigest()
+            if not data.get("execute"):
+                return {"ok": True, "preview": True, "mutation": mutation,
+                        "operation": operation, "plan_hash": plan_hash,
+                        "parameter_names": item[4]}
+            if mutation and str(data.get("plan_hash") or "") != plan_hash:
+                return {"ok": False, "error": "confirmation_required"}
+            started = perf_counter()
+            try:
+                cur.execute("SET LOCAL statement_timeout = '15s'")
+                cur.execute(bound_sql, params)
+                duration_ms = round((perf_counter() - started) * 1000)
+                if cur.description:
+                    columns = [entry[0] for entry in cur.description]
+                    fetched = cur.fetchmany(501)
+                    rows = [{
+                        column: ("[protected]" if _protected(column) and value is not None else _json_value(value))
+                        for column, value in zip(columns, row)
+                    } for row in fetched[:500]]
+                    row_count = len(rows)
+                    result = {"ok": True, "operation": operation, "columns": columns,
+                              "rows": rows, "truncated": len(fetched) > 500}
+                else:
+                    row_count = max(0, cur.rowcount)
+                    result = {"ok": True, "operation": operation, "affected": row_count}
+                cur.execute("""
+                    INSERT INTO data_studio.saved_query_runs
+                        (saved_query_id, actor_user_id, succeeded, operation,
+                         row_count, duration_ms, parameter_names)
+                    VALUES (%s,%s,TRUE,%s,%s,%s,%s::jsonb)
+                """, (query_id, actor_id, operation, row_count, duration_ms,
+                      json.dumps(item[4] or [])))
+                cur.execute("""
+                    UPDATE data_studio.saved_queries
+                       SET last_run_at=NOW(), run_count=run_count+1
+                     WHERE id=%s
+                """, (query_id,))
+                if mutation:
+                    db.audit(conn, actor_id, f"data_studio_saved_query_{operation}",
+                             "data_studio.saved_queries", query_id, {
+                                 "affected": row_count, "parameter_names": item[4] or [],
+                             })
+                conn.commit()
+                return result
+            except Exception:
+                conn.rollback()
+                raise
+    except ValueError as exc:
+        conn.rollback()
+        return {"ok": False, "error": str(exc)}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        db.close_connection(conn)
 
 
 def sql_editor(actor_id, data):

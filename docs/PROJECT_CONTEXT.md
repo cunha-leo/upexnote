@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.26.1 - alinhamento das ações do SQL Editor)
-**Estado mais recente:** 25 de julho de 2026 (v0.26.1 - editor PostgreSQL validado com ações alinhadas)
+**Última atualização:** 25 de julho de 2026 (v0.27.0 - consultas salvas parametrizadas)
+**Estado mais recente:** 25 de julho de 2026 (v0.27.0 - Saved Queries implementado e validado)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,11 +24,11 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.26.1**. Instalador local: `UpexNote_0.26.1_x64-setup.exe`.
+- A versao desktop instalada e **v0.27.0**. Instalador local: `UpexNote_0.27.0_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
-- O Data Studio explora schemas e metadados, inclui construtor visual para SELECT, joins cruzados, condições AND/OR, INSERT, UPDATE, DELETE, CREATE TABLE e ALTER TABLE e, desde a v0.26, oferece SQL Editor PostgreSQL com autocomplete do catálogo, formatter e execução protegida.
+- O Data Studio explora schemas e metadados, inclui construtor visual para SELECT, joins cruzados, condições AND/OR, INSERT, UPDATE, DELETE, CREATE TABLE e ALTER TABLE; oferece SQL Editor PostgreSQL com autocomplete do catálogo, formatter e execução protegida; e, desde a v0.27, mantém consultas nomeadas com descrição, categoria, parâmetros seguros, histórico e arquivamento.
 - O corredor do Data Studio exige sessao MFA valida, revalida `role=admin` na base, compoe identificadores pelo driver PostgreSQL e mascara colunas associadas a passwords, tokens, secrets, hashes, digests, TOTP e credenciais.
 - O suporte possui back-end funcional isolado no schema PostgreSQL ingles `support`, com identidades, tickets, descricoes, comentarios, anexos, historico de status, atribuicoes, notificacoes e auditoria.
 - Respostas administrativas de suporte usam a identidade oficial `@upexnote`; o solicitante conserva sua identidade de utilizador.
@@ -52,7 +52,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 
 1. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
 2. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
-3. Implementar Saved Ad Hocs com parametros, execucao, edicao e arquivamento.
+3. Evoluir Saved Queries para scheduler, jobs, eventos e entregas configuráveis.
 4. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
 5. Retomar Integracoes/Webhooks depois dos contratos concretos de consultas, eventos e automacoes.
 
@@ -426,6 +426,19 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (m): consultas salvas parametrizadas — v0.27.0
+
+- O terceiro workspace contextual do Data Studio passa a chamar-se `Saved Queries`, evitando o jargão `Ad Hoc` na interface principal.
+- Consultas possuem nome, categoria, descrição, SQL editável, arquivamento, restauração, exclusão explícita e pesquisa.
+- Parâmetros usam a notação `:nome`; o worker converte-os em parâmetros do driver PostgreSQL sem interpolar valores no SQL.
+- Mutações mantêm preview e confirmação por hash ligado à consulta e aos valores atuais. `UPDATE` e `DELETE` sem condição continuam bloqueados.
+- O schema inglês isolado `data_studio` contém `saved_queries` e `saved_query_runs`; valores e resultados não são persistidos no histórico.
+- O histórico guarda somente sucesso, operação, duração, contagem e nomes dos parâmetros. SQL e valores não entram no Audit.
+- A interface foi projetada como biblioteca + editor, com resultado inline, cópia tabular, painel de schemas recolhível e adaptação para larguras menores.
+- Validação concluída: 13 testes do worker, TypeScript/Vite (1928 módulos), testes Rust, auditoria npm sem vulnerabilidades, PyInstaller e Tauri/NSIS aprovados.
+- Instalação silenciosa e teste real aprovados: consulta `SELECT` nomeada com parâmetro `:minimum_id` foi salva, executada com binding seguro, retornou quatro linhas inline e registrou duração/histórico sem guardar o valor.
+- Instalador final `UpexNote_0.27.0_x64-setup.exe`: 57.706.833 bytes; SHA-256 `84D412B4C3507DE135CAEBC2758CF8C6157EEF6F84D61E54CEBB14C0A991D2A7`.
 
 ### Registro — 2026-07-25 (l): alinhamento das ações do SQL Editor — v0.26.1
 

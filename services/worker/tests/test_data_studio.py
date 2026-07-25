@@ -89,6 +89,28 @@ class DataStudioSafetyTests(unittest.TestCase):
             with self.subTest(query=query), self.assertRaises(ValueError):
                 data_studio._raw_sql_plan(query)
 
+    def test_saved_query_parameters_ignore_casts_and_quoted_text(self):
+        query = (
+            "SELECT ':literal' AS sample, id FROM public.tasks "
+            "WHERE created_at >= :start_date::date AND owner_id = :owner_id "
+            "OR reviewer_id = :owner_id"
+        )
+        self.assertEqual(
+            data_studio._named_parameters(query),
+            ["start_date", "owner_id"],
+        )
+
+    def test_saved_query_parameters_are_bound_without_interpolation(self):
+        query = "SELECT * FROM public.tasks WHERE owner_id=:owner AND status=:status OR assignee_id=:owner"
+        bound, values = data_studio._bind_named_parameters(
+            query, {"owner": "7", "status": "open"},
+        )
+        self.assertEqual(bound.count("%s"), 3)
+        self.assertNotIn("open", bound)
+        self.assertEqual(values, ["7", "open", "7"])
+        with self.assertRaisesRegex(ValueError, "parameter_required:status"):
+            data_studio._bind_named_parameters(query, {"owner": "7"})
+
 
 if __name__ == "__main__":
     unittest.main()

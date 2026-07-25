@@ -17,6 +17,7 @@ import {
   Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight, Pencil, Archive, Trash2,
   Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw, UserRound,
   Database, Table2, Columns3, KeyRound, LockKeyhole, Filter, ChevronsLeft, ChevronsRight, Plus, Play, Code2,
+  Save, FolderOpen, ArchiveRestore, Clock3, Copy,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
@@ -2225,6 +2226,15 @@ type DsField = { source: number; column: string };
 type DsDdlColumn = { name: string; type: string; nullable: boolean; primary: boolean };
 type SqlThemeId = "midnight" | "postgres" | "dbeaver" | "dracula" | "solarized" | "github" | "paper" | "contrast";
 type SqlFormatStyle = "standard" | "compact" | "expanded";
+type SavedQuery = {
+  id: number; name: string; description: string; category: string; sql_text: string;
+  operation: string; parameter_names: string[]; archived_at?: string | null;
+  created_at: string; updated_at: string; last_run_at?: string | null; run_count: number;
+};
+type SavedQueryHistory = {
+  succeeded: boolean; operation: string; row_count: number; duration_ms: number;
+  parameter_names: string[]; error_code?: string | null; executed_at: string;
+};
 
 const SQL_THEME_PALETTES: Record<SqlThemeId, {
   label: string; dark: boolean; bg: string; gutter: string; text: string; caret: string;
@@ -2301,7 +2311,7 @@ function DataStudioWorkspace() {
   const [newName, setNewName] = useState("");
   const [plan, setPlan] = useState<{ sql: string; plan_hash: string; mutation: boolean } | null>(null);
   const [builderResult, setBuilderResult] = useState<{ columns: string[]; rows: Record<string, unknown>[]; affected?: number } | null>(null);
-  const [studioMode, setStudioMode] = useState<"visual" | "sql">("visual");
+  const [studioMode, setStudioMode] = useState<"visual" | "sql" | "saved">("visual");
   const [sqlText, setSqlText] = useState("SELECT *\nFROM public.engines\nORDER BY id ASC;");
   const [sqlTheme, setSqlTheme] = useState<SqlThemeId>("midnight");
   const [sqlFont, setSqlFont] = useState("Cascadia Code");
@@ -2311,8 +2321,17 @@ function DataStudioWorkspace() {
   const [showSqlSettings, setShowSqlSettings] = useState(false);
   const [sqlPlan, setSqlPlan] = useState<{ sql: string; plan_hash: string; mutation: boolean; operation: string } | null>(null);
   const [sqlResult, setSqlResult] = useState<{ columns: string[]; rows: Record<string, unknown>[]; affected?: number; truncated?: boolean } | null>(null);
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
+  const [savedSearch, setSavedSearch] = useState("");
+  const [includeArchivedQueries, setIncludeArchivedQueries] = useState(false);
+  const [selectedSavedId, setSelectedSavedId] = useState<number | null>(null);
+  const [savedDraft, setSavedDraft] = useState({ name: "", description: "", category: "General", sql: "" });
+  const [savedParameters, setSavedParameters] = useState<Record<string, string>>({});
+  const [savedPlan, setSavedPlan] = useState<{ plan_hash: string; mutation: boolean; operation: string } | null>(null);
+  const [savedResult, setSavedResult] = useState<{ columns: string[]; rows: Record<string, unknown>[]; affected?: number; truncated?: boolean } | null>(null);
+  const [savedHistory, setSavedHistory] = useState<SavedQueryHistory[]>([]);
 
-  async function call(op: "data-catalog" | "data-table" | "data-query" | "data-sql", payload: Record<string, unknown> = {}) {
+  async function call(op: "data-catalog" | "data-table" | "data-query" | "data-sql" | "data-saved-queries", payload: Record<string, unknown> = {}) {
     const raw = await invoke<string>("admin", {
       op, mode: sess?.mode ?? null,
       payload: JSON.stringify({
@@ -2392,7 +2411,7 @@ function DataStudioWorkspace() {
   }
 
   function handleExplorerObject(schema: string, object: DataStudioObject) {
-    if (studioMode === "sql") {
+    if (studioMode !== "visual") {
       const key = `${schema}.${object.object_name}`;
       setExpandedObjects((current) => current.includes(key)
         ? current.filter((item) => item !== key) : [...current, key]);
@@ -2478,6 +2497,88 @@ function DataStudioWorkspace() {
     } catch (error) { setErr(String(error)); } finally { setBusy(false); }
   }
 
+  async function loadSavedQueries() {
+    setBusy(true); setErr("");
+    try {
+      const result = await call("data-saved-queries", {
+        action: "list", search: savedSearch, include_archived: includeArchivedQueries,
+      });
+      if (!result.ok) setErr(result.error || t("dsSavedLoadError"));
+      else setSavedQueries(result.queries || []);
+    } catch (error) { setErr(String(error)); } finally { setBusy(false); }
+  }
+
+  function newSavedQuery(sql = "") {
+    setSelectedSavedId(null);
+    setSavedDraft({ name: "", description: "", category: "General", sql: sql || "SELECT *\nFROM public.engines\nORDER BY id ASC;" });
+    setSavedParameters({}); setSavedPlan(null); setSavedResult(null); setSavedHistory([]);
+  }
+
+  function openSavedQuery(item: SavedQuery) {
+    setSelectedSavedId(item.id);
+    setSavedDraft({ name: item.name, description: item.description, category: item.category, sql: item.sql_text });
+    setSavedParameters(Object.fromEntries((item.parameter_names || []).map((name) => [name, ""])));
+    setSavedPlan(null); setSavedResult(null);
+    void loadSavedHistory(item.id);
+  }
+
+  async function saveSavedQuery() {
+    setBusy(true); setErr("");
+    try {
+      const result = await call("data-saved-queries", {
+        action: "save", id: selectedSavedId, name: savedDraft.name,
+        description: savedDraft.description, category: savedDraft.category, sql: savedDraft.sql,
+      });
+      if (!result.ok) setErr(result.error || t("dsSavedSaveError"));
+      else {
+        setSelectedSavedId(result.id);
+        setSavedParameters(Object.fromEntries((result.parameter_names || []).map((name: string) => [name, savedParameters[name] || ""])));
+        await loadSavedQueries();
+      }
+    } catch (error) { setErr(String(error)); } finally { setBusy(false); }
+  }
+
+  async function loadSavedHistory(id: number) {
+    try {
+      const result = await call("data-saved-queries", { action: "history", id });
+      if (result.ok) setSavedHistory(result.history || []);
+    } catch { setSavedHistory([]); }
+  }
+
+  async function runSavedQuery(confirm = false) {
+    if (!selectedSavedId) return;
+    setBusy(true); setErr(""); setSavedResult(null);
+    try {
+      const payload: Record<string, unknown> = { action: "run", id: selectedSavedId, parameters: savedParameters };
+      if (confirm && savedPlan) { payload.execute = true; payload.plan_hash = savedPlan.plan_hash; }
+      const preview = await call("data-saved-queries", payload);
+      if (!preview.ok) setErr(preview.error || t("dsSavedRunError"));
+      else if (preview.mutation && !confirm) setSavedPlan(preview);
+      else if (!confirm) {
+        const result = await call("data-saved-queries", { ...payload, execute: true });
+        if (!result.ok) setErr(result.error || t("dsSavedRunError"));
+        else {
+          setSavedResult({ columns: result.columns || [], rows: result.rows || [], affected: result.affected, truncated: result.truncated });
+          await loadSavedHistory(selectedSavedId); await loadSavedQueries();
+        }
+      } else {
+        setSavedResult({ columns: preview.columns || [], rows: preview.rows || [], affected: preview.affected, truncated: preview.truncated });
+        setSavedPlan(null); await loadSavedHistory(selectedSavedId); await loadSavedQueries();
+      }
+    } catch (error) { setErr(String(error)); } finally { setBusy(false); }
+  }
+
+  async function archiveSavedQuery(action: "archive" | "restore" | "delete") {
+    if (!selectedSavedId) return;
+    if (action === "delete" && !window.confirm(t("dsDeleteSavedConfirm"))) return;
+    setBusy(true); setErr("");
+    try {
+      const result = await call("data-saved-queries", { action, id: selectedSavedId });
+      if (!result.ok) setErr(result.error || t("dsSavedSaveError"));
+      else { newSavedQuery(); await loadSavedQueries(); }
+    } catch (error) { setErr(String(error)); } finally { setBusy(false); }
+  }
+
   function applySqlFormat() {
     try {
       const preset = {
@@ -2497,6 +2598,9 @@ function DataStudioWorkspace() {
   }
 
   useEffect(() => { void loadCatalog(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (studioMode === "saved") void loadSavedQueries();
+  }, [studioMode, includeArchivedQueries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredSchemas = useMemo(() => {
     const query = catalogSearch.trim().toLowerCase();
@@ -2519,6 +2623,13 @@ function DataStudioWorkspace() {
     upperCaseKeywords: sqlKeywordCase === "upper",
   })], [sqlSchema, sqlKeywordCase]);
   const sqlThemeExtension = useMemo(() => makeSqlTheme(sqlTheme), [sqlTheme]);
+  const currentSavedQuery = savedQueries.find((item) => item.id === selectedSavedId) || null;
+  const savedParameterNames = useMemo(() => {
+    const names: string[] = [];
+    const pattern = /(^|[^:]):([a-z][a-z0-9_]{0,62})/gi;
+    for (const match of savedDraft.sql.matchAll(pattern)) if (!names.includes(match[2])) names.push(match[2]);
+    return names;
+  }, [savedDraft.sql]);
 
   return <section className="card admin-workspace data-studio">
     <header className="workspace-head">
@@ -2540,6 +2651,13 @@ function DataStudioWorkspace() {
       </button>
       <button className={studioMode === "sql" ? "active" : ""} onClick={() => setStudioMode("sql")}>
         <Code2 size={15} />{t("dsSqlEditor")}
+      </button>
+      <button className={studioMode === "saved" ? "active" : ""} onClick={() => {
+        setStudioMode("saved");
+        setExplorerCollapsed(true);
+        if (!selectedSavedId && !savedDraft.sql) newSavedQuery(sqlText);
+      }}>
+        <FolderOpen size={15} />{t("dsSavedQueries")}
       </button>
     </div>
     {err && <div className="key-warn">{err}</div>}
@@ -2566,14 +2684,14 @@ function DataStudioWorkspace() {
               </button>
               {isOpen && <div className="ds-objects">{schema.objects.map((object) => {
                 const objectKey = `${schema.name}.${object.object_name}`;
-                const objectOpen = studioMode === "sql" && expandedObjects.includes(objectKey);
+                const objectOpen = studioMode !== "visual" && expandedObjects.includes(objectKey);
                 const visibleColumns = object.columns.filter((column) => !column.protected);
                 return <div className="ds-object-node" key={object.object_name}>
                   <button
                     className={selection?.schema === schema.name && selection.object.object_name === object.object_name ? "active" : ""}
                     onClick={() => handleExplorerObject(schema.name, object)}
-                    aria-expanded={studioMode === "sql" ? objectOpen : undefined}>
-                    {studioMode === "sql" && (objectOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}
+                    aria-expanded={studioMode !== "visual" ? objectOpen : undefined}>
+                    {studioMode !== "visual" && (objectOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}
                     <Table2 size={14} /><span>{object.object_name}</span>
                     <small>{object.object_type === "view" ? "view" : object.estimated_rows.toLocaleString()}</small>
                   </button>
@@ -2591,7 +2709,85 @@ function DataStudioWorkspace() {
         </div>
       </aside>
       <div className="ds-workspace">
-        {studioMode === "sql" ? <div className="ds-sql-editor">
+        {studioMode === "saved" ? <div className="ds-saved-workspace">
+          <aside className="ds-saved-list">
+            <header><div><span className="eyebrow">DATA STUDIO</span><h3>{t("dsSavedQueries")}</h3></div>
+              <button className="icon-action" onClick={() => newSavedQuery()} title={t("dsNewSavedQuery")}><Plus size={16} /></button>
+            </header>
+            <label className="queue-search"><Search size={14} /><input value={savedSearch}
+              onChange={(event) => setSavedSearch(event.currentTarget.value)}
+              onKeyDown={(event) => { if (event.key === "Enter") void loadSavedQueries(); }}
+              placeholder={t("dsSearchSaved")} /></label>
+            <label className="ds-saved-archived"><input type="checkbox" checked={includeArchivedQueries}
+              onChange={(event) => setIncludeArchivedQueries(event.currentTarget.checked)} />{t("dsShowArchived")}</label>
+            <div className="ds-saved-items">
+              {savedQueries.map((item) => <button key={item.id} className={selectedSavedId === item.id ? "active" : ""}
+                onClick={() => openSavedQuery(item)}>
+                <span><strong>{item.name}</strong><small>{item.category} · {item.operation.toUpperCase()}</small></span>
+                <span>{item.archived_at && <ArchiveRestore size={13} />}<small>{item.run_count}</small></span>
+              </button>)}
+              {!savedQueries.length && !busy && <div className="ds-saved-empty"><FolderOpen size={24} /><p>{t("dsNoSavedQueries")}</p></div>}
+            </div>
+          </aside>
+          <section className="ds-saved-detail">
+            <header className="ds-saved-detail-head">
+              <div><span className="eyebrow">{selectedSavedId ? t("dsSavedQuery") : t("dsNewSavedQuery")}</span>
+                <h3>{savedDraft.name || t("dsUntitledQuery")}</h3></div>
+              <div>
+                <button className="secondary" onClick={() => newSavedQuery()}><Plus size={15} />{t("dsNew")}</button>
+                <button onClick={saveSavedQuery} disabled={busy || !savedDraft.name.trim() || !savedDraft.sql.trim()}><Save size={15} />{t("dsSave")}</button>
+              </div>
+            </header>
+            <div className="ds-saved-meta">
+              <label><span>{t("dsQueryName")}</span><input maxLength={100} value={savedDraft.name}
+                onChange={(event) => setSavedDraft({ ...savedDraft, name: event.currentTarget.value })} placeholder={t("dsQueryNamePlaceholder")} /></label>
+              <label><span>{t("dsCategory")}</span><input maxLength={60} value={savedDraft.category}
+                onChange={(event) => setSavedDraft({ ...savedDraft, category: event.currentTarget.value })} /></label>
+              <label className="wide"><span>{t("dsDescription")}</span><input maxLength={500} value={savedDraft.description}
+                onChange={(event) => setSavedDraft({ ...savedDraft, description: event.currentTarget.value })} placeholder={t("dsDescriptionPlaceholder")} /></label>
+            </div>
+            <div className="ds-saved-code">
+              <CodeMirror value={savedDraft.sql} height="100%" theme={sqlThemeExtension} extensions={sqlExtensions}
+                onChange={(value) => { setSavedDraft({ ...savedDraft, sql: value }); setSavedPlan(null); setSavedResult(null); }}
+                basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true, bracketMatching: true, autocompletion: true, closeBrackets: true }} />
+            </div>
+            {!!(currentSavedQuery?.parameter_names || savedParameterNames).length && <section className="ds-saved-parameters">
+              <header><div><strong>{t("dsParameters")}</strong><span>{t("dsParametersHelp")}</span></div>
+                <span className="status-pill">{(currentSavedQuery?.parameter_names || savedParameterNames).length}</span></header>
+              <div>{(currentSavedQuery?.parameter_names || savedParameterNames).map((name) => <label key={name}>
+                <span>:{name}</span><input value={savedParameters[name] || ""} onChange={(event) =>
+                  setSavedParameters({ ...savedParameters, [name]: event.currentTarget.value })} placeholder={t("dsParameterValue")} />
+              </label>)}</div>
+            </section>}
+            <footer className="ds-saved-actions">
+              <div>
+                {selectedSavedId && <button className="secondary" onClick={() => void archiveSavedQuery(currentSavedQuery?.archived_at ? "restore" : "archive")}>
+                  <ArchiveRestore size={15} />{currentSavedQuery?.archived_at ? t("dsRestore") : t("dsArchive")}</button>}
+                {selectedSavedId && <button className="icon-action danger" onClick={() => void archiveSavedQuery("delete")} title={t("dsDelete")}><Trash2 size={15} /></button>}
+              </div>
+              <button onClick={() => void runSavedQuery()} disabled={busy || !selectedSavedId ||
+                (currentSavedQuery?.parameter_names || []).some((name) => savedParameters[name] === undefined)}>
+                {busy ? <span className="spinner" /> : <Play size={15} />}{t("dsRunSavedQuery")}</button>
+              {savedPlan?.mutation && <button className="danger-button" onClick={() => void runSavedQuery(true)}>
+                <Play size={15} />{t("dsConfirmExecute")}</button>}
+            </footer>
+            {savedResult && <div className="ds-builder-result ds-sql-result">
+              <header className="ds-result-head"><div><strong>{t("dsQueryResult")}</strong><span>{savedResult.rows.length} {t("dsRows")}</span></div>
+                <button className="secondary" onClick={() => navigator.clipboard.writeText([
+                  savedResult.columns.join("\t"),
+                  ...savedResult.rows.map((row) => savedResult.columns.map((column) => String(row[column] ?? "")).join("\t")),
+                ].join("\n"))}><Copy size={14} />{t("dsCopyResult")}</button></header>
+              {savedResult.affected !== undefined && <div className="notice">{t("dsAffected", { n: savedResult.affected })}</div>}
+              {!!savedResult.columns.length && <div className="ds-data-scroll"><table className="ds-data-table"><thead><tr>{savedResult.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+                <tbody>{savedResult.rows.map((row, index) => <tr key={index}>{savedResult.columns.map((column) => <td key={column}>{row[column] === null ? <i>NULL</i> : typeof row[column] === "object" ? JSON.stringify(row[column]) : String(row[column])}</td>)}</tr>)}</tbody></table></div>}
+            </div>}
+            {!!savedHistory.length && <section className="ds-saved-history"><header><Clock3 size={15} /><strong>{t("dsRecentRuns")}</strong></header>
+              <div>{savedHistory.slice(0, 5).map((run, index) => <article key={`${run.executed_at}-${index}`}>
+                <span className={run.succeeded ? "ok" : "error"}>{run.succeeded ? t("dsSucceeded") : t("dsFailed")}</span>
+                <strong>{run.operation.toUpperCase()}</strong><span>{run.row_count} {t("dsRows")}</span><span>{run.duration_ms} ms</span><time>{new Date(run.executed_at).toLocaleString()}</time>
+              </article>)}</div></section>}
+          </section>
+        </div> : studioMode === "sql" ? <div className="ds-sql-editor">
           <header className="ds-sql-head">
             <div><span className="eyebrow">POSTGRESQL</span><h3>{t("dsSqlEditor")}</h3><p>{t("dsSqlLead")}</p></div>
             <div className="ds-sql-status"><span className="status-pill">{t("dsAutocomplete")}</span><span className="status-pill">{t("dsSingleStatement")}</span></div>
@@ -2599,6 +2795,9 @@ function DataStudioWorkspace() {
           <div className="ds-editor-toolbar">
             <span>{SQL_THEME_PALETTES[sqlTheme].label} · {sqlFont} · {sqlFontSize}px</span>
             <div>
+              <button className="secondary" onClick={() => { newSavedQuery(sqlText); setStudioMode("saved"); setExplorerCollapsed(true); }}>
+                <Save size={15} />{t("dsSaveQuery")}
+              </button>
               <button className={`secondary${showSqlSettings ? " active" : ""}`} onClick={() => setShowSqlSettings((value) => !value)}
                 aria-expanded={showSqlSettings}><Settings size={15} />{t("dsEditorSettings")}</button>
               <button className="secondary" onClick={applySqlFormat}><Code2 size={15} />{t("dsFormatSql")}</button>
