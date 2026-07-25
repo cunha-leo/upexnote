@@ -21,7 +21,7 @@ O produto atende especialmente reuniões com português de Portugal, português 
 - Telemetria estritamente opcional, anónima e limitada a campos operacionais aprovados.
 - Suporte com casos, conversas, estados, atribuição e evidências sem armazenar binários no banco.
 - Perfil completo no rodapé com identidade, papel, informações da conta e preparação para avatar futuro.
-- Data Studio com catálogo por schema e construtor visual para consultas, joins cruzados, filtros e operações protegidas de dados e estrutura.
+- Data Studio com catálogo por schema, construtor visual, SQL Editor, Saved Queries e diagramas ER por schema, tabela ou consulta.
 
 ## Princípios de produto
 
@@ -45,12 +45,11 @@ A pessoa precisa compreender onde está, o que pode fazer, o resultado da ação
 
 ## Próximas frentes aprovadas, ainda não implementadas
 
-1. SQL Editor manual com autocomplete local e execução protegida no Data Studio, reservado à v0.26.
-2. Saved Ad Hocs com parâmetros e execução recorrente manual.
-4. Contexto estruturado: resumo, decisões, ações, riscos e perguntas, sempre derivado e identificado.
-5. Material de estudo: explicações, fluxos, tabelas, quiz e exportações.
-6. Chat ancorado no material, sem transformar inferências em fatos do transcript.
-7. Evolução operacional do suporte: filtros, SLA, prioridade, notificações e arquivo de evidências na infraestrutura prevista.
-8. Integrações/Webhooks após contratos concretos de consultas, eventos e automações.
+1. Scheduler, jobs, eventos e entregas para Saved Queries.
+2. Contexto estruturado: resumo, decisões, ações, riscos e perguntas, sempre derivado e identificado.
+3. Material de estudo: explicações, fluxos, tabelas, quiz e exportações.
+4. Chat ancorado no material, sem transformar inferências em fatos do transcript.
+5. Evolução operacional do suporte: filtros, SLA, prioridade, notificações e arquivo de evidências na infraestrutura prevista.
+6. Integrações/Webhooks após contratos concretos de consultas, eventos e automações.
 
 Captura ao vivo por microfone e loopback WASAPI, reprodução/síntese de voz e tradução contextual permanecem fases posteriores.

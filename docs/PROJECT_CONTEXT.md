@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.27.0 - consultas salvas parametrizadas)
-**Estado mais recente:** 25 de julho de 2026 (v0.27.0 - Saved Queries implementado e validado)
+**Última atualização:** 25 de julho de 2026 (v0.28.0 - diagramas ER)
+**Estado mais recente:** 25 de julho de 2026 (v0.28.0 - ER Diagram implementado)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,11 +24,11 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.27.0**. Instalador local: `UpexNote_0.27.0_x64-setup.exe`.
+- A versão desktop instalada é **v0.28.0**. Instalador local: `UpexNote_0.28.0_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
-- O Data Studio explora schemas e metadados, inclui construtor visual para SELECT, joins cruzados, condições AND/OR, INSERT, UPDATE, DELETE, CREATE TABLE e ALTER TABLE; oferece SQL Editor PostgreSQL com autocomplete do catálogo, formatter e execução protegida; e, desde a v0.27, mantém consultas nomeadas com descrição, categoria, parâmetros seguros, histórico e arquivamento.
+- O Data Studio explora schemas e metadados, inclui construtor visual para SELECT, joins cruzados, condições AND/OR, INSERT, UPDATE, DELETE, CREATE TABLE e ALTER TABLE; oferece SQL Editor PostgreSQL com autocomplete do catálogo, formatter e execução protegida; mantém consultas nomeadas com parâmetros seguros e histórico; e, desde a v0.28, gera diagramas ER por schema, tabela ou SQL atual/salvo.
 - O corredor do Data Studio exige sessao MFA valida, revalida `role=admin` na base, compoe identificadores pelo driver PostgreSQL e mascara colunas associadas a passwords, tokens, secrets, hashes, digests, TOTP e credenciais.
 - O suporte possui back-end funcional isolado no schema PostgreSQL ingles `support`, com identidades, tickets, descricoes, comentarios, anexos, historico de status, atribuicoes, notificacoes e auditoria.
 - Respostas administrativas de suporte usam a identidade oficial `@upexnote`; o solicitante conserva sua identidade de utilizador.
@@ -426,6 +426,18 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (n): diagramas ER — v0.28.0
+
+- O quarto workspace contextual do Data Studio chama-se `ER Diagram` e reutiliza o catálogo protegido já carregado, sem consultar linhas nem expor colunas sensíveis.
+- O diagrama pode representar um schema completo, uma tabela com suas relações diretas de entrada/saída ou as tabelas citadas por `FROM` e `JOIN` no SQL Editor e em Saved Queries.
+- Relações do catálogo exibem foreign keys reais; condições de igualdade escritas em `JOIN ... ON` também aparecem como relações da consulta, mesmo quando não existe constraint física.
+- Cada nó mostra schema, tabela/view, colunas, tipos e marcadores PK, FK e NN. Busca, minimapa, zoom, ajuste à tela, orientação horizontal/vertical, ocultação de colunas e exportação PNG completam a inspeção.
+- O layout automático usa Dagre e a superfície interativa usa React Flow. A implementação segue o padrão observado em DBeaver, DataGrip, pgAdmin e MySQL Workbench, mantendo edição estrutural fora desta versão.
+- O V28 é somente visual: nenhuma constraint, tabela ou coluna pode ser alterada pelo diagrama. Uma evolução futura de modelagem deverá gerar SQL revisável antes de qualquer mudança física.
+- Validação concluída: 13 testes do worker, TypeScript/Vite (2.101 módulos), testes Rust e build Tauri/NSIS aprovados.
+- Teste na aplicação instalada aprovou os três caminhos: schema `public` com 18 tabelas/11 relações, tabela focal `data_studio.saved_queries` com sua relação direta e SQL atual com `LEFT JOIN` exibindo duas tabelas/uma relação, sem executar a consulta.
+- Instalador final `UpexNote_0.28.0_x64-setup.exe`: 57.776.106 bytes; SHA-256 `AB3CE3313F32969D2E93F7361DFE6F19C63953C959A87BED1465CC4A4D549728`.
 
 ### Registro — 2026-07-25 (m): consultas salvas parametrizadas — v0.27.0
 

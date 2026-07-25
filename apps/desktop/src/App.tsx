@@ -17,9 +17,10 @@ import {
   Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight, Pencil, Archive, Trash2,
   Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw, UserRound,
   Database, Table2, Columns3, KeyRound, LockKeyhole, Filter, ChevronsLeft, ChevronsRight, Plus, Play, Code2,
-  Save, FolderOpen, ArchiveRestore, Clock3, Copy,
+  Save, FolderOpen, ArchiveRestore, Clock3, Copy, Network,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
+import ErDiagram, { type ErScope } from "./ErDiagram";
 import FONTS from "./fonts.json";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./App.css";
@@ -2311,7 +2312,8 @@ function DataStudioWorkspace() {
   const [newName, setNewName] = useState("");
   const [plan, setPlan] = useState<{ sql: string; plan_hash: string; mutation: boolean } | null>(null);
   const [builderResult, setBuilderResult] = useState<{ columns: string[]; rows: Record<string, unknown>[]; affected?: number } | null>(null);
-  const [studioMode, setStudioMode] = useState<"visual" | "sql" | "saved">("visual");
+  const [studioMode, setStudioMode] = useState<"visual" | "sql" | "saved" | "diagram">("visual");
+  const [diagramScope, setDiagramScope] = useState<ErScope>({ kind: "schema", schema: "public" });
   const [sqlText, setSqlText] = useState("SELECT *\nFROM public.engines\nORDER BY id ASC;");
   const [sqlTheme, setSqlTheme] = useState<SqlThemeId>("midnight");
   const [sqlFont, setSqlFont] = useState("Cascadia Code");
@@ -2411,6 +2413,10 @@ function DataStudioWorkspace() {
   }
 
   function handleExplorerObject(schema: string, object: DataStudioObject) {
+    if (studioMode === "diagram") {
+      setDiagramScope({ kind: "table", schema, table: object.object_name });
+      return;
+    }
     if (studioMode !== "visual") {
       const key = `${schema}.${object.object_name}`;
       setExpandedObjects((current) => current.includes(key)
@@ -2659,6 +2665,12 @@ function DataStudioWorkspace() {
       }}>
         <FolderOpen size={15} />{t("dsSavedQueries")}
       </button>
+      <button className={studioMode === "diagram" ? "active" : ""} onClick={() => {
+        setStudioMode("diagram"); setExplorerCollapsed(true);
+        if (selection) setDiagramScope({ kind: "table", schema: selection.schema, table: selection.object.object_name });
+      }}>
+        <Network size={15} />{t("dsErDiagram")}
+      </button>
     </div>
     {err && <div className="key-warn">{err}</div>}
     <div className={`ds-layout${explorerCollapsed ? " explorer-collapsed" : ""}${resultExpanded ? " result-expanded" : ""}`}>
@@ -2709,7 +2721,47 @@ function DataStudioWorkspace() {
         </div>
       </aside>
       <div className="ds-workspace">
-        {studioMode === "saved" ? <div className="ds-saved-workspace">
+        {studioMode === "diagram" ? <div className="ds-er-workspace">
+          <header className="ds-er-head">
+            <div><span className="eyebrow">DATA STUDIO</span><h3>{t("dsErDiagram")}</h3>
+              <p>{t("dsErLead")}</p></div>
+            <div className="ds-er-scope">
+              <label><span>{t("dsDiagramScope")}</span><select value={diagramScope.kind}
+                onChange={(event) => {
+                  const kind = event.currentTarget.value;
+                  if (kind === "schema") setDiagramScope({ kind: "schema", schema: schemas[0]?.name || "public" });
+                  else if (kind === "table") {
+                    const first = schemas[0]?.objects[0];
+                    if (first) setDiagramScope({ kind: "table", schema: schemas[0].name, table: first.object_name });
+                  } else if (currentSavedQuery) setDiagramScope({ kind: "query", label: currentSavedQuery.name, sql: currentSavedQuery.sql_text });
+                }}>
+                <option value="schema">{t("dsDiagramSchema")}</option>
+                <option value="table">{t("dsDiagramTable")}</option>
+                <option value="query" disabled={!currentSavedQuery}>{t("dsDiagramQuery")}</option>
+              </select></label>
+              {diagramScope.kind === "schema" && <label><span>{t("dsSchema")}</span><select value={diagramScope.schema}
+                onChange={(event) => setDiagramScope({ kind: "schema", schema: event.currentTarget.value })}>
+                {schemas.map((schema) => <option key={schema.name}>{schema.name}</option>)}</select></label>}
+              {diagramScope.kind === "table" && <label><span>{t("dsTable")}</span><select
+                value={`${diagramScope.schema}.${diagramScope.table}`}
+                onChange={(event) => {
+                  const [schema, ...parts] = event.currentTarget.value.split(".");
+                  setDiagramScope({ kind: "table", schema, table: parts.join(".") });
+                }}>
+                {schemas.flatMap((schema) => schema.objects.map((object) =>
+                  <option key={`${schema.name}.${object.object_name}`} value={`${schema.name}.${object.object_name}`}>{schema.name}.{object.object_name}</option>
+                ))}</select></label>}
+              {diagramScope.kind === "query" && <span className="status-pill">{diagramScope.label}</span>}
+            </div>
+          </header>
+          <ErDiagram schemas={schemas} scope={diagramScope} labels={{
+            findTable: t("dsFindTable"), columns: t("dsColumns"), horizontal: t("dsHorizontal"),
+            vertical: t("dsVertical"), fit: t("dsFitDiagram"), noTables: t("dsNoDiagramTables"),
+            noTablesHelp: t("dsNoDiagramTablesHelp"), tables: t("dsTables"), relations: t("dsRelations"),
+            table: t("dsTable"), view: t("dsView"), primaryKey: t("dsPrimaryKey"),
+            foreignKey: t("dsForeignKey"), notNull: t("dsNotNull"),
+          }} />
+        </div> : studioMode === "saved" ? <div className="ds-saved-workspace">
           <aside className="ds-saved-list">
             <header><div><span className="eyebrow">DATA STUDIO</span><h3>{t("dsSavedQueries")}</h3></div>
               <button className="icon-action" onClick={() => newSavedQuery()} title={t("dsNewSavedQuery")}><Plus size={16} /></button>
@@ -2761,6 +2813,10 @@ function DataStudioWorkspace() {
             </section>}
             <footer className="ds-saved-actions">
               <div>
+                {selectedSavedId && <button className="secondary" onClick={() => {
+                  setDiagramScope({ kind: "query", label: savedDraft.name, sql: savedDraft.sql });
+                  setStudioMode("diagram"); setExplorerCollapsed(true);
+                }}><Network size={15} />{t("dsViewDiagram")}</button>}
                 {selectedSavedId && <button className="secondary" onClick={() => void archiveSavedQuery(currentSavedQuery?.archived_at ? "restore" : "archive")}>
                   <ArchiveRestore size={15} />{currentSavedQuery?.archived_at ? t("dsRestore") : t("dsArchive")}</button>}
                 {selectedSavedId && <button className="icon-action danger" onClick={() => void archiveSavedQuery("delete")} title={t("dsDelete")}><Trash2 size={15} /></button>}
@@ -2795,6 +2851,12 @@ function DataStudioWorkspace() {
           <div className="ds-editor-toolbar">
             <span>{SQL_THEME_PALETTES[sqlTheme].label} · {sqlFont} · {sqlFontSize}px</span>
             <div>
+              <button className="secondary" onClick={() => {
+                setDiagramScope({ kind: "query", label: t("dsCurrentSql"), sql: sqlText });
+                setStudioMode("diagram"); setExplorerCollapsed(true);
+              }}>
+                <Network size={15} />{t("dsViewDiagram")}
+              </button>
               <button className="secondary" onClick={() => { newSavedQuery(sqlText); setStudioMode("saved"); setExplorerCollapsed(true); }}>
                 <Save size={15} />{t("dsSaveQuery")}
               </button>

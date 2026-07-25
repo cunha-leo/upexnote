@@ -24,7 +24,7 @@ Administration
 
 Não usa abas horizontais como navegação principal. Dentro do workspace, abas contextuais podem alternar representações do mesmo objeto, como dados, estrutura, relações e índices.
 
-## Fundação v0.25, SQL Editor v0.26 e Saved Queries v0.27
+## Fundação v0.25, SQL Editor v0.26, Saved Queries v0.27 e ER Diagram v0.28
 
 A fundação v0.25.0 entregou a exploração somente leitura:
 
@@ -69,6 +69,23 @@ A v0.27 acrescenta:
 - armazenamento isolado em `data_studio.saved_queries` e
   `data_studio.saved_query_runs`.
 
+A v0.28 acrescenta:
+
+- diagrama ER interativo de um schema completo;
+- diagrama focal de uma tabela e suas relações diretas, inclusive entre schemas;
+- diagrama das tabelas citadas no SQL atual ou em uma Saved Query;
+- relações físicas por foreign key e relações lógicas extraídas de igualdade em
+  `JOIN ... ON`;
+- colunas, tipos e marcadores PK, FK e NN, respeitando a lista de campos protegidos;
+- busca, zoom, minimapa, ajuste à tela, orientação horizontal/vertical, ocultação
+  de colunas e exportação PNG;
+- layout automático local, sem IA ou envio de metadados a serviços externos.
+
+O V28 é somente de inspeção. Edição visual de tabelas ou relações não altera o
+banco e não faz parte desta fase. Se aprovada futuramente, a modelagem deverá
+produzir SQL explícito para revisão e usar o mesmo corredor protegido das demais
+mutações.
+
 Ainda não fazem parte desta fase:
 
 - scheduler, jobs, eventos ou entregas;
@@ -99,7 +116,8 @@ UI administrativa
 
 1. v0.26: SQL Editor manual com autocomplete local e execução protegida — concluído.
 2. v0.27: Saved Queries e parâmetros no schema inglês isolado `data_studio` — concluído.
-3. Scheduler, jobs, eventos e entregas.
-4. APIs, Webhooks, CRM, n8n e conectores.
+3. v0.28: diagramas ER por schema, tabela e consulta — concluído.
+4. Scheduler, jobs, eventos e entregas.
+5. APIs, Webhooks, CRM, n8n e conectores.
 
 Cada fase exige autorização e critério de aceite próprios. A visão comercial e possibilidades não aprovadas continuam em `FUTURE_PRODUCT_IDEAS.md`.
