@@ -1,6 +1,6 @@
 # Produto UpexNote
 
-> Estado alinhado à versão desktop `0.24.1`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.24.2`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
 
 ## Marca e propósito
 

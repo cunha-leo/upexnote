@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.24.1 - composição visual do perfil no rodapé corrigida)
-**Estado mais recente:** 25 de julho de 2026 (v0.24.1 - identidade legível em bloco vertical no rodapé)
+**Última atualização:** 25 de julho de 2026 (v0.24.2 - papel externo do administrador abreviado)
+**Estado mais recente:** 25 de julho de 2026 (v0.24.2 - rodapé usa `Admin`; modal preserva o papel completo)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,7 +24,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.24.1**. Instalador local: `UpexNote_0.24.1_x64-setup.exe`.
+- A versao desktop instalada e **v0.24.2**. Instalador local: `UpexNote_0.24.2_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry e Support.
@@ -423,6 +423,11 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (d): rótulo compacto de administração — v0.24.2
+
+- O rodapé usa `Admin` para reduzir ruído e ocupar menos espaço. O modal de perfil mantém `Administrator`/`Administrador`/`Administrador` conforme o idioma, preservando a informação completa.
+- Build TypeScript/Vite e bundle Tauri/NSIS aprovados. Mudança exclusivamente visual, sem impacto em dados, banco, API ou privacidade.
 
 ### Registro — 2026-07-25 (c): correção visual do perfil — v0.24.1
 

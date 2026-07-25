@@ -2086,6 +2086,7 @@ function SidebarProfile({ collapsed }: { collapsed: boolean }) {
   const initial = (displayName[0] || "?").toUpperCase();
   const username = sess.user_id ? `@${sess.user_id}` : sess.email;
   const roleLabel = sess.role === "admin" ? t("profileRoleAdmin") : t("profileRoleUser");
+  const footerRoleLabel = sess.role === "admin" ? "Admin" : roleLabel;
   const provider = sess.auth_provider === "google" ? "Google"
     : sess.auth_provider === "github" ? "GitHub"
       : t("profileProviderEmail");
@@ -2117,7 +2118,7 @@ function SidebarProfile({ collapsed }: { collapsed: boolean }) {
             <span className="sp-main">
               <span className="sp-name">{displayName}</span>
               <span className="sp-sub">{username}</span>
-              <span className="sp-role">{roleLabel}</span>
+              <span className="sp-role">{footerRoleLabel}</span>
             </span>
           )}
         </button>
