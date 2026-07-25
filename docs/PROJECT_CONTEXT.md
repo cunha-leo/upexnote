@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (documentação de arquitetura e produto alinhada ao estado v0.23.6)
-**Estado mais recente:** 23 de julho de 2026 (v0.23.6 - administracao e suporte validados visualmente para o encerramento da sessao)
+**Última atualização:** 25 de julho de 2026 (v0.24.0 - perfil completo no rodapé implementado, instalado e validado)
+**Estado mais recente:** 25 de julho de 2026 (v0.24.0 - identidade e informações da conta acessíveis pelo rodapé)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -21,11 +21,11 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 
 ---
 
-## 1.1. Estado atual - 23 de julho de 2026
+## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.23.6**. Instalador: `UpexNote_0.23.6_x64-setup.exe`.
-- O repositorio esta sincronizado no `main`; a sessao foi encerrada apos validacao visual da administracao e do suporte.
+- A versao desktop instalada e **v0.24.0**. Instalador local: `UpexNote_0.24.0_x64-setup.exe`.
+- O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry e Support.
 - O suporte possui back-end funcional isolado no schema PostgreSQL ingles `support`, com identidades, tickets, descricoes, comentarios, anexos, historico de status, atribuicoes, notificacoes e auditoria.
@@ -33,7 +33,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 - Evidencias nao ficam como BLOB no banco. O banco guarda metadados e referencias; o desenho previsto usa spool persistente na VPS e arquivamento por job/rclone no Google Drive, com manifesto do caso.
 - A interface de suporte segue o fluxo: **dashboard operacional -> caixa de entrada tabular -> caso detalhado**.
 - As versoes v0.23.2 a v0.23.6 consolidaram: navegacao administrativa lateral, Support como dashboard -> inbox -> caso, controles e campos no tema, barras de rolagem discretas, filtros de Activity por opcoes reais, tabelas administrativas responsivas e a fila de suporte com distribuicao equilibrada de ID, assunto, solicitante, data e status.
-- Build Tauri de producao e TypeScript/Vite passaram nas entregas da sessao. A v0.23.6 foi instalada e validada visualmente.
+- Build Tauri de producao, TypeScript/Vite, `cargo check`, testes do worker e testes da API passaram. A v0.24.0 foi instalada e teve versao/tela inicial validadas visualmente.
 
 ### Decisoes de produto e UX vigentes
 
@@ -52,7 +52,6 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 2. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
 3. Projetar e implementar Integracoes/Webhooks como modulo separado, sem campos falsos de front-end.
 4. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
-5. Projetar o perfil do rodape como etapa propria: nome completo, papel, modal padrao de informacoes e suporte futuro a avatar/foto; nao tratar como ajuste isolado.
 
 ---
 
@@ -424,6 +423,30 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (b): perfil completo no rodapé — v0.24.0
+
+### O que mudou
+- O rodapé autenticado passou a exibir avatar por inicial, nome completo, `@username` e papel localizado, mantendo o encerramento seguro da sessão.
+- Um modal acessível concentra identidade e informações da conta: nome, utilizador, e-mail, papel, provedor, armazenamento, criação e último acesso. Inclui carregamento, erro, fecho por `Escape`/overlay e preparação explícita para foto futura.
+- O worker ganhou a operação somente leitura `account-profile`; o comando Tauri expõe apenas essa nova operação permitida e sessões antigas são enriquecidas sem exigir novo login.
+- A versão desktop foi elevada para `0.24.0`.
+
+### Evidência / teste
+- `npm.cmd run build`, `cargo check` e compilação Python aprovados.
+- Testes do worker: 4 aprovados. Testes da API: 12 aprovados.
+- Worker sidecar e instalador NSIS de produção gerados; instalação silenciosa concluída com código `0`.
+- Executável instalado em `C:\Users\cunha\AppData\Local\UpexNote\upexnote.exe`, versão de produto `0.24.0`; abertura e versão da tela inicial confirmadas visualmente. A validação autenticada não usou credenciais artificiais porque a sessão local estava desconectada.
+
+### Decisão
+- Informações do perfil continuam a ser lidas da identidade existente; não foi criado domínio, schema ou armazenamento de avatar nesta etapa. Foto personalizada permanece evolução futura.
+
+### Impacto em dados, custo ou privacidade
+- Nenhum material bruto sai da máquina. A operação nova retorna apenas campos públicos da própria conta e não registra credenciais, tokens ou conteúdo privado.
+- Nenhum redeploy da API central foi necessário: a entrega afeta exclusivamente desktop e worker local.
+
+### Próximo passo
+- Finalizar a infraestrutura de evidências de suporte ou escolher uma das frentes de Integrações, contexto, estudo ou chat.
 
 ### Registro — 2026-07-25: alinhamento dos documentos de arquitetura e produto
 

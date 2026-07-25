@@ -193,6 +193,24 @@ def update_profile(data: dict):
         db.close_connection(conn)
 
 
+def profile(data: dict):
+    """Devolve o perfil público atual pelo id imutável da sessão."""
+    try:
+        user_pk = int(data["id"])
+    except (KeyError, TypeError, ValueError):
+        return {"ok": False, "error": "invalid_user"}
+    conn = db.connect()
+    try:
+        _ensure(conn)
+        with conn.cursor() as cur:
+            user = _fetch_user(cur, "WHERE id = %s AND deleted_at IS NULL", (user_pk,))
+        if not user:
+            return {"ok": False, "error": "not_found"}
+        return {"ok": True, "user": _public(user)}
+    finally:
+        db.close_connection(conn)
+
+
 # ---------------------------------------------------------------------------
 # Operações de ADMINISTRAÇÃO (aba admin, 2026-07-19). Guard server-side: o
 # ator tem de ser role=admin NA BASE (nunca confiado do cliente). Toda a

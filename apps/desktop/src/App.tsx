@@ -8,7 +8,7 @@ import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
   Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
   Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight, Pencil, Archive, Trash2,
-  Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw,
+  Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw, UserRound,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
@@ -458,6 +458,11 @@ type Session = {
   email: string;
   user_id: string | null;
   role: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  auth_provider?: string | null;
+  created_at?: string | null;
+  last_login_at?: string | null;
   admin_token?: string;
   admin_expires_at?: string;
 };
@@ -1319,7 +1324,11 @@ function SettingsView({ onChanged }: { onChanged: () => void }) {
 // ---------------------------------------------------------------------------
 // Contas vivem na tabela `users` do banco do modo ativo (worker valida tudo;
 // senhas por stdin, PBKDF2 no worker). O frontend só orquestra os ecrãs.
-type AccountUser = { id: number; user_id: string; email: string; role: string };
+type AccountUser = {
+  id: number; user_id: string; email: string; role: string;
+  first_name?: string | null; last_name?: string | null;
+  auth_provider?: string | null; created_at?: string | null; last_login_at?: string | null;
+};
 type OauthPayload = {
   auth_provider: string; provider_id: string; email: string;
   first_name?: string; last_name?: string; provider_scopes?: string;
@@ -1397,6 +1406,11 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         email: user?.email || email,
         user_id: user?.user_id || null,
         role: user?.role || (profile === "admin" ? "admin" : "user"),
+        first_name: user?.first_name || null,
+        last_name: user?.last_name || null,
+        auth_provider: user?.auth_provider || null,
+        created_at: user?.created_at || null,
+        last_login_at: user?.last_login_at || null,
         admin_token: profile === "admin" ? elevationToken : undefined,
         admin_expires_at: profile === "admin" && expiresIn
           ? new Date(Date.now() + expiresIn * 1000).toISOString() : undefined,
@@ -2019,26 +2033,69 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   );
 }
 
-// Perfil na sidebar (padrão das plataformas): avatar com inicial + identidade
-// da sessão + sair. O logout vive AQUI, não nas definições de armazenamento.
+// Perfil na sidebar: identidade resumida no rodapé e modal informativo completo.
+// O avatar permanece derivado da inicial; a estrutura fica pronta para foto futura
+// sem inventar upload antes de existir um contrato de armazenamento.
 function SidebarProfile({ collapsed }: { collapsed: boolean }) {
-  const { t } = useLang();
-  const sess = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem("upexnote-session") || "null");
-    } catch {
-      return null;
-    }
-  }, []);
+  const { t, locale } = useLang();
+  const [sess, setSess] = useState<Session | null>(() => getSession());
+  const [openProfile, setOpenProfile] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
+  useEffect(() => {
+    if (!sess?.id) return;
+    const currentSession = sess;
+    let cancelled = false;
+    setLoadingProfile(true);
+    invoke<string>("account", {
+      op: "profile",
+      payload: JSON.stringify({ id: currentSession.id }),
+      mode: currentSession.mode,
+    }).then((raw) => {
+      if (cancelled) return;
+      const response = JSON.parse(raw);
+      if (!response.ok || !response.user) {
+        setProfileError(t("profileLoadError"));
+        return;
+      }
+      const next = { ...currentSession, ...response.user } as Session;
+      setSess(next);
+      localStorage.setItem("upexnote-session", JSON.stringify(next));
+      setProfileError("");
+    }).catch(() => {
+      if (!cancelled) setProfileError(t("profileLoadError"));
+    }).finally(() => {
+      if (!cancelled) setLoadingProfile(false);
+    });
+    return () => { cancelled = true; };
+  }, [sess?.id, sess?.mode, t]);
+
+  useEffect(() => {
+    if (!openProfile) return;
+    const close = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setOpenProfile(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [openProfile]);
+
   if (!sess) return null;
-  const name: string = sess.user_id || sess.email || "admin";
-  const initial = (name[0] || "?").toUpperCase();
+  const fullName = [sess.first_name, sess.last_name].filter(Boolean).join(" ").trim();
+  const displayName = fullName || sess.user_id || sess.email || t("profileFallback");
+  const initial = (displayName[0] || "?").toUpperCase();
+  const username = sess.user_id ? `@${sess.user_id}` : sess.email;
+  const roleLabel = sess.role === "admin" ? t("profileRoleAdmin") : t("profileRoleUser");
+  const provider = sess.auth_provider === "google" ? "Google"
+    : sess.auth_provider === "github" ? "GitHub"
+      : t("profileProviderEmail");
+  const logoutSession = sess;
   async function logout() {
-    if (sess.profile === "admin" && sess.admin_token) {
+    if (logoutSession.profile === "admin" && logoutSession.admin_token) {
       try {
         await invoke("api_admin_factor", {
           op: "revoke",
-          payload: JSON.stringify({ email: sess.email, elevation_token: sess.admin_token }),
+          payload: JSON.stringify({ email: logoutSession.email, elevation_token: logoutSession.admin_token }),
         });
       } catch { /* revogação também ocorrerá por expiração no servidor */ }
     }
@@ -2047,20 +2104,62 @@ function SidebarProfile({ collapsed }: { collapsed: boolean }) {
     window.location.reload();
   }
   return (
-    <div className={"side-profile" + (collapsed ? " collapsed" : "")}>
-      <span className="avatar" title={sess.email || name}>{initial}</span>
-      {!collapsed && (
-        <span className="sp-main">
-          <span className="sp-name">{name}</span>
-          {sess.profile === "admin" && <span className="sp-role">admin</span>}
-        </span>
-      )}
-      {!collapsed && (
-        <button className="tb-btn" onClick={logout} title={t("stoLogout")}>
-          <LogOut size={15} strokeWidth={1.75} />
+    <>
+      <div className={"side-profile" + (collapsed ? " collapsed" : "")}>
+        <button
+          className="profile-trigger"
+          onClick={() => setOpenProfile(true)}
+          title={collapsed ? t("profileOpen") : undefined}
+          aria-label={t("profileOpen")}
+        >
+          <span className="avatar">{initial}</span>
+          {!collapsed && (
+            <span className="sp-main">
+              <span className="sp-name">{displayName}</span>
+              <span className="sp-sub">{username}</span>
+            </span>
+          )}
+          {!collapsed && <span className="sp-role">{roleLabel}</span>}
         </button>
+        {!collapsed && (
+          <button className="tb-btn" onClick={logout} title={t("stoLogout")} aria-label={t("stoLogout")}>
+            <LogOut size={15} strokeWidth={1.75} />
+          </button>
+        )}
+      </div>
+      {openProfile && (
+        <div className="modal-overlay" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setOpenProfile(false);
+        }}>
+          <section className="modal-card profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+            <div className="profile-modal-head">
+              <span className="profile-avatar-large">{initial}</span>
+              <div>
+                <span className="eyebrow">{t("profileAccount")}</span>
+                <h2 id="profile-modal-title">{displayName}</h2>
+                <p>{username}</p>
+              </div>
+              <button className="tb-btn" onClick={() => setOpenProfile(false)} title={t("profileClose")} aria-label={t("profileClose")}>
+                <X size={18} />
+              </button>
+            </div>
+            {loadingProfile && <div className="status"><span className="spinner" />{t("profileLoading")}</div>}
+            {profileError && <div className="key-warn">{profileError}</div>}
+            <div className="profile-facts">
+              <div><span>{t("profileFullName")}</span><strong>{fullName || "—"}</strong></div>
+              <div><span>{t("profileUsername")}</span><strong>{username || "—"}</strong></div>
+              <div><span>{t("profileEmail")}</span><strong>{sess.email || "—"}</strong></div>
+              <div><span>{t("profileRole")}</span><strong><span className="sp-role">{roleLabel}</span></strong></div>
+              <div><span>{t("profileProvider")}</span><strong>{provider}</strong></div>
+              <div><span>{t("profileStorage")}</span><strong>{sess.mode === "vps" ? t("stoModeVps") : t("stoModeLocal")}</strong></div>
+              <div><span>{t("profileCreated")}</span><strong>{fmtDate(sess.created_at || null, locale)}</strong></div>
+              <div><span>{t("profileLastLogin")}</span><strong>{fmtDate(sess.last_login_at || null, locale)}</strong></div>
+            </div>
+            <div className="profile-avatar-note"><UserRound size={16} /><span>{t("profileAvatarFuture")}</span></div>
+          </section>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 

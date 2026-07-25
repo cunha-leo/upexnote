@@ -1,6 +1,6 @@
 # Produto UpexNote
 
-> Estado alinhado à versão desktop `0.23.6`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.24.0`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
 
 ## Marca e propósito
 
@@ -20,6 +20,7 @@ O produto atende especialmente reuniões com português de Portugal, português 
 - Administração com MFA, utilizadores, atividade, auditoria, telemetria e suporte em navegação lateral hierárquica.
 - Telemetria estritamente opcional, anónima e limitada a campos operacionais aprovados.
 - Suporte com casos, conversas, estados, atribuição e evidências sem armazenar binários no banco.
+- Perfil completo no rodapé com identidade, papel, informações da conta e preparação para avatar futuro.
 
 ## Princípios de produto
 
@@ -48,6 +49,5 @@ A pessoa precisa compreender onde está, o que pode fazer, o resultado da ação
 3. Material de estudo: explicações, fluxos, tabelas, quiz e exportações.
 4. Chat ancorado no material, sem transformar inferências em fatos do transcript.
 5. Evolução operacional do suporte: filtros, SLA, prioridade, notificações e arquivo de evidências na infraestrutura prevista.
-6. Perfil do rodapé: identidade, papel, modal de informações e futura foto/avatar.
 
 Captura ao vivo por microfone e loopback WASAPI, reprodução/síntese de voz e tradução contextual permanecem fases posteriores.

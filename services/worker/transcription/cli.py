@@ -237,6 +237,8 @@ def cmd_account(args):
             res = accounts.oauth_login(data)
         elif op == "account-update":
             res = accounts.update_profile(data)
+        elif op == "account-profile":
+            res = accounts.profile(data)
         elif op == "account-elevate":
             res = accounts.elevate(data.get("email"), data.get("admin_secret"))
         else:
@@ -861,7 +863,7 @@ def build_parser():
     sub.add_parser("tunnel-keep", help="(interno) Guardiao do tunel SSH persistente; termina no EOF do stdin.")
 
     for name in ("account-register", "account-login", "account-oauth-login",
-                 "account-update", "account-elevate"):
+                 "account-update", "account-profile", "account-elevate"):
         p_acc = sub.add_parser(name, help="Identidade (dados por stdin, JSON).")
         p_acc.add_argument("--mode", choices=["local", "vps"],
                            help="Base alvo (contas admin vivem na vps). Sem gravar.")
@@ -917,6 +919,7 @@ def main(argv=None):
         "account-login": cmd_account,
         "account-oauth-login": cmd_account,
         "account-update": cmd_account,
+        "account-profile": cmd_account,
         "account-elevate": cmd_account,
         "account-suggest": cmd_account,
         "admin-overview": cmd_admin,

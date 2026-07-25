@@ -273,7 +273,7 @@ async fn library_item(
 /// visível na lista de processos). `op` é validado contra a whitelist.
 #[tauri::command]
 async fn account(op: String, payload: String, mode: Option<String>) -> Result<String, String> {
-    const OPS: [&str; 4] = ["register", "login", "oauth-login", "update"];
+    const OPS: [&str; 5] = ["register", "login", "oauth-login", "update", "profile"];
     if !OPS.contains(&op.as_str()) {
         return Err(format!("operação desconhecida: {op}"));
     }
