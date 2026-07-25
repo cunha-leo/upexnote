@@ -9,7 +9,7 @@ import {
   Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
   Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight, Pencil, Archive, Trash2,
   Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw, UserRound,
-  Database, Table2, Columns3, KeyRound, LockKeyhole, Filter, ChevronsLeft, ChevronsRight,
+  Database, Table2, Columns3, KeyRound, LockKeyhole, Filter, ChevronsLeft, ChevronsRight, Plus, Play, Code2,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
@@ -2209,7 +2209,12 @@ type DataStudioObject = {
 };
 type DataStudioSchema = { name: string; objects: DataStudioObject[] };
 type DataStudioSelection = { schema: string; object: DataStudioObject };
-type DataStudioTab = "data" | "structure" | "relations" | "indexes";
+type DataStudioTab = "builder" | "data" | "structure" | "relations" | "indexes";
+type DsCondition = { source: number; column: string; operator: string; value: string; connector: "and" | "or" };
+type DsJoin = { schema: string; table: string; type: string; left_source: number; left_column: string; right_column: string };
+type DsValue = { column: string; value: string };
+type DsField = { source: number; column: string };
+type DsDdlColumn = { name: string; type: string; nullable: boolean; primary: boolean };
 
 function DataStudioWorkspace() {
   const { t } = useLang();
@@ -2217,7 +2222,7 @@ function DataStudioWorkspace() {
   const [schemas, setSchemas] = useState<DataStudioSchema[]>([]);
   const [expanded, setExpanded] = useState<string[]>([]);
   const [selection, setSelection] = useState<DataStudioSelection | null>(null);
-  const [tab, setTab] = useState<DataStudioTab>("data");
+  const [tab, setTab] = useState<DataStudioTab>("builder");
   const [catalogSearch, setCatalogSearch] = useState("");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [resultColumns, setResultColumns] = useState<string[]>([]);
@@ -2228,8 +2233,21 @@ function DataStudioWorkspace() {
   const [filterValue, setFilterValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [builderOp, setBuilderOp] = useState("select");
+  const [builderFields, setBuilderFields] = useState<DsField[]>([]);
+  const [builderJoins, setBuilderJoins] = useState<DsJoin[]>([]);
+  const [builderConditions, setBuilderConditions] = useState<DsCondition[]>([]);
+  const [builderValues, setBuilderValues] = useState<DsValue[]>([]);
+  const [ddlName, setDdlName] = useState("");
+  const [ddlType, setDdlType] = useState("text");
+  const [createTableName, setCreateTableName] = useState("");
+  const [createColumns, setCreateColumns] = useState<DsDdlColumn[]>([]);
+  const [alterAction, setAlterAction] = useState("add_column");
+  const [newName, setNewName] = useState("");
+  const [plan, setPlan] = useState<{ sql: string; plan_hash: string; mutation: boolean } | null>(null);
+  const [builderResult, setBuilderResult] = useState<{ columns: string[]; rows: Record<string, unknown>[]; affected?: number } | null>(null);
 
-  async function call(op: "data-catalog" | "data-table", payload: Record<string, unknown> = {}) {
+  async function call(op: "data-catalog" | "data-table" | "data-query", payload: Record<string, unknown> = {}) {
     const raw = await invoke<string>("admin", {
       op, mode: sess?.mode ?? null,
       payload: JSON.stringify({
@@ -2294,12 +2312,60 @@ function DataStudioWorkspace() {
   function selectObject(schema: string, object: DataStudioObject) {
     const target = { schema, object };
     setSelection(target);
-    setTab("data");
+    setTab("builder");
     setPage(1);
     setFilterColumn("");
     setFilterValue("");
     setRows([]);
+    setBuilderFields([]);
+    setBuilderJoins([]);
+    setBuilderConditions([]);
+    setBuilderValues([]);
+    setPlan(null);
+    setBuilderResult(null);
     void loadTable(target, 1);
+  }
+
+  const builderSources = useMemo(() => {
+    if (!selection) return [];
+    const base = [{ schema: selection.schema, object: selection.object }];
+    for (const join of builderJoins) {
+      const object = schemas.find((schema) => schema.name === join.schema)?.objects.find((item) => item.object_name === join.table);
+      if (object) base.push({ schema: join.schema, object });
+    }
+    return base;
+  }, [selection, builderJoins, schemas]);
+
+  function builderPayload() {
+    if (!selection) return {};
+    return {
+      operation: builderOp, schema: selection.schema,
+      table: builderOp === "create_table" ? createTableName : selection.object.object_name,
+      fields: builderFields, joins: builderJoins, conditions: builderConditions, values: builderValues,
+      columns: createColumns, alter_action: alterAction, column: ddlName, new_name: newName, data_type: ddlType, limit: 100,
+    };
+  }
+
+  async function previewBuilder() {
+    setBusy(true); setErr(""); setPlan(null); setBuilderResult(null);
+    try {
+      const result = await call("data-query", builderPayload());
+      if (!result.ok) setErr(result.error || t("dsLoadError"));
+      else setPlan(result);
+    } catch (error) { setErr(String(error)); } finally { setBusy(false); }
+  }
+
+  async function executeBuilder() {
+    if (!plan) return;
+    setBusy(true); setErr("");
+    try {
+      const result = await call("data-query", { ...builderPayload(), execute: true, plan_hash: plan.plan_hash });
+      if (!result.ok) setErr(result.error || t("dsLoadError"));
+      else {
+        setBuilderResult({ columns: result.columns || [], rows: result.rows || [], affected: result.affected });
+        if (plan.mutation) { setPlan(null); await loadCatalog(); }
+      }
+    } catch (error) { setErr(String(error)); } finally { setBusy(false); }
   }
 
   useEffect(() => { void loadCatalog(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2370,6 +2436,7 @@ function DataStudioWorkspace() {
           </div>
           <div className="ds-tabs" role="tablist">
             {([
+              ["builder", <Code2 size={15} />, t("dsBuilder")],
               ["data", <Table2 size={15} />, t("dsData")],
               ["structure", <Columns3 size={15} />, t("dsStructure")],
               ["relations", <KeyRound size={15} />, t("dsRelations")],
@@ -2377,6 +2444,125 @@ function DataStudioWorkspace() {
             ] as const).map(([id, icon, label]) => <button key={id} role="tab" aria-selected={tab === id}
               className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{icon}{label}</button>)}
           </div>
+          {tab === "builder" && <div className="ds-builder">
+            <div className="ds-builder-toolbar">
+              <label><span>{t("dsOperation")}</span><select value={builderOp} onChange={(event) => {
+                setBuilderOp(event.currentTarget.value); setPlan(null); setBuilderResult(null);
+              }}>
+                <option value="select">SELECT</option><option value="insert">INSERT</option>
+                <option value="update">UPDATE</option><option value="delete">DELETE</option>
+                <option value="create_table">CREATE TABLE</option><option value="alter_table">ALTER TABLE</option>
+              </select></label>
+              <div className="ds-target"><span>{t("dsTarget")}</span><strong>{selection.schema}.{builderOp === "create_table" ? (createTableName || "…") : selection.object.object_name}</strong></div>
+            </div>
+            {builderOp === "select" && <section className="ds-builder-section">
+              <header><div><strong>1. {t("dsFields")}</strong><small>{t("dsFieldsHelp")}</small></div>
+                <button className="secondary" onClick={() => {
+                  const first = selection.object.columns.find((column) => !column.protected);
+                  if (first) setBuilderFields([...builderFields, { source: 0, column: first.column_name }]);
+                }}><Plus size={14} />{t("dsAddField")}</button></header>
+              <div className="ds-builder-rows">{builderFields.map((field, index) => <div className="ds-builder-row" key={index}>
+                <select value={field.source} onChange={(event) => {
+                  const next = [...builderFields]; next[index] = { source: Number(event.currentTarget.value), column: "" }; setBuilderFields(next); setPlan(null);
+                }}>{builderSources.map((source, sourceIndex) => <option value={sourceIndex} key={sourceIndex}>{source.schema}.{source.object.object_name}</option>)}</select>
+                <select value={field.column} onChange={(event) => { const next = [...builderFields]; next[index] = { ...field, column: event.currentTarget.value }; setBuilderFields(next); setPlan(null); }}>
+                  <option value="">{t("dsChooseField")}</option>{(builderSources[field.source]?.object.columns || []).filter((column) => !column.protected).map((column) => <option key={column.column_name}>{column.column_name}</option>)}
+                </select><button className="icon-action danger" onClick={() => setBuilderFields(builderFields.filter((_, item) => item !== index))}><Trash2 size={14} /></button>
+              </div>)}</div>
+            </section>}
+            {builderOp === "select" && <section className="ds-builder-section">
+              <header><div><strong>2. {t("dsJoins")}</strong><small>{t("dsJoinsHelp")}</small></div>
+                <button className="secondary" onClick={() => {
+                  const candidate = schemas.flatMap((schema) => schema.objects.map((object) => ({ schema: schema.name, object }))).find((item) => item.object.object_type.includes("table"));
+                  if (candidate) setBuilderJoins([...builderJoins, { schema: candidate.schema, table: candidate.object.object_name, type: "left", left_source: 0, left_column: "", right_column: "" }]);
+                }}><Plus size={14} />{t("dsAddJoin")}</button></header>
+              <div className="ds-builder-rows">{builderJoins.map((join, index) => {
+                const joined = schemas.find((schema) => schema.name === join.schema)?.objects.find((object) => object.object_name === join.table);
+                return <div className="ds-join-row" key={index}>
+                  <select value={join.type} onChange={(e) => { const next = [...builderJoins]; next[index] = { ...join, type: e.currentTarget.value }; setBuilderJoins(next); setPlan(null); }}>
+                    <option value="inner">INNER JOIN</option><option value="left">LEFT JOIN</option><option value="right">RIGHT JOIN</option><option value="full">FULL JOIN</option>
+                  </select>
+                  <select value={`${join.schema}.${join.table}`} onChange={(e) => { const [schema, ...rest] = e.currentTarget.value.split("."); const next = [...builderJoins]; next[index] = { ...join, schema, table: rest.join("."), right_column: "" }; setBuilderJoins(next); setPlan(null); }}>
+                    {schemas.flatMap((schema) => schema.objects.map((object) => <option key={`${schema.name}.${object.object_name}`} value={`${schema.name}.${object.object_name}`}>{schema.name}.{object.object_name}</option>))}
+                  </select>
+                  <select value={join.left_source} onChange={(e) => { const next = [...builderJoins]; next[index] = { ...join, left_source: Number(e.currentTarget.value), left_column: "" }; setBuilderJoins(next); }}>
+                    {builderSources.slice(0, index + 1).map((source, i) => <option value={i} key={i}>{source.object.object_name}</option>)}
+                  </select>
+                  <select value={join.left_column} onChange={(e) => { const next = [...builderJoins]; next[index] = { ...join, left_column: e.currentTarget.value }; setBuilderJoins(next); }}>
+                    <option value="">{t("dsLeftField")}</option>{(builderSources[join.left_source]?.object.columns || []).filter((c) => !c.protected).map((c) => <option key={c.column_name}>{c.column_name}</option>)}
+                  </select><span>=</span>
+                  <select value={join.right_column} onChange={(e) => { const next = [...builderJoins]; next[index] = { ...join, right_column: e.currentTarget.value }; setBuilderJoins(next); }}>
+                    <option value="">{t("dsRightField")}</option>{(joined?.columns || []).filter((c) => !c.protected).map((c) => <option key={c.column_name}>{c.column_name}</option>)}
+                  </select><button className="icon-action danger" onClick={() => setBuilderJoins(builderJoins.filter((_, item) => item !== index))}><Trash2 size={14} /></button>
+                </div>;
+              })}</div>
+            </section>}
+            {(builderOp === "select" || builderOp === "update" || builderOp === "delete") && <section className="ds-builder-section">
+              <header><div><strong>{builderOp === "select" ? "3." : "1."} {t("dsConditions")}</strong><small>{builderOp !== "select" ? t("dsConditionsRequired") : t("dsConditionsHelp")}</small></div>
+                <button className="secondary" onClick={() => {
+                  const first = selection.object.columns.find((column) => !column.protected);
+                  if (first) setBuilderConditions([...builderConditions, { source: 0, column: first.column_name, operator: "eq", value: "", connector: "and" }]);
+                }}><Plus size={14} />{t("dsAddCondition")}</button></header>
+              <div className="ds-builder-rows">{builderConditions.map((condition, index) => <div className="ds-condition-row" key={index}>
+                {index > 0 ? <select value={condition.connector} onChange={(e) => { const next = [...builderConditions]; next[index] = { ...condition, connector: e.currentTarget.value as "and" | "or" }; setBuilderConditions(next); }}><option value="and">AND</option><option value="or">OR</option></select> : <span className="ds-where">WHERE</span>}
+                <select value={condition.source} onChange={(e) => { const next = [...builderConditions]; next[index] = { ...condition, source: Number(e.currentTarget.value), column: "" }; setBuilderConditions(next); }}>
+                  {(builderOp === "select" ? builderSources : builderSources.slice(0, 1)).map((source, i) => <option value={i} key={i}>{source.object.object_name}</option>)}
+                </select>
+                <select value={condition.column} onChange={(e) => { const next = [...builderConditions]; next[index] = { ...condition, column: e.currentTarget.value }; setBuilderConditions(next); }}>
+                  {(builderSources[condition.source]?.object.columns || []).filter((c) => !c.protected).map((c) => <option key={c.column_name}>{c.column_name}</option>)}
+                </select><select value={condition.operator} onChange={(e) => { const next = [...builderConditions]; next[index] = { ...condition, operator: e.currentTarget.value }; setBuilderConditions(next); }}>
+                  <option value="eq">=</option><option value="ne">≠</option><option value="contains">{t("dsContains")}</option><option value="starts">{t("dsStarts")}</option>
+                  <option value="gt">&gt;</option><option value="gte">≥</option><option value="lt">&lt;</option><option value="lte">≤</option><option value="is_null">NULL</option><option value="is_not_null">NOT NULL</option>
+                </select><input value={condition.value} disabled={condition.operator.includes("null")} placeholder={t("dsFilterValue")} onChange={(e) => { const next = [...builderConditions]; next[index] = { ...condition, value: e.currentTarget.value }; setBuilderConditions(next); }} />
+                <button className="icon-action danger" onClick={() => setBuilderConditions(builderConditions.filter((_, item) => item !== index))}><Trash2 size={14} /></button>
+              </div>)}</div>
+            </section>}
+            {(builderOp === "insert" || builderOp === "update") && <section className="ds-builder-section">
+              <header><div><strong>{builderOp === "update" ? "2." : "1."} {t("dsValues")}</strong><small>{t("dsValuesHelp")}</small></div>
+                <button className="secondary" onClick={() => {
+                  const used = new Set(builderValues.map((item) => item.column));
+                  const first = selection.object.columns.find((column) => !column.protected && !used.has(column.column_name));
+                  if (first) setBuilderValues([...builderValues, { column: first.column_name, value: "" }]);
+                }}><Plus size={14} />{t("dsAddValue")}</button></header>
+              <div className="ds-builder-rows">{builderValues.map((value, index) => <div className="ds-builder-row" key={index}>
+                <select value={value.column} onChange={(e) => { const next = [...builderValues]; next[index] = { ...value, column: e.currentTarget.value }; setBuilderValues(next); }}>
+                  {selection.object.columns.filter((c) => !c.protected).map((c) => <option key={c.column_name}>{c.column_name}</option>)}
+                </select><input value={value.value} placeholder={t("dsFilterValue")} onChange={(e) => { const next = [...builderValues]; next[index] = { ...value, value: e.currentTarget.value }; setBuilderValues(next); }} />
+                <button className="icon-action danger" onClick={() => setBuilderValues(builderValues.filter((_, item) => item !== index))}><Trash2 size={14} /></button>
+              </div>)}</div>
+            </section>}
+            {builderOp === "create_table" && <section className="ds-builder-section">
+              <header><div><strong>1. {t("dsCreateTable")}</strong><small>{t("dsCreateHelp")}</small></div>
+                <button className="secondary" onClick={() => setCreateColumns([...createColumns, { name: "", type: "text", nullable: true, primary: false }])}><Plus size={14} />{t("dsAddColumn")}</button></header>
+              <div className="ds-create-name"><label><span>{t("dsTableName")}</span><input value={createTableName} onChange={(e) => { setCreateTableName(e.currentTarget.value); setPlan(null); }} placeholder="new_table" /></label></div>
+              <div className="ds-builder-rows">{createColumns.map((column, index) => <div className="ds-create-row" key={index}>
+                <input value={column.name} onChange={(e) => { const next = [...createColumns]; next[index] = { ...column, name: e.currentTarget.value }; setCreateColumns(next); }} placeholder={t("dsColumnName")} />
+                <select value={column.type} onChange={(e) => { const next = [...createColumns]; next[index] = { ...column, type: e.currentTarget.value }; setCreateColumns(next); }}>{["text", "varchar", "integer", "bigint", "numeric", "boolean", "date", "timestamptz", "jsonb", "uuid"].map((type) => <option key={type}>{type}</option>)}</select>
+                <label className="ds-check"><input type="checkbox" checked={column.nullable} onChange={(e) => { const next = [...createColumns]; next[index] = { ...column, nullable: e.currentTarget.checked }; setCreateColumns(next); }} />NULL</label>
+                <label className="ds-check"><input type="checkbox" checked={column.primary} onChange={(e) => { const next = [...createColumns]; next[index] = { ...column, primary: e.currentTarget.checked }; setCreateColumns(next); }} />PRIMARY KEY</label>
+                <button className="icon-action danger" onClick={() => setCreateColumns(createColumns.filter((_, item) => item !== index))}><Trash2 size={14} /></button>
+              </div>)}</div>
+            </section>}
+            {builderOp === "alter_table" && <section className="ds-builder-section">
+              <header><div><strong>1. {t("dsAlterAction")}</strong><small>{t("dsAlterHelp")}</small></div></header>
+              <div className="ds-ddl-row"><select value={alterAction} onChange={(e) => setAlterAction(e.currentTarget.value)}>
+                <option value="add_column">{t("dsAddColumn")}</option><option value="rename_column">{t("dsRenameColumn")}</option><option value="drop_column">{t("dsDropColumn")}</option>
+              </select>{alterAction === "add_column" ? <input value={ddlName} onChange={(e) => setDdlName(e.currentTarget.value)} placeholder={t("dsColumnName")} /> :
+                <select value={ddlName} onChange={(e) => setDdlName(e.currentTarget.value)}><option value="">{t("dsChooseField")}</option>{selection.object.columns.filter((c) => !c.protected).map((c) => <option key={c.column_name}>{c.column_name}</option>)}</select>}
+                {alterAction === "add_column" && <select value={ddlType} onChange={(e) => setDdlType(e.currentTarget.value)}>{["text", "varchar", "integer", "bigint", "numeric", "boolean", "date", "timestamptz", "jsonb", "uuid"].map((type) => <option key={type}>{type}</option>)}</select>}
+                {alterAction === "rename_column" && <input value={newName} onChange={(e) => setNewName(e.currentTarget.value)} placeholder={t("dsNewName")} />}</div>
+            </section>}
+            <footer className="ds-builder-actions">
+              <button className="secondary" onClick={previewBuilder} disabled={busy}><Code2 size={15} />{t("dsPreview")}</button>
+              {plan && <button onClick={executeBuilder} disabled={busy} className={plan.mutation ? "danger-button" : ""}><Play size={15} />{plan.mutation ? t("dsConfirmExecute") : t("dsRun")}</button>}
+            </footer>
+            {plan && <div className="ds-sql-preview"><header><strong>{t("dsGeneratedSql")}</strong><span>{t("dsParameterized")}</span></header><code>{plan.sql}</code></div>}
+            {builderResult && <div className="ds-builder-result">
+              {builderResult.affected !== undefined && <div className="notice">{t("dsAffected", { n: builderResult.affected })}</div>}
+              {!!builderResult.columns.length && <div className="ds-data-scroll"><table className="ds-data-table"><thead><tr>{builderResult.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+                <tbody>{builderResult.rows.map((row, index) => <tr key={index}>{builderResult.columns.map((column) => <td key={column}>{row[column] === null ? <i>NULL</i> : typeof row[column] === "object" ? JSON.stringify(row[column]) : String(row[column])}</td>)}</tr>)}</tbody></table></div>}
+            </div>}
+          </div>}
           {tab === "data" && <>
             <div className="ds-filterbar">
               <Filter size={16} />

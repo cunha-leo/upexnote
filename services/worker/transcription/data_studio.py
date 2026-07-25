@@ -1,4 +1,4 @@
-"""Data Studio read-only PostgreSQL catalogue and table preview.
+"""Data Studio PostgreSQL catalogue and safe visual query builder.
 
 Every entry point revalidates the actor in the active database. Identifiers are
 resolved against pg_catalog and composed with psycopg2.sql; user input is never
@@ -7,6 +7,9 @@ the worker.
 """
 from datetime import date, datetime, time
 from decimal import Decimal
+import hashlib
+import json
+import re
 from uuid import UUID
 
 from psycopg2 import sql
@@ -20,6 +23,18 @@ _SENSITIVE_PARTS = (
     "provider_id", "provider_scopes",
 )
 _FILTER_OPS = {"eq", "contains", "starts", "gt", "gte", "lt", "lte", "is_null"}
+_BUILDER_OPS = {"select", "insert", "update", "delete", "create_table", "alter_table"}
+_CONDITION_OPS = {
+    "eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<=",
+}
+_JOIN_TYPES = {"inner": "INNER JOIN", "left": "LEFT JOIN", "right": "RIGHT JOIN", "full": "FULL JOIN"}
+_DDL_TYPES = {
+    "text": "TEXT", "varchar": "VARCHAR(255)", "integer": "INTEGER",
+    "bigint": "BIGINT", "numeric": "NUMERIC", "boolean": "BOOLEAN",
+    "date": "DATE", "timestamptz": "TIMESTAMP WITH TIME ZONE",
+    "jsonb": "JSONB", "uuid": "UUID",
+}
+_NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 
 
 def _protected(column: str) -> bool:
@@ -51,6 +66,244 @@ def _guard(cur, actor_id):
     if db.storage_mode() != "vps":
         return {"ok": False, "error": "postgres_required"}
     return None
+
+
+def _object(cur, schema_name, table_name, privilege="SELECT"):
+    access = sql.SQL("pg_catalog.pg_get_userbyid(c.relowner) = current_user") if privilege == "ALTER" else sql.SQL(
+        "has_table_privilege(c.oid, %s)")
+    query = sql.SQL("""
+        SELECT c.relkind, a.attname
+          FROM pg_catalog.pg_class c
+          JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+         WHERE n.nspname = %s AND c.relname = %s
+           AND c.relkind IN ('r', 'p', 'v', 'm')
+           AND a.attnum > 0 AND NOT a.attisdropped
+           AND {}
+         ORDER BY a.attnum
+    """).format(access)
+    params = (schema_name, table_name) if privilege == "ALTER" else (schema_name, table_name, privilege)
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    return {"kind": rows[0][0], "columns": [row[1] for row in rows]} if rows else None
+
+
+def _safe_name(value):
+    value = str(value or "")
+    if not _NAME.fullmatch(value):
+        raise ValueError("invalid_identifier")
+    return value
+
+
+def _condition_sql(item, sources):
+    source = int(item.get("source", 0))
+    if source < 0 or source >= len(sources):
+        raise ValueError("invalid_source")
+    column = str(item.get("column") or "")
+    if column not in sources[source]["columns"] or _protected(column):
+        raise ValueError("invalid_column")
+    operator = str(item.get("operator") or "eq")
+    field = sql.SQL("{}.{}").format(sql.Identifier(f"t{source}"), sql.Identifier(column))
+    if operator == "is_null":
+        return sql.SQL("{} IS NULL").format(field), []
+    if operator == "is_not_null":
+        return sql.SQL("{} IS NOT NULL").format(field), []
+    if operator == "contains":
+        return sql.SQL("{}::text ILIKE %s").format(field), [f"%{item.get('value', '')}%"]
+    if operator == "starts":
+        return sql.SQL("{}::text ILIKE %s").format(field), [f"{item.get('value', '')}%"]
+    if operator not in _CONDITION_OPS:
+        raise ValueError("invalid_operator")
+    return sql.SQL("{} {} %s").format(field, sql.SQL(_CONDITION_OPS[operator])), [item.get("value")]
+
+
+def _where(data, sources):
+    parts, params = [], []
+    for index, item in enumerate((data.get("conditions") or [])[:20]):
+        fragment, values = _condition_sql(item, sources)
+        if index:
+            connector = "OR" if str(item.get("connector")).lower() == "or" else "AND"
+            parts.append(sql.SQL(connector))
+        parts.append(fragment)
+        params.extend(values)
+    return (sql.SQL(" WHERE ") + sql.SQL(" ").join(parts), params) if parts else (sql.SQL(""), [])
+
+
+def _build_plan(cur, data):
+    operation = str(data.get("operation") or "select").lower()
+    if operation not in _BUILDER_OPS:
+        raise ValueError("invalid_operation")
+    schema_name, table_name = str(data.get("schema") or ""), str(data.get("table") or "")
+
+    if operation == "create_table":
+        _safe_name(schema_name); _safe_name(table_name)
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_namespace n
+                 WHERE n.nspname = %s AND has_schema_privilege(n.oid, 'CREATE')
+            )
+        """, (schema_name,))
+        if not cur.fetchone()[0]:
+            raise ValueError("schema_not_found_or_forbidden")
+        columns = (data.get("columns") or [])[:40]
+        if not columns:
+            raise ValueError("columns_required")
+        definitions = []
+        for item in columns:
+            name, type_key = _safe_name(item.get("name")), str(item.get("type") or "")
+            if type_key not in _DDL_TYPES:
+                raise ValueError("invalid_data_type")
+            definition = sql.SQL("{} {}").format(sql.Identifier(name), sql.SQL(_DDL_TYPES[type_key]))
+            if item.get("primary"):
+                definition += sql.SQL(" PRIMARY KEY")
+            elif not item.get("nullable", True):
+                definition += sql.SQL(" NOT NULL")
+            definitions.append(definition)
+        query = sql.SQL("CREATE TABLE {}.{} ({})").format(
+            sql.Identifier(schema_name), sql.Identifier(table_name), sql.SQL(", ").join(definitions))
+        return operation, query, [], True, f"{schema_name}.{table_name}"
+
+    privilege = "SELECT" if operation == "select" else operation.upper()
+    if operation == "alter_table":
+        privilege = "ALTER"
+    base = _object(cur, schema_name, table_name, privilege)
+    if not base:
+        raise ValueError("object_not_found_or_forbidden")
+    sources = [{"schema": schema_name, "table": table_name, **base}]
+
+    if operation == "select":
+        joins = (data.get("joins") or [])[:8]
+        join_sql = []
+        for index, item in enumerate(joins, 1):
+            joined = _object(cur, str(item.get("schema") or ""), str(item.get("table") or ""), "SELECT")
+            if not joined:
+                raise ValueError("join_object_not_found")
+            left_source = int(item.get("left_source", 0))
+            left_column, right_column = str(item.get("left_column") or ""), str(item.get("right_column") or "")
+            if left_source < 0 or left_source >= len(sources) or left_column not in sources[left_source]["columns"] or right_column not in joined["columns"]:
+                raise ValueError("invalid_join")
+            sources.append({"schema": str(item["schema"]), "table": str(item["table"]), **joined})
+            join_type = _JOIN_TYPES.get(str(item.get("type") or "inner"), "INNER JOIN")
+            join_sql.append(sql.SQL("{} {}.{} AS {} ON {}.{} = {}.{}").format(
+                sql.SQL(join_type), sql.Identifier(item["schema"]), sql.Identifier(item["table"]),
+                sql.Identifier(f"t{index}"), sql.Identifier(f"t{left_source}"), sql.Identifier(left_column),
+                sql.Identifier(f"t{index}"), sql.Identifier(right_column)))
+        selected = []
+        for item in (data.get("fields") or [])[:100]:
+            source, column = int(item.get("source", 0)), str(item.get("column") or "")
+            if source < 0 or source >= len(sources) or column not in sources[source]["columns"] or _protected(column):
+                raise ValueError("invalid_column")
+            alias = f"{sources[source]['table']}.{column}"
+            selected.append(sql.SQL("{}.{} AS {}").format(
+                sql.Identifier(f"t{source}"), sql.Identifier(column), sql.Identifier(alias)))
+        if not selected:
+            selected = [sql.SQL("{}.{}").format(sql.Identifier("t0"), sql.Identifier(c))
+                        for c in base["columns"] if not _protected(c)]
+        where_sql, params = _where(data, sources)
+        query = sql.SQL("SELECT {} FROM {}.{} AS {} {}{} LIMIT %s").format(
+            sql.SQL(", ").join(selected), sql.Identifier(schema_name), sql.Identifier(table_name),
+            sql.Identifier("t0"), sql.SQL(" ").join(join_sql), where_sql)
+        params.append(min(500, max(1, int(data.get("limit") or 100))))
+        return operation, query, params, False, f"{schema_name}.{table_name}"
+
+    if operation in {"insert", "update"}:
+        values = data.get("values") or []
+        clean = [(str(item.get("column") or ""), item.get("value")) for item in values]
+        if not clean or any(column not in base["columns"] or _protected(column) for column, _ in clean):
+            raise ValueError("invalid_values")
+        if operation == "insert":
+            query = sql.SQL("INSERT INTO {}.{} ({}) VALUES ({})").format(
+                sql.Identifier(schema_name), sql.Identifier(table_name),
+                sql.SQL(", ").join(sql.Identifier(column) for column, _ in clean),
+                sql.SQL(", ").join(sql.Placeholder() for _ in clean))
+            return operation, query, [value for _, value in clean], True, f"{schema_name}.{table_name}"
+        where_sql, where_params = _where(data, sources)
+        if not where_params and not (data.get("conditions") or []):
+            raise ValueError("conditions_required")
+        query = sql.SQL("UPDATE {}.{} AS t0 SET {}{}").format(
+            sql.Identifier(schema_name), sql.Identifier(table_name),
+            sql.SQL(", ").join(sql.SQL("{} = %s").format(sql.Identifier(column)) for column, _ in clean),
+            where_sql)
+        return operation, query, [value for _, value in clean] + where_params, True, f"{schema_name}.{table_name}"
+
+    if operation == "delete":
+        where_sql, params = _where(data, sources)
+        if not (data.get("conditions") or []):
+            raise ValueError("conditions_required")
+        query = sql.SQL("DELETE FROM {}.{} AS t0{}").format(
+            sql.Identifier(schema_name), sql.Identifier(table_name), where_sql)
+        return operation, query, params, True, f"{schema_name}.{table_name}"
+
+    action = str(data.get("alter_action") or "")
+    column = _safe_name(data.get("column"))
+    if action == "add_column":
+        type_key = str(data.get("data_type") or "")
+        if type_key not in _DDL_TYPES:
+            raise ValueError("invalid_data_type")
+        query = sql.SQL("ALTER TABLE {}.{} ADD COLUMN {} {}").format(
+            sql.Identifier(schema_name), sql.Identifier(table_name), sql.Identifier(column), sql.SQL(_DDL_TYPES[type_key]))
+    elif action == "rename_column":
+        if column not in base["columns"]:
+            raise ValueError("invalid_column")
+        query = sql.SQL("ALTER TABLE {}.{} RENAME COLUMN {} TO {}").format(
+            sql.Identifier(schema_name), sql.Identifier(table_name), sql.Identifier(column),
+            sql.Identifier(_safe_name(data.get("new_name"))))
+    elif action == "drop_column":
+        if column not in base["columns"] or _protected(column):
+            raise ValueError("invalid_column")
+        query = sql.SQL("ALTER TABLE {}.{} DROP COLUMN {}").format(
+            sql.Identifier(schema_name), sql.Identifier(table_name), sql.Identifier(column))
+    else:
+        raise ValueError("invalid_alter_action")
+    return operation, query, [], True, f"{schema_name}.{table_name}"
+
+
+def visual_query(actor_id, data):
+    """Preview or execute a server-validated visual plan.
+
+    SQL values are always parameters. Mutation previews contain placeholders,
+    never private values. Execution requires the exact preview hash.
+    """
+    conn = db.connect()
+    try:
+        with conn.cursor() as cur:
+            denied = _guard(cur, actor_id)
+            if denied:
+                return denied
+            operation, query, params, mutation, target = _build_plan(cur, data)
+            preview = query.as_string(conn)
+            value_digest = hashlib.sha256(json.dumps(
+                params, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
+            plan_hash = hashlib.sha256(json.dumps({
+                "operation": operation, "target": target, "sql": preview,
+                "param_count": len(params), "value_digest": value_digest,
+            }, sort_keys=True).encode()).hexdigest()
+            if not data.get("execute"):
+                return {"ok": True, "preview": True, "mutation": mutation,
+                        "operation": operation, "target": target, "sql": preview, "plan_hash": plan_hash}
+            if mutation and str(data.get("plan_hash") or "") != plan_hash:
+                return {"ok": False, "error": "confirmation_required"}
+            cur.execute(query, params)
+            if operation == "select":
+                columns = [item[0] for item in cur.description]
+                rows = [{column: _json_value(value) for column, value in zip(columns, row)}
+                        for row in cur.fetchall()]
+                return {"ok": True, "operation": operation, "columns": columns, "rows": rows}
+            affected = max(0, cur.rowcount)
+            db.audit(conn, actor_id, f"data_studio_{operation}", target, None, {
+                "operation": operation, "target": target, "affected": affected,
+                "sql_shape": preview, "parameter_count": len(params),
+            })
+        conn.commit()
+        return {"ok": True, "operation": operation, "target": target, "affected": affected}
+    except ValueError as exc:
+        conn.rollback()
+        return {"ok": False, "error": str(exc)}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        db.close_connection(conn)
 
 
 def catalog(actor_id):
@@ -175,7 +428,7 @@ def catalog(actor_id):
             clean = dict(item)
             clean.pop("schema_name", None)
             schema["objects"].append(clean)
-        return {"ok": True, "mode": "vps", "read_only": True, "schemas": schemas}
+        return {"ok": True, "mode": "vps", "read_only": False, "schemas": schemas}
     finally:
         db.close_connection(conn)
 

@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.25.0 - Data Studio Foundation entregue e validado)
-**Estado mais recente:** 25 de julho de 2026 (v0.25.0 - exploração PostgreSQL por schema em modo somente leitura)
+**Última atualização:** 25 de julho de 2026 (v0.25.1 - Data Studio Visual Builder)
+**Estado mais recente:** 25 de julho de 2026 (v0.25.1 - gestão visual PostgreSQL protegida)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,18 +24,18 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.25.0**. Instalador local: `UpexNote_0.25.0_x64-setup.exe`.
+- A versao desktop instalada e **v0.25.1**. Instalador local: `UpexNote_0.25.1_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
-- O Data Studio Foundation explora schemas, tabelas, views, colunas, tipos, primary/foreign keys e indices; permite leitura paginada e filtro parametrizado, sempre `Read only`.
+- O Data Studio explora schemas e metadados e inclui construtor visual para SELECT, joins cruzados, condições AND/OR, INSERT, UPDATE, DELETE, CREATE TABLE e ALTER TABLE; SQL manual permanece reservado à v0.26.
 - O corredor do Data Studio exige sessao MFA valida, revalida `role=admin` na base, compoe identificadores pelo driver PostgreSQL e mascara colunas associadas a passwords, tokens, secrets, hashes, digests, TOTP e credenciais.
 - O suporte possui back-end funcional isolado no schema PostgreSQL ingles `support`, com identidades, tickets, descricoes, comentarios, anexos, historico de status, atribuicoes, notificacoes e auditoria.
 - Respostas administrativas de suporte usam a identidade oficial `@upexnote`; o solicitante conserva sua identidade de utilizador.
 - Evidencias nao ficam como BLOB no banco. O banco guarda metadados e referencias; o desenho previsto usa spool persistente na VPS e arquivamento por job/rclone no Google Drive, com manifesto do caso.
 - A interface de suporte segue o fluxo: **dashboard operacional -> caixa de entrada tabular -> caso detalhado**.
 - As versoes v0.23.2 a v0.23.6 consolidaram: navegacao administrativa lateral, Support como dashboard -> inbox -> caso, controles e campos no tema, barras de rolagem discretas, filtros de Activity por opcoes reais, tabelas administrativas responsivas e a fila de suporte com distribuicao equilibrada de ID, assunto, solicitante, data e status.
-- Build Tauri de producao, TypeScript/Vite, `cargo check` e 6 testes do worker passaram. A v0.25.0 foi instalada; catalogos `public` e `support`, leitura de tabela e estrutura foram validados visualmente na sessao administrativa real.
+- TypeScript/Vite, `cargo check`, build Tauri/NSIS e 5 testes específicos de segurança passaram. A v0.25.1 foi instalada e o construtor/SQL parametrizado foram validados visualmente sem mutações no banco real.
 
 ### Decisoes de produto e UX vigentes
 
@@ -52,9 +52,8 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 
 1. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
 2. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
-3. Implementar o SQL Editor somente leitura do Data Studio com autocomplete local.
+3. Implementar na v0.26 o SQL Editor manual com autocomplete local e execução protegida.
 4. Implementar Saved Ad Hocs com parametros, execucao, edicao e arquivamento.
-5. Implementar o Visual Builder com filtros e joins entre tabelas e schemas.
 6. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
 7. Retomar Integracoes/Webhooks depois dos contratos concretos de consultas, eventos e automacoes.
 
@@ -428,6 +427,19 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (f): Data Studio Visual Builder — v0.25.1
+
+- Corrigido o escopo da linha v0.25: a aba inicial do workspace agora é um construtor visual, não apenas uma visualização de catálogo.
+- SELECT permite escolher campos, combinar condições por AND/OR e criar múltiplos joins entre tabelas do mesmo schema ou de schemas diferentes.
+- INSERT e UPDATE usam pares coluna/valor; DELETE e UPDATE exigem condição no worker.
+- CREATE TABLE oferece nome, colunas, tipos aprovados, nullability e primary key; ALTER TABLE permite adicionar, renomear e excluir coluna.
+- Toda ação gera primeiro uma prévia SQL não editável. Valores nunca aparecem nela: seguem como parâmetros.
+- Mutações exigem confirmação do hash exato do plano, executam em transação e geram auditoria sem valores privados.
+- SQL digitado manualmente não pertence a esta tela e foi reservado para a v0.26.
+- Validação concluída: TypeScript/Vite (1810 módulos), `cargo check`, 5 testes do worker, PyInstaller, Tauri/NSIS e instalação silenciosa aprovados.
+- Na aplicação instalada, a tabela `public.engines` abriu no Visual Builder e gerou uma prévia parametrizada real; nenhuma mutação foi executada no banco.
+- SHA-256 do instalador final: `EFE53D769F5C13C0E1120442CE99F3BB0CDD97E3F1EEDE59BF9012433BC68C4B`.
 
 ### Registro — 2026-07-25 (e): Data Studio Foundation — v0.25.0
 

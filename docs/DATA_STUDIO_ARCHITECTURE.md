@@ -24,9 +24,9 @@ Administration
 
 Não usa abas horizontais como navegação principal. Dentro do workspace, abas contextuais podem alternar representações do mesmo objeto, como dados, estrutura, relações e índices.
 
-## Fundação v0.25.0
+## Fundação v0.25.0 e construtor visual v0.25.1
 
-A primeira entrega é estritamente somente leitura:
+A fundação v0.25.0 entregou a exploração somente leitura:
 
 - conexão central já configurada;
 - catálogo separado por schema;
@@ -40,12 +40,23 @@ A primeira entrega é estritamente somente leitura:
 - campos reconhecidamente sensíveis protegidos antes de sair do worker;
 - UI em PT/EN/ES, responsiva e compatível com temas.
 
-Não fazem parte desta versão:
+O construtor visual v0.25.1 acrescenta:
+
+- seleção de campos para `SELECT`;
+- condições combinadas por `AND` ou `OR`;
+- `INNER`, `LEFT`, `RIGHT` e `FULL JOIN` no mesmo schema ou entre schemas;
+- formulários para `INSERT`, `UPDATE` e `DELETE`;
+- criação de tabela e alteração para adicionar, renomear ou excluir coluna;
+- prévia SQL não editável com valores parametrizados e ocultos;
+- resultado tabular, confirmação de mutações por hash do plano, transação e auditoria;
+- bloqueio de `UPDATE` e `DELETE` sem condição.
+
+Não fazem parte da linha v0.25:
 
 - SQL livre;
 - criação do schema `data_studio`;
 - consultas salvas;
-- escrita, `UPDATE`, `DELETE` ou DDL;
+- SQL livre digitado manualmente;
 - scheduler, jobs, eventos ou entregas;
 - API, Webhooks ou conectores externos.
 
@@ -71,11 +82,9 @@ UI administrativa
 
 ## Evolução prevista
 
-1. SQL Editor somente leitura com autocomplete local.
+1. v0.26: SQL Editor manual com autocomplete local e execução protegida.
 2. Saved Ad Hocs e parâmetros no schema inglês isolado `data_studio`.
-3. Visual Builder com relações e joins entre schemas.
-4. Escrita controlada, transações e auditoria.
-5. Scheduler, jobs, eventos e entregas.
-6. APIs, Webhooks, CRM, n8n e conectores.
+3. Scheduler, jobs, eventos e entregas.
+4. APIs, Webhooks, CRM, n8n e conectores.
 
 Cada fase exige autorização e critério de aceite próprios. A visão comercial e possibilidades não aprovadas continuam em `FUTURE_PRODUCT_IDEAS.md`.

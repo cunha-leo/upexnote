@@ -1,6 +1,6 @@
 # Arquitetura do UpexNote
 
-> Estado alinhado à versão desktop `0.25.0`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.25.1`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
 
 ## Visão geral
 
@@ -30,7 +30,7 @@ PostgreSQL no EasyPanel
   └─ schema `support` isolado para atendimento
 ```
 
-O Data Studio administrativo explora o catálogo e dados PostgreSQL por um corredor somente leitura, documentado em `DATA_STUDIO_ARCHITECTURE.md`. SQL livre, escrita e automações permanecem fora da fundação v0.25.0.
+O Data Studio administrativo explora o catálogo e oferece um construtor visual PostgreSQL protegido, documentado em `DATA_STUDIO_ARCHITECTURE.md`. Valores são parametrizados; mutações exigem plano confirmado, transação e auditoria. SQL digitado manualmente e automações permanecem fora da linha v0.25.
 
 ## Aplicação desktop
 

@@ -1,6 +1,6 @@
 # Produto UpexNote
 
-> Estado alinhado à versão desktop `0.25.0`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.25.1`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
 
 ## Marca e propósito
 
@@ -21,7 +21,7 @@ O produto atende especialmente reuniões com português de Portugal, português 
 - Telemetria estritamente opcional, anónima e limitada a campos operacionais aprovados.
 - Suporte com casos, conversas, estados, atribuição e evidências sem armazenar binários no banco.
 - Perfil completo no rodapé com identidade, papel, informações da conta e preparação para avatar futuro.
-- Data Studio administrativo em modo somente leitura, com catálogo por schema, dados paginados, estrutura, relações e índices.
+- Data Studio com catálogo por schema e construtor visual para consultas, joins cruzados, filtros e operações protegidas de dados e estrutura.
 
 ## Princípios de produto
 
@@ -45,9 +45,8 @@ A pessoa precisa compreender onde está, o que pode fazer, o resultado da ação
 
 ## Próximas frentes aprovadas, ainda não implementadas
 
-1. SQL Editor somente leitura com autocomplete local no Data Studio.
+1. SQL Editor manual com autocomplete local e execução protegida no Data Studio, reservado à v0.26.
 2. Saved Ad Hocs com parâmetros e execução recorrente manual.
-3. Visual Builder com filtros e joins entre tabelas e schemas.
 4. Contexto estruturado: resumo, decisões, ações, riscos e perguntas, sempre derivado e identificado.
 5. Material de estudo: explicações, fluxos, tabelas, quiz e exportações.
 6. Chat ancorado no material, sem transformar inferências em fatos do transcript.
