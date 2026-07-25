@@ -420,7 +420,7 @@ body { margin: 0; }
 .profile-trigger:hover {
   background: transparent;
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border);
+  box-shadow: none;
 }
 .side-profile.collapsed .profile-trigger { flex: 0 0 auto; padding: 4px; }
 .side-profile .avatar {
@@ -688,7 +688,7 @@ button:hover:not(:disabled) { background: var(--accent-strong); }
 button.profile-trigger:hover:not(:disabled) {
   background: transparent;
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border);
+  box-shadow: none;
 }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 

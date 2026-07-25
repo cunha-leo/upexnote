@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.25.4 - correção definitiva do hover do perfil)
-**Estado mais recente:** 25 de julho de 2026 (v0.25.4 - perfil sem preenchimento sobreposto)
+**Última atualização:** 25 de julho de 2026 (v0.25.5 - perfil sem container no hover)
+**Estado mais recente:** 25 de julho de 2026 (v0.25.5 - hover visualmente neutro)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,7 +24,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.25.4**. Instalador local: `UpexNote_0.25.4_x64-setup.exe`.
+- A versao desktop instalada e **v0.25.5**. Instalador local: `UpexNote_0.25.5_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
@@ -427,6 +427,14 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (j): hover neutro do perfil — v0.25.5
+
+- Removido o contorno que ainda desenhava um container apertado em volta do perfil durante o hover.
+- O perfil permanece clicável, mas o hover não altera fundo, borda ou sombra; o bloco mantém exatamente a aparência de repouso.
+- Validação visual realizada na aplicação instalada com o cursor posicionado sobre o perfil, sem clique e sem abertura do popup.
+- TypeScript/Vite, testes Rust, Tauri/NSIS e instalação silenciosa foram aprovados.
+- SHA-256 do instalador: `A0D224611088A0D921BE5A5184173BF341C5019A7C7C0E6B65D3A0267A115097`.
 
 ### Registro — 2026-07-25 (i): hover do perfil — v0.25.4
 
