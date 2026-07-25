@@ -468,6 +468,8 @@ def cmd_admin(args):
             res = data_studio.table_data(actor, data)
         elif op == "admin-data-query":
             res = data_studio.visual_query(actor, data)
+        elif op == "admin-data-sql":
+            res = data_studio.sql_editor(actor, data)
         else:  # admin-audit
             res = db.list_audit(actor, table=data.get("table"), record_id=data.get("record_id"),
                                 since=data.get("since"))
@@ -879,7 +881,7 @@ def build_parser():
 
     for name in ("admin-overview", "admin-users", "admin-create-user", "admin-update-user",
                  "admin-delete-user", "admin-events", "admin-audit",
-                 "admin-data-catalog", "admin-data-table", "admin-data-query"):
+                 "admin-data-catalog", "admin-data-table", "admin-data-query", "admin-data-sql"):
         p_adm = sub.add_parser(name, help="Administracao (payload por stdin; ator revalidado na base).")
         p_adm.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
     p_oa = sub.add_parser("oauth", help="Login social (Google loopback+PKCE / GitHub device flow).")
@@ -939,6 +941,7 @@ def main(argv=None):
         "admin-data-catalog": cmd_admin,
         "admin-data-table": cmd_admin,
         "admin-data-query": cmd_admin,
+        "admin-data-sql": cmd_admin,
         "oauth": cmd_oauth,
         "api-reset-request": cmd_api_reset,
         "api-reset-verify": cmd_api_reset,

@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.25.5 - perfil sem container no hover)
-**Estado mais recente:** 25 de julho de 2026 (v0.25.5 - hover visualmente neutro)
+**Última atualização:** 25 de julho de 2026 (v0.26.0 - SQL Editor profissional no Data Studio)
+**Estado mais recente:** 25 de julho de 2026 (v0.26.0 - editor PostgreSQL com autocomplete e execução protegida)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,11 +24,11 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.25.5**. Instalador local: `UpexNote_0.25.5_x64-setup.exe`.
+- A versao desktop instalada e **v0.26.0**. Instalador local: `UpexNote_0.26.0_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
-- O Data Studio explora schemas e metadados e inclui construtor visual para SELECT, joins cruzados, condições AND/OR, INSERT, UPDATE, DELETE, CREATE TABLE e ALTER TABLE; SQL manual permanece reservado à v0.26.
+- O Data Studio explora schemas e metadados, inclui construtor visual para SELECT, joins cruzados, condições AND/OR, INSERT, UPDATE, DELETE, CREATE TABLE e ALTER TABLE e, desde a v0.26, oferece SQL Editor PostgreSQL com autocomplete do catálogo, formatter e execução protegida.
 - O corredor do Data Studio exige sessao MFA valida, revalida `role=admin` na base, compoe identificadores pelo driver PostgreSQL e mascara colunas associadas a passwords, tokens, secrets, hashes, digests, TOTP e credenciais.
 - O suporte possui back-end funcional isolado no schema PostgreSQL ingles `support`, com identidades, tickets, descricoes, comentarios, anexos, historico de status, atribuicoes, notificacoes e auditoria.
 - Respostas administrativas de suporte usam a identidade oficial `@upexnote`; o solicitante conserva sua identidade de utilizador.
@@ -52,10 +52,9 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 
 1. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
 2. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
-3. Implementar na v0.26 o SQL Editor manual com autocomplete local e execução protegida.
-4. Implementar Saved Ad Hocs com parametros, execucao, edicao e arquivamento.
-6. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
-7. Retomar Integracoes/Webhooks depois dos contratos concretos de consultas, eventos e automacoes.
+3. Implementar Saved Ad Hocs com parametros, execucao, edicao e arquivamento.
+4. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
+5. Retomar Integracoes/Webhooks depois dos contratos concretos de consultas, eventos e automacoes.
 
 ---
 
@@ -427,6 +426,24 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (k): SQL Editor profissional — v0.26.0
+
+- O Data Studio ganhou modos irmãos `Visual` e `SQL Editor`, preservando o Explorer de schemas como referência e fonte do autocomplete.
+- Editor CodeMirror PostgreSQL com numeração de linhas, linha ativa, correspondência de parênteses, fechamento automático, folding e coloração distinta para palavras-chave, schemas, tabelas, identificadores, strings e números.
+- Autocomplete local usa o catálogo real já carregado: schemas, tabelas e colunas protegidas são filtradas antes de chegar ao editor.
+- No modo SQL, o Explorer navega em três níveis (`schema → tabela/view → colunas`); cada tabela pode ser expandida individualmente para consultar nome e tipo dos campos disponíveis sem sair do editor.
+- O editor é a área principal e possui altura útil proporcional, rolagem própria e redimensionamento vertical; execução e resultado permanecem diretamente abaixo.
+- Configurações ficam recolhidas atrás do botão `Settings`, sem ocupar permanentemente a área de código. Incluem palavras-chave em `UPPERCASE`, `lowercase` ou preservadas; quatro fontes; tamanhos de 12 a 18 px e oito paletas: Midnight, PostgreSQL Blue, DBeaver Dark, Dracula, Solarized Dark, GitHub Light, Warm Paper e High Contrast.
+- `Format SQL` fica separado de `Settings` e oferece três presets PostgreSQL: padrão equilibrado, compacto e expandido.
+- `Run SQL` aceita uma instrução por vez. SELECT/SHOW/EXPLAIN retornam até 500 linhas na grade logo abaixo; colunas sensíveis são mascaradas.
+- INSERT/UPDATE/DELETE/CREATE/ALTER/DROP exigem prévia e confirmação pelo hash exato da instrução. UPDATE/DELETE sem `WHERE`, múltiplas instruções e comandos administrativos perigosos são bloqueados.
+- Execução possui timeout de 15 segundos; auditoria de mutações registra somente operação, linhas afetadas e digest, nunca o SQL literal.
+- Interface traduzida em PT/EN/ES. Auditoria npm de dependências de produção: zero vulnerabilidades.
+- Validação real na aplicação instalada executou apenas `SELECT * FROM public.engines ORDER BY id ASC` e apresentou as quatro linhas na grade inline; nenhuma mutação foi executada.
+- O layout foi conferido na aplicação instalada com configurações fechadas e abertas, oito temas visíveis, ações sem sobreposição e comportamento responsivo em janela estreita.
+- TypeScript/Vite (1928 módulos), 11 testes do worker, testes Rust, PyInstaller, Tauri/NSIS e instalação silenciosa foram aprovados.
+- SHA-256 do instalador: `FE6A97166AD92393959DCD1FF19E2A57966A9ABB289CDCFAA87B39D28487F3DE`.
 
 ### Registro — 2026-07-25 (j): hover neutro do perfil — v0.25.5
 

@@ -58,6 +58,37 @@ class DataStudioSafetyTests(unittest.TestCase):
         self.assertEqual(params, ["%Acme%", 100])
         self.assertIn("DESC", str(_query))
 
+    def test_sql_editor_accepts_one_safe_statement(self):
+        statement, operation, mutation = data_studio._raw_sql_plan(
+            "SELECT id, status FROM public.tasks WHERE status = 'open';"
+        )
+        self.assertEqual(operation, "select")
+        self.assertFalse(mutation)
+        self.assertIn("public.tasks", statement)
+        quoted, operation, mutation = data_studio._raw_sql_plan(
+            "SELECT 'semicolon; and COPY are data, not commands' AS example;"
+        )
+        self.assertEqual(operation, "select")
+        self.assertFalse(mutation)
+        self.assertIn("semicolon;", quoted)
+
+    def test_sql_editor_requires_preview_for_mutations_and_where_for_mass_changes(self):
+        statement, operation, mutation = data_studio._raw_sql_plan(
+            "UPDATE public.tasks SET status = 'done' WHERE id = 42"
+        )
+        self.assertEqual(operation, "update")
+        self.assertTrue(mutation)
+        self.assertTrue(statement.startswith("UPDATE"))
+        for query in (
+            "DELETE FROM public.tasks",
+            "UPDATE public.tasks SET status = 'done'",
+            "SELECT 1; SELECT 2",
+            "TRUNCATE public.tasks",
+            "CREATE FUNCTION dangerous() RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql",
+        ):
+            with self.subTest(query=query), self.assertRaises(ValueError):
+                data_studio._raw_sql_plan(query)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,9 +1,16 @@
-import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
+import CodeMirror from "@uiw/react-codemirror";
+import { PostgreSQL, sql as sqlLanguage } from "@codemirror/lang-sql";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { EditorView } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import type { Extension } from "@codemirror/state";
+import { format as formatSql } from "sql-formatter";
 import {
   Mic, LibraryBig, Settings, Palette, PanelLeftClose, PanelLeftOpen,
   Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
@@ -13,6 +20,7 @@ import {
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
+import "@fontsource/ibm-plex-mono/400.css";
 import "./App.css";
 
 // ---------------------------------------------------------------------------
@@ -2215,12 +2223,55 @@ type DsJoin = { schema: string; table: string; type: string; left_source: number
 type DsValue = { column: string; value: string };
 type DsField = { source: number; column: string };
 type DsDdlColumn = { name: string; type: string; nullable: boolean; primary: boolean };
+type SqlThemeId = "midnight" | "postgres" | "dbeaver" | "dracula" | "solarized" | "github" | "paper" | "contrast";
+type SqlFormatStyle = "standard" | "compact" | "expanded";
+
+const SQL_THEME_PALETTES: Record<SqlThemeId, {
+  label: string; dark: boolean; bg: string; gutter: string; text: string; caret: string;
+  keyword: string; string: string; number: string; type: string; name: string; comment: string; operator: string; selection: string;
+}> = {
+  midnight: { label: "Midnight", dark: true, bg: "#11131c", gutter: "#0c0e16", text: "#d8dee9", caret: "#ffb4ac", keyword: "#c792ea", string: "#c3e88d", number: "#f78c6c", type: "#82aaff", name: "#f07178", comment: "#697386", operator: "#89ddff", selection: "#33415c" },
+  postgres: { label: "PostgreSQL Blue", dark: true, bg: "#102232", gutter: "#0b1925", text: "#d7e9f7", caret: "#f6c85f", keyword: "#64b5f6", string: "#9ccc65", number: "#ffb74d", type: "#80cbc4", name: "#ef9a9a", comment: "#7293a8", operator: "#81d4fa", selection: "#244b67" },
+  dbeaver: { label: "DBeaver Dark", dark: true, bg: "#24282e", gutter: "#1d2025", text: "#d5d8dc", caret: "#ffffff", keyword: "#cc7832", string: "#6a8759", number: "#6897bb", type: "#ffc66d", name: "#9876aa", comment: "#808080", operator: "#a9b7c6", selection: "#3d4b5c" },
+  dracula: { label: "Dracula", dark: true, bg: "#282a36", gutter: "#21222c", text: "#f8f8f2", caret: "#f8f8f0", keyword: "#ff79c6", string: "#f1fa8c", number: "#bd93f9", type: "#8be9fd", name: "#50fa7b", comment: "#6272a4", operator: "#ff79c6", selection: "#44475a" },
+  solarized: { label: "Solarized Dark", dark: true, bg: "#002b36", gutter: "#00242d", text: "#839496", caret: "#eee8d5", keyword: "#859900", string: "#2aa198", number: "#d33682", type: "#b58900", name: "#268bd2", comment: "#586e75", operator: "#cb4b16", selection: "#073642" },
+  github: { label: "GitHub Light", dark: false, bg: "#ffffff", gutter: "#f6f8fa", text: "#24292f", caret: "#0969da", keyword: "#cf222e", string: "#0a3069", number: "#0550ae", type: "#953800", name: "#8250df", comment: "#6e7781", operator: "#cf222e", selection: "#b6d7ff" },
+  paper: { label: "Warm Paper", dark: false, bg: "#fbf7ef", gutter: "#f2eadc", text: "#3d3929", caret: "#b3522c", keyword: "#9c36b5", string: "#2b8a3e", number: "#e8590c", type: "#1971c2", name: "#c2255c", comment: "#8a8175", operator: "#495057", selection: "#ead9b8" },
+  contrast: { label: "High Contrast", dark: true, bg: "#000000", gutter: "#080808", text: "#ffffff", caret: "#ffff00", keyword: "#00ffff", string: "#7fff00", number: "#ffbf00", type: "#ff69b4", name: "#ffffff", comment: "#a8a8a8", operator: "#ffff00", selection: "#264f78" },
+};
+
+function makeSqlTheme(id: SqlThemeId): Extension {
+  const palette = SQL_THEME_PALETTES[id];
+  return [
+    EditorView.theme({
+      "&": { color: palette.text, backgroundColor: palette.bg },
+      ".cm-content": { caretColor: palette.caret },
+      ".cm-cursor, .cm-dropCursor": { borderLeftColor: palette.caret },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": { backgroundColor: palette.selection },
+      ".cm-gutters": { backgroundColor: palette.gutter, color: palette.comment, border: "none" },
+      ".cm-activeLine": { backgroundColor: `${palette.selection}55` },
+      ".cm-activeLineGutter": { backgroundColor: `${palette.selection}88` },
+      ".cm-tooltip": { backgroundColor: palette.gutter, color: palette.text, borderColor: palette.selection },
+      ".cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: palette.selection, color: palette.text },
+    }, { dark: palette.dark }),
+    syntaxHighlighting(HighlightStyle.define([
+      { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword], color: palette.keyword, fontWeight: "650" },
+      { tag: [tags.string, tags.special(tags.string)], color: palette.string },
+      { tag: [tags.number, tags.bool, tags.null], color: palette.number },
+      { tag: [tags.typeName, tags.className], color: palette.type },
+      { tag: [tags.variableName, tags.propertyName, tags.attributeName], color: palette.name },
+      { tag: [tags.comment, tags.lineComment, tags.blockComment], color: palette.comment, fontStyle: "italic" },
+      { tag: [tags.operator, tags.punctuation], color: palette.operator },
+    ])),
+  ];
+}
 
 function DataStudioWorkspace() {
   const { t } = useLang();
   const sess = getSession();
   const [schemas, setSchemas] = useState<DataStudioSchema[]>([]);
   const [expanded, setExpanded] = useState<string[]>([]);
+  const [expandedObjects, setExpandedObjects] = useState<string[]>([]);
   const [selection, setSelection] = useState<DataStudioSelection | null>(null);
   const [tab, setTab] = useState<DataStudioTab>("builder");
   const [catalogSearch, setCatalogSearch] = useState("");
@@ -2250,8 +2301,18 @@ function DataStudioWorkspace() {
   const [newName, setNewName] = useState("");
   const [plan, setPlan] = useState<{ sql: string; plan_hash: string; mutation: boolean } | null>(null);
   const [builderResult, setBuilderResult] = useState<{ columns: string[]; rows: Record<string, unknown>[]; affected?: number } | null>(null);
+  const [studioMode, setStudioMode] = useState<"visual" | "sql">("visual");
+  const [sqlText, setSqlText] = useState("SELECT *\nFROM public.engines\nORDER BY id ASC;");
+  const [sqlTheme, setSqlTheme] = useState<SqlThemeId>("midnight");
+  const [sqlFont, setSqlFont] = useState("Cascadia Code");
+  const [sqlFontSize, setSqlFontSize] = useState(14);
+  const [sqlKeywordCase, setSqlKeywordCase] = useState<"upper" | "lower" | "preserve">("upper");
+  const [sqlFormatStyle, setSqlFormatStyle] = useState<SqlFormatStyle>("standard");
+  const [showSqlSettings, setShowSqlSettings] = useState(false);
+  const [sqlPlan, setSqlPlan] = useState<{ sql: string; plan_hash: string; mutation: boolean; operation: string } | null>(null);
+  const [sqlResult, setSqlResult] = useState<{ columns: string[]; rows: Record<string, unknown>[]; affected?: number; truncated?: boolean } | null>(null);
 
-  async function call(op: "data-catalog" | "data-table" | "data-query", payload: Record<string, unknown> = {}) {
+  async function call(op: "data-catalog" | "data-table" | "data-query" | "data-sql", payload: Record<string, unknown> = {}) {
     const raw = await invoke<string>("admin", {
       op, mode: sess?.mode ?? null,
       payload: JSON.stringify({
@@ -2330,6 +2391,16 @@ function DataStudioWorkspace() {
     void loadTable(target, 1);
   }
 
+  function handleExplorerObject(schema: string, object: DataStudioObject) {
+    if (studioMode === "sql") {
+      const key = `${schema}.${object.object_name}`;
+      setExpandedObjects((current) => current.includes(key)
+        ? current.filter((item) => item !== key) : [...current, key]);
+      return;
+    }
+    selectObject(schema, object);
+  }
+
   const builderSources = useMemo(() => {
     if (!selection) return [];
     const base = [{ schema: selection.schema, object: selection.object }];
@@ -2378,6 +2449,53 @@ function DataStudioWorkspace() {
     } catch (error) { setErr(String(error)); } finally { setBusy(false); }
   }
 
+  async function runSqlEditor() {
+    if (!sqlText.trim()) return;
+    setBusy(true); setErr(""); setSqlPlan(null); setSqlResult(null);
+    try {
+      const preview = await call("data-sql", { sql: sqlText });
+      if (!preview.ok) setErr(preview.error || t("dsSqlError"));
+      else if (preview.mutation) setSqlPlan(preview);
+      else {
+        const result = await call("data-sql", { sql: sqlText, execute: true });
+        if (!result.ok) setErr(result.error || t("dsSqlError"));
+        else setSqlResult({ columns: result.columns || [], rows: result.rows || [], truncated: Boolean(result.truncated) });
+      }
+    } catch (error) { setErr(String(error)); } finally { setBusy(false); }
+  }
+
+  async function confirmSqlEditor() {
+    if (!sqlPlan) return;
+    setBusy(true); setErr("");
+    try {
+      const result = await call("data-sql", { sql: sqlText, execute: true, plan_hash: sqlPlan.plan_hash });
+      if (!result.ok) setErr(result.error || t("dsSqlError"));
+      else {
+        setSqlResult({ columns: result.columns || [], rows: result.rows || [], affected: result.affected });
+        setSqlPlan(null);
+        await loadCatalog();
+      }
+    } catch (error) { setErr(String(error)); } finally { setBusy(false); }
+  }
+
+  function applySqlFormat() {
+    try {
+      const preset = {
+        compact: { tabWidth: 2, expressionWidth: 120, linesBetweenQueries: 1 },
+        standard: { tabWidth: 2, expressionWidth: 60, linesBetweenQueries: 1 },
+        expanded: { tabWidth: 4, expressionWidth: 32, linesBetweenQueries: 2 },
+      }[sqlFormatStyle];
+      setSqlText(formatSql(sqlText, {
+        language: "postgresql",
+        keywordCase: sqlKeywordCase,
+        ...preset,
+      }));
+      setErr("");
+    } catch (error) {
+      setErr(String(error));
+    }
+  }
+
   useEffect(() => { void loadCatalog(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredSchemas = useMemo(() => {
@@ -2390,6 +2508,17 @@ function DataStudioWorkspace() {
     })).filter((schema) => schema.objects.length);
   }, [schemas, catalogSearch]);
   const filterableColumns = selection?.object.columns.filter((column) => !column.protected) || [];
+  const sqlSchema = useMemo(() => Object.fromEntries(schemas.flatMap((schema) =>
+    schema.objects.flatMap((object) => {
+      const columns = object.columns.filter((column) => !column.protected).map((column) => column.column_name);
+      return [[`${schema.name}.${object.object_name}`, columns], [object.object_name, columns]];
+    }))), [schemas]);
+  const sqlExtensions = useMemo(() => [sqlLanguage({
+    dialect: PostgreSQL,
+    schema: sqlSchema,
+    upperCaseKeywords: sqlKeywordCase === "upper",
+  })], [sqlSchema, sqlKeywordCase]);
+  const sqlThemeExtension = useMemo(() => makeSqlTheme(sqlTheme), [sqlTheme]);
 
   return <section className="card admin-workspace data-studio">
     <header className="workspace-head">
@@ -2405,6 +2534,14 @@ function DataStudioWorkspace() {
         </button>
       </div>
     </header>
+    <div className="ds-mode-switch" role="tablist" aria-label={t("dsWorkspaceMode")}>
+      <button className={studioMode === "visual" ? "active" : ""} onClick={() => setStudioMode("visual")}>
+        <Table2 size={15} />{t("dsVisualMode")}
+      </button>
+      <button className={studioMode === "sql" ? "active" : ""} onClick={() => setStudioMode("sql")}>
+        <Code2 size={15} />{t("dsSqlEditor")}
+      </button>
+    </div>
     {err && <div className="key-warn">{err}</div>}
     <div className={`ds-layout${explorerCollapsed ? " explorer-collapsed" : ""}${resultExpanded ? " result-expanded" : ""}`}>
       <aside className="ds-explorer">
@@ -2427,20 +2564,101 @@ function DataStudioWorkspace() {
                 {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <Database size={14} /><strong>{schema.name}</strong><span>{schema.objects.length}</span>
               </button>
-              {isOpen && <div className="ds-objects">{schema.objects.map((object) =>
-                <button key={object.object_name}
-                  className={selection?.schema === schema.name && selection.object.object_name === object.object_name ? "active" : ""}
-                  onClick={() => selectObject(schema.name, object)}>
-                  <Table2 size={14} /><span>{object.object_name}</span>
-                  <small>{object.object_type === "view" ? "view" : object.estimated_rows.toLocaleString()}</small>
-                </button>)}</div>}
+              {isOpen && <div className="ds-objects">{schema.objects.map((object) => {
+                const objectKey = `${schema.name}.${object.object_name}`;
+                const objectOpen = studioMode === "sql" && expandedObjects.includes(objectKey);
+                const visibleColumns = object.columns.filter((column) => !column.protected);
+                return <div className="ds-object-node" key={object.object_name}>
+                  <button
+                    className={selection?.schema === schema.name && selection.object.object_name === object.object_name ? "active" : ""}
+                    onClick={() => handleExplorerObject(schema.name, object)}
+                    aria-expanded={studioMode === "sql" ? objectOpen : undefined}>
+                    {studioMode === "sql" && (objectOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}
+                    <Table2 size={14} /><span>{object.object_name}</span>
+                    <small>{object.object_type === "view" ? "view" : object.estimated_rows.toLocaleString()}</small>
+                  </button>
+                  {objectOpen && <div className="ds-object-columns">
+                    {visibleColumns.map((column) => <div key={column.column_name} title={`${column.column_name} · ${column.data_type}`}>
+                      <Columns3 size={12} /><span>{column.column_name}</span><small>{column.data_type}</small>
+                    </div>)}
+                    {!visibleColumns.length && <p>{t("dsNoVisibleColumns")}</p>}
+                  </div>}
+                </div>;
+              })}</div>}
             </div>;
           })}
           {!filteredSchemas.length && !busy && <p className="empty-queue">{t("dsNoObjects")}</p>}
         </div>
       </aside>
       <div className="ds-workspace">
-        {!selection ? <div className="ds-welcome">
+        {studioMode === "sql" ? <div className="ds-sql-editor">
+          <header className="ds-sql-head">
+            <div><span className="eyebrow">POSTGRESQL</span><h3>{t("dsSqlEditor")}</h3><p>{t("dsSqlLead")}</p></div>
+            <div className="ds-sql-status"><span className="status-pill">{t("dsAutocomplete")}</span><span className="status-pill">{t("dsSingleStatement")}</span></div>
+          </header>
+          <div className="ds-editor-toolbar">
+            <span>{SQL_THEME_PALETTES[sqlTheme].label} · {sqlFont} · {sqlFontSize}px</span>
+            <div>
+              <button className={`secondary${showSqlSettings ? " active" : ""}`} onClick={() => setShowSqlSettings((value) => !value)}
+                aria-expanded={showSqlSettings}><Settings size={15} />{t("dsEditorSettings")}</button>
+              <button className="secondary" onClick={applySqlFormat}><Code2 size={15} />{t("dsFormatSql")}</button>
+            </div>
+          </div>
+          {showSqlSettings && <section className="ds-sql-settings" aria-label={t("dsEditorSettings")}>
+            <header><div><strong>{t("dsEditorSettings")}</strong><span>{t("dsSettingsHelp")}</span></div>
+              <button className="icon-action" onClick={() => setShowSqlSettings(false)} title={t("dsCloseSettings")}><X size={15} /></button>
+            </header>
+            <div className="ds-settings-fields">
+              <label><span>{t("dsFormatStyle")}</span><select value={sqlFormatStyle} onChange={(event) => setSqlFormatStyle(event.currentTarget.value as SqlFormatStyle)}>
+                <option value="standard">{t("dsFormatStandard")}</option><option value="compact">{t("dsFormatCompact")}</option><option value="expanded">{t("dsFormatExpanded")}</option>
+              </select></label>
+              <label><span>{t("dsKeywordStyle")}</span><select value={sqlKeywordCase} onChange={(event) => setSqlKeywordCase(event.currentTarget.value as typeof sqlKeywordCase)}>
+                <option value="upper">UPPERCASE</option><option value="lower">lowercase</option><option value="preserve">{t("dsPreserve")}</option>
+              </select></label>
+              <label><span>{t("dsEditorFont")}</span><select value={sqlFont} onChange={(event) => setSqlFont(event.currentTarget.value)}>
+                <option>Cascadia Code</option><option>Consolas</option><option>IBM Plex Mono</option><option>Courier New</option>
+              </select></label>
+              <label><span>{t("dsFontSize")}</span><select value={sqlFontSize} onChange={(event) => setSqlFontSize(Number(event.currentTarget.value))}>
+                {[12, 13, 14, 15, 16, 18].map((size) => <option key={size} value={size}>{size}px</option>)}
+              </select></label>
+            </div>
+            <div className="ds-theme-picker"><span>{t("dsEditorTheme")}</span><div>
+              {(Object.entries(SQL_THEME_PALETTES) as [SqlThemeId, typeof SQL_THEME_PALETTES[SqlThemeId]][]).map(([id, palette]) =>
+                <button key={id} className={sqlTheme === id ? "active" : ""} onClick={() => setSqlTheme(id)}
+                  aria-pressed={sqlTheme === id}>
+                  <i style={{ background: `linear-gradient(135deg, ${palette.bg} 58%, ${palette.keyword} 59% 72%, ${palette.string} 73%)` }} />
+                  <span>{palette.label}</span>
+                </button>)}
+            </div></div>
+          </section>}
+          <div className="ds-code-shell" style={{ "--sql-font": sqlFont, "--sql-size": `${sqlFontSize}px` } as CSSProperties}>
+            <CodeMirror
+              value={sqlText}
+              height="100%"
+              theme={sqlThemeExtension}
+              extensions={sqlExtensions}
+              onChange={(value) => { setSqlText(value); setSqlPlan(null); setSqlResult(null); }}
+              basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true, bracketMatching: true, autocompletion: true, closeBrackets: true }}
+            />
+            <span className="ds-resize-hint">{t("dsResizeEditor")}</span>
+          </div>
+          <footer className="ds-sql-actions">
+            <div><strong>{t("dsExecution")}</strong><span>{t("dsExecutionHelp")}</span></div>
+            <button onClick={runSqlEditor} disabled={busy || !sqlText.trim()}>{busy ? <span className="spinner" /> : <Play size={15} />}{t("dsRunSql")}</button>
+            {sqlPlan?.mutation && <button className="danger-button" onClick={confirmSqlEditor} disabled={busy}><Play size={15} />{t("dsConfirmExecute")}</button>}
+          </footer>
+          {sqlPlan?.mutation && <div className="ds-sql-confirm">
+            <strong>{t("dsMutationPreview")}</strong><span>{sqlPlan.operation.toUpperCase()}</span><code>{sqlPlan.sql}</code>
+          </div>}
+          {sqlResult && <div className="ds-builder-result ds-sql-result">
+            <header className="ds-result-head"><div><strong>{t("dsQueryResult")}</strong><span>{sqlResult.rows.length} {t("dsRows")}</span></div>
+              {sqlResult.truncated && <span className="status-pill">{t("dsLimitedRows")}</span>}
+            </header>
+            {sqlResult.affected !== undefined && <div className="notice">{t("dsAffected", { n: sqlResult.affected })}</div>}
+            {!!sqlResult.columns.length && <div className="ds-data-scroll"><table className="ds-data-table"><thead><tr>{sqlResult.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+              <tbody>{sqlResult.rows.map((row, index) => <tr key={index}>{sqlResult.columns.map((column) => <td key={column}>{row[column] === null ? <i>NULL</i> : typeof row[column] === "object" ? JSON.stringify(row[column]) : String(row[column])}</td>)}</tr>)}</tbody></table></div>}
+          </div>}
+        </div> : !selection ? <div className="ds-welcome">
           <Database size={34} />
           <h3>{t("dsWelcome")}</h3>
           <p>{t("dsWelcomeLead")}</p>

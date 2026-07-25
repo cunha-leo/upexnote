@@ -35,6 +35,13 @@ _DDL_TYPES = {
     "jsonb": "JSONB", "uuid": "UUID",
 }
 _NAME = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
+_SQL_READ_OPS = {"select", "show", "explain"}
+_SQL_MUTATION_OPS = {"insert", "update", "delete", "create", "alter", "drop"}
+_SQL_FORBIDDEN = re.compile(
+    r"\b(copy|grant|revoke|truncate|vacuum|analyze|cluster|reindex|listen|notify|"
+    r"load|call|do|execute|prepare|deallocate|reset|discard|security\s+definer)\b",
+    re.IGNORECASE,
+)
 
 
 def _protected(column: str) -> bool:
@@ -58,6 +65,140 @@ def _json_value(value):
     if isinstance(value, dict):
         return {str(key): _json_value(item) for key, item in value.items()}
     return str(value)
+
+
+def _sql_without_comments(value):
+    """Remove comments while preserving quoted content for safe statement checks."""
+    text = str(value or "")
+    output, index, quote = [], 0, None
+    while index < len(text):
+        char = text[index]
+        pair = text[index:index + 2]
+        if quote:
+            output.append(char)
+            if char == quote:
+                if index + 1 < len(text) and text[index + 1] == quote:
+                    output.append(text[index + 1]); index += 1
+                else:
+                    quote = None
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char; output.append(char); index += 1; continue
+        if pair == "--":
+            end = text.find("\n", index + 2)
+            index = len(text) if end < 0 else end
+            output.append("\n")
+            continue
+        if pair == "/*":
+            end = text.find("*/", index + 2)
+            if end < 0:
+                raise ValueError("unterminated_comment")
+            output.append(" ")
+            index = end + 2
+            continue
+        output.append(char); index += 1
+    if quote:
+        raise ValueError("unterminated_quote")
+    return "".join(output).strip()
+
+
+def _raw_sql_plan(value):
+    statement = _sql_without_comments(value)
+    if not statement:
+        raise ValueError("sql_required")
+    structure, quote = [], None
+    index = 0
+    while index < len(statement):
+        char = statement[index]
+        if quote:
+            structure.append(" ")
+            if char == quote:
+                if index + 1 < len(statement) and statement[index + 1] == quote:
+                    structure.append(" "); index += 1
+                else:
+                    quote = None
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char; structure.append(" "); index += 1; continue
+        structure.append(char); index += 1
+    structural_sql = "".join(structure)
+    chunks = [item.strip() for item in structural_sql.split(";") if item.strip()]
+    if len(chunks) != 1:
+        raise ValueError("single_statement_required")
+    statement = statement.rstrip().rstrip(";").rstrip()
+    structural_sql = structural_sql.rstrip().rstrip(";").rstrip()
+    match = re.match(r"^\s*([a-z]+)", structural_sql, re.IGNORECASE)
+    operation = match.group(1).lower() if match else ""
+    if operation == "with":
+        # CTEs may hide mutations. Keep v0.26 deterministic and explicitly safe.
+        raise ValueError("cte_not_supported")
+    if operation not in _SQL_READ_OPS | _SQL_MUTATION_OPS:
+        raise ValueError("operation_not_allowed")
+    if _SQL_FORBIDDEN.search(structural_sql):
+        raise ValueError("operation_not_allowed")
+    if operation in {"update", "delete"} and not re.search(r"\bwhere\b", structural_sql, re.IGNORECASE):
+        raise ValueError("conditions_required")
+    if operation == "create" and not re.match(
+            r"^\s*create\s+(table|index|unique\s+index|view|materialized\s+view|schema)\b",
+            structural_sql, re.IGNORECASE):
+        raise ValueError("operation_not_allowed")
+    if operation == "alter" and not re.match(
+            r"^\s*alter\s+(table|index|view|materialized\s+view|schema)\b",
+            structural_sql, re.IGNORECASE):
+        raise ValueError("operation_not_allowed")
+    if operation == "drop" and not re.match(
+            r"^\s*drop\s+(table|index|view|materialized\s+view|schema)\b",
+            structural_sql, re.IGNORECASE):
+        raise ValueError("operation_not_allowed")
+    return statement, operation, operation in _SQL_MUTATION_OPS
+
+
+def sql_editor(actor_id, data):
+    """Preview or execute one protected PostgreSQL statement from the SQL editor."""
+    conn = db.connect()
+    try:
+        with conn.cursor() as cur:
+            denied = _guard(cur, actor_id)
+            if denied:
+                return denied
+            statement, operation, mutation = _raw_sql_plan(data.get("sql"))
+            plan_hash = hashlib.sha256(statement.encode("utf-8")).hexdigest()
+            if not data.get("execute"):
+                return {"ok": True, "preview": True, "mutation": mutation,
+                        "operation": operation, "sql": statement, "plan_hash": plan_hash}
+            if mutation and str(data.get("plan_hash") or "") != plan_hash:
+                return {"ok": False, "error": "confirmation_required"}
+            cur.execute("SET LOCAL statement_timeout = '15s'")
+            cur.execute(statement)
+            if cur.description:
+                columns = [item[0] for item in cur.description]
+                fetched = cur.fetchmany(501)
+                rows = []
+                for row in fetched[:500]:
+                    rows.append({
+                        column: ("[protected]" if _protected(column) and value is not None else _json_value(value))
+                        for column, value in zip(columns, row)
+                    })
+                conn.rollback()
+                return {"ok": True, "operation": operation, "columns": columns, "rows": rows,
+                        "truncated": len(fetched) > 500}
+            affected = max(0, cur.rowcount)
+            db.audit(conn, actor_id, f"data_studio_sql_{operation}", "sql_editor", None, {
+                "operation": operation, "affected": affected,
+                "sql_digest": plan_hash, "statement_count": 1,
+            })
+        conn.commit()
+        return {"ok": True, "operation": operation, "affected": affected}
+    except ValueError as exc:
+        conn.rollback()
+        return {"ok": False, "error": str(exc)}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        db.close_connection(conn)
 
 
 def _guard(cur, actor_id):

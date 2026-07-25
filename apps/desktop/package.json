@@ -1,7 +1,7 @@
 {
   "name": "upexnote",
   "private": true,
-  "version": "0.25.5",
+  "version": "0.26.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,8 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/lang-sql": "^6.10.0",
     "@fontsource-variable/dm-sans": "^5.2.8",
     "@fontsource-variable/figtree": "^5.2.10",
     "@fontsource-variable/geist": "^5.2.9",
@@ -23,13 +25,16 @@
     "@fontsource-variable/roboto-flex": "^5.2.8",
     "@fontsource-variable/source-sans-3": "^5.2.9",
     "@fontsource/atkinson-hyperlegible": "^5.2.8",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/lato": "^5.2.7",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
+    "@uiw/react-codemirror": "^4.25.11",
     "lucide-react": "^1.24.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "sql-formatter": "^15.8.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
