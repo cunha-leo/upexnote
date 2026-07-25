@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 19 de julho de 2026 (v0.20.0 — MFA administrativo TOTP OU e-mail publicado e validado de ponta a ponta)
+**Última atualização:** 25 de julho de 2026 (documentação de arquitetura e produto alinhada ao estado v0.23.6)
 **Estado mais recente:** 23 de julho de 2026 (v0.23.6 - administracao e suporte validados visualmente para o encerramento da sessao)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
@@ -424,6 +424,24 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25: alinhamento dos documentos de arquitetura e produto
+
+### O que mudou
+- `docs/ARCHITECTURE.md` e `docs/PRODUCT.md` foram reescritos para refletir o estado entregue até a desktop v0.23.6: aplicação local-first, worker sidecar, API FastAPI, identidade, MFA, administração, telemetria consentida, suporte e operação da VPS.
+- Os dois documentos passaram a distinguir claramente capacidades entregues das próximas frentes reais: Integrações/Webhooks após contrato, contexto/estudo/chat, evolução operacional do suporte e perfil do rodapé.
+
+### Evidência / teste
+- Conteúdo confrontado com a seção de estado atual deste documento, manifests v0.23.6, routers/serviços da API, comandos do worker e interfaces desktop existentes.
+
+### Decisão
+- `PROJECT_CONTEXT.md` continua a ser a fonte de verdade histórica e de decisões. `ARCHITECTURE.md` e `PRODUCT.md` passam a ser resumos atuais e concisos, com referência explícita ao contexto vivo.
+
+### Impacto em dados, custo ou privacidade
+- Nenhum: alteração exclusivamente documental, sem tocar em serviços, credenciais, dados de utilizador ou infraestrutura.
+
+### Próximo passo
+- Escolher a próxima frente de produto entre Integrações/Webhooks, contexto/estudo/chat, evolução operacional do suporte ou perfil do rodapé.
 
 ### Registro — 2026-07-23 (a): destino local dos transcripts no Drive + diagnóstico do workspace fantasma
 
