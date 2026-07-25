@@ -1396,8 +1396,19 @@ input[type="range"] {
 .ds-connection { display: inline-flex; align-items: center; gap: 7px; color: var(--text-dim); font-size: var(--fs-sm); white-space: nowrap; }
 .ds-connection b { display: inline-flex; padding: 3px 8px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); }
 .ds-layout { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); min-height: 630px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); overflow: hidden; background: var(--panel); }
+.ds-layout.explorer-collapsed { grid-template-columns: 48px minmax(0, 1fr); }
+.ds-layout.result-expanded { grid-template-columns: minmax(0, 1fr); }
+.ds-layout.result-expanded .ds-explorer, .ds-layout.result-expanded .ds-object-head, .ds-layout.result-expanded .ds-tabs,
+.ds-layout.result-expanded .ds-builder > :not(.ds-builder-result) { display: none; }
+.ds-layout.result-expanded .ds-builder-result { margin: 0; max-height: none; height: 100%; border: 0; border-radius: 0; }
+.ds-layout.result-expanded .ds-builder-result .ds-data-scroll { height: calc(100vh - 190px); }
 .ds-explorer { min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--panel-2) 65%, var(--panel)); }
 .ds-pane-title { display: flex; align-items: center; gap: 8px; padding: 14px 15px 9px; }
+.ds-pane-title strong { flex: 1; }
+.ds-pane-title .icon-action { flex: 0 0 auto; }
+.explorer-collapsed .ds-pane-title { justify-content: center; padding: 12px 4px; }
+.explorer-collapsed .ds-pane-title > svg, .explorer-collapsed .ds-pane-title strong,
+.explorer-collapsed .ds-search, .explorer-collapsed .ds-tree { display: none; }
 .ds-search { width: auto; min-width: 0; margin: 0 10px 10px; }
 .ds-tree { flex: 1; min-height: 0; overflow: auto; padding: 0 7px 14px; }
 .ds-schema > button, .ds-objects button { width: 100%; display: flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--text-dim); text-align: left; border-radius: var(--radius-ctl); }
@@ -1421,12 +1432,20 @@ input[type="range"] {
 .ds-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 9px 10px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--text-dim); }
 .ds-tabs button:hover { color: var(--text); }
 .ds-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
-.ds-builder { min-height: 0; overflow: auto; padding-bottom: 18px; }
+.ds-builder { min-height: 0; overflow: auto; padding-bottom: 18px; display: flex; flex-direction: column; }
 .ds-builder-toolbar { display: flex; align-items: end; gap: 16px; padding: 14px 16px; background: var(--panel-2); border-bottom: 1px solid var(--border); }
 .ds-builder-toolbar label { display: grid; gap: 5px; min-width: 190px; }
 .ds-builder-toolbar label span, .ds-target span { color: var(--text-dim); font-size: var(--fs-xs); }
 .ds-target { display: grid; gap: 5px; min-width: 0; }
 .ds-target strong { overflow: hidden; color: var(--accent); text-overflow: ellipsis; }
+.ds-describe { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.ds-conditions-section { order: 1; }
+.ds-sort-section { order: 2; }
+.ds-builder-actions { order: 3; }
+.ds-builder-result { order: 4; }
+.ds-fields-section { order: 5; }
+.ds-joins-section { order: 6; }
+.ds-sql-preview { order: 7; }
 .ds-builder-section { margin: 14px 16px 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
 .ds-builder-section > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; background: var(--panel-2); border-bottom: 1px solid var(--border); }
 .ds-builder-section > header > div { display: grid; gap: 2px; }
@@ -1438,6 +1457,8 @@ input[type="range"] {
 .ds-condition-row { grid-template-columns: 72px minmax(105px,.7fr) minmax(120px,1fr) minmax(100px,.65fr) minmax(130px,1fr) auto; }
 .ds-join-row { grid-template-columns: 115px minmax(170px,1.2fr) minmax(100px,.7fr) minmax(120px,1fr) auto minmax(120px,1fr) auto; }
 .ds-ddl-row { grid-template-columns: minmax(150px,.8fr) minmax(160px,1fr) minmax(140px,.8fr); }
+.ds-sort-row { display: grid; grid-template-columns: minmax(160px,1fr) minmax(130px,.45fr); gap: 8px; padding: 10px; }
+.ds-sort-row select { width: 100%; min-width: 0; }
 .ds-create-name { padding: 10px; border-bottom: 1px solid var(--border); }
 .ds-create-name label { display: grid; grid-template-columns: 110px minmax(160px, 1fr); align-items: center; gap: 8px; }
 .ds-create-name span { color: var(--text-dim); font-size: var(--fs-xs); }
@@ -1447,15 +1468,20 @@ input[type="range"] {
 .ds-builder-row:last-child, .ds-condition-row:last-child, .ds-join-row:last-child { border-bottom: 0; }
 .ds-builder-row select, .ds-builder-row input, .ds-condition-row select, .ds-condition-row input, .ds-join-row select, .ds-ddl-row select, .ds-ddl-row input { width: 100%; min-width: 0; }
 .ds-where { color: var(--text-dim); font-size: var(--fs-xs); font-weight: 700; text-align: center; }
-.ds-builder-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 16px 0; }
+.ds-builder-actions { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 11px 16px; margin-top: 10px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(8px); }
+.ds-builder-actions > span { margin-right: auto; color: var(--text-dim); font-size: var(--fs-xs); }
 .ds-builder-actions button { display: inline-flex; align-items: center; gap: 6px; }
 .danger-button { background: var(--danger, #b84d57) !important; color: white !important; }
 .ds-sql-preview { margin: 12px 16px 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.ds-sql-preview header { display: flex; justify-content: space-between; gap: 8px; padding: 8px 11px; background: var(--panel-2); }
-.ds-sql-preview header span { color: var(--text-dim); font-size: var(--fs-xs); }
+.ds-sql-preview summary { display: flex; justify-content: space-between; gap: 8px; padding: 8px 11px; background: var(--panel-2); cursor: pointer; }
+.ds-sql-preview summary span { color: var(--text-dim); font-size: var(--fs-xs); }
 .ds-sql-preview code { display: block; padding: 12px; overflow: auto; color: var(--accent); white-space: pre-wrap; overflow-wrap: anywhere; }
 .ds-builder-result { margin: 12px 16px 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: auto; max-height: 360px; }
 .ds-builder-result .notice { margin: 10px; }
+.ds-result-head { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
+.ds-result-head > div { display: flex; align-items: baseline; gap: 8px; }
+.ds-result-head span { color: var(--text-dim); font-size: var(--fs-xs); }
+.ds-result-head button { display: inline-flex; align-items: center; gap: 6px; }
 .ds-filterbar { display: grid; grid-template-columns: auto minmax(130px, .8fr) minmax(110px, .55fr) minmax(160px, 1fr) auto; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--border); background: var(--panel-2); }
 .ds-filterbar select, .ds-filterbar input { min-width: 0; width: 100%; }
 .ds-data-scroll { flex: 1; min-width: 0; overflow: auto; }

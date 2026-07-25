@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.25.1 - Data Studio Visual Builder)
-**Estado mais recente:** 25 de julho de 2026 (v0.25.1 - gestão visual PostgreSQL protegida)
+**Última atualização:** 25 de julho de 2026 (v0.25.2 - fluxo simplificado do Data Studio)
+**Estado mais recente:** 25 de julho de 2026 (v0.25.2 - consulta visual direta e resultado inline)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,7 +24,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.25.1**. Instalador local: `UpexNote_0.25.1_x64-setup.exe`.
+- A versao desktop instalada e **v0.25.2**. Instalador local: `UpexNote_0.25.2_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
@@ -427,6 +427,21 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (g): simplificação do Data Studio — v0.25.2
+
+- A consulta básica passou a seguir um fluxo único: tabela selecionada → condições/WHERE → ORDER BY → executar → resultado imediatamente abaixo.
+- SELECT não exige escolher campos: sem seleção explícita, retorna automaticamente todas as colunas permitidas.
+- A execução de SELECT deixou de exigir os dois passos “prévia” e “executar”; a aplicação valida o plano e executa a consulta em uma única ação.
+- Seleção específica de campos e JOINs permanecem no mesmo workspace como refinamentos posteriores do fluxo.
+- O botão `Ver estrutura` oferece acesso direto ao equivalente visual de DESCRIBE.
+- Aliases internos continuam seguros no SQL gerado, mas detalhes técnicos ficam recolhidos e a apresentação remove `t0`, `t1` e equivalentes.
+- O resultado permanece na mesma página, logo abaixo da barra de execução; não muda para outra aba.
+- ORDER BY ganhou seleção de coluna e direção crescente/decrescente.
+- O Explorer de schemas pode ser recolhido para ampliar o workspace; o resultado também pode ser expandido e restaurado, ocupando toda a área útil do Data Studio sem estouro horizontal.
+- Validação visual real confirmou consulta de `public.engines` em uma única ação e as quatro linhas renderizadas imediatamente sob os filtros; nenhuma mutação foi executada.
+- TypeScript/Vite, `cargo check`, 5 testes do worker, PyInstaller, Tauri/NSIS e instalação silenciosa foram aprovados.
+- SHA-256 do instalador: `52707DB4A9F81BAC9425D506E69ADB6E71C61F633B0618AC1D0B88927015D541`.
 
 ### Registro — 2026-07-25 (f): Data Studio Visual Builder — v0.25.1
 

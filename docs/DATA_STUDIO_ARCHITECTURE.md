@@ -24,7 +24,7 @@ Administration
 
 Não usa abas horizontais como navegação principal. Dentro do workspace, abas contextuais podem alternar representações do mesmo objeto, como dados, estrutura, relações e índices.
 
-## Fundação v0.25.0 e construtor visual v0.25.1
+## Fundação v0.25.0, construtor v0.25.1 e fluxo simplificado v0.25.2
 
 A fundação v0.25.0 entregou a exploração somente leitura:
 
@@ -50,6 +50,8 @@ O construtor visual v0.25.1 acrescenta:
 - prévia SQL não editável com valores parametrizados e ocultos;
 - resultado tabular, confirmação de mutações por hash do plano, transação e auditoria;
 - bloqueio de `UPDATE` e `DELETE` sem condição.
+
+A revisão v0.25.2 define a jornada principal como tabela → filtros → ordenação → execução → resultado inline. Campos específicos e joins são refinamentos no mesmo workspace; detalhes SQL ficam recolhidos e aliases internos não são apresentados como conceitos necessários ao utilizador.
 
 Não fazem parte da linha v0.25:
 

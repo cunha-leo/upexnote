@@ -203,6 +203,17 @@ def _build_plan(cur, data):
         query = sql.SQL("SELECT {} FROM {}.{} AS {} {}{} LIMIT %s").format(
             sql.SQL(", ").join(selected), sql.Identifier(schema_name), sql.Identifier(table_name),
             sql.Identifier("t0"), sql.SQL(" ").join(join_sql), where_sql)
+        sort = data.get("sort") or {}
+        sort_source, sort_column = int(sort.get("source", 0)), str(sort.get("column") or "")
+        if sort_column:
+            if sort_source < 0 or sort_source >= len(sources) or sort_column not in sources[sort_source]["columns"] or _protected(sort_column):
+                raise ValueError("invalid_sort")
+            direction = "DESC" if str(sort.get("direction") or "").lower() == "desc" else "ASC"
+            # Insert ORDER BY before the LIMIT already composed above.
+            query = sql.SQL("SELECT {} FROM {}.{} AS {} {}{} ORDER BY {}.{} {} LIMIT %s").format(
+                sql.SQL(", ").join(selected), sql.Identifier(schema_name), sql.Identifier(table_name),
+                sql.Identifier("t0"), sql.SQL(" ").join(join_sql), where_sql,
+                sql.Identifier(f"t{sort_source}"), sql.Identifier(sort_column), sql.SQL(direction))
         params.append(min(500, max(1, int(data.get("limit") or 100))))
         return operation, query, params, False, f"{schema_name}.{table_name}"
 

@@ -1,6 +1,6 @@
 # Arquitetura do UpexNote
 
-> Estado alinhado à versão desktop `0.25.1`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.25.2`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
 
 ## Visão geral
 

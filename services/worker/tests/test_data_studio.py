@@ -51,10 +51,12 @@ class DataStudioSafetyTests(unittest.TestCase):
             "joins": [{"schema": "crm", "table": "customers", "type": "left",
                        "left_source": 0, "left_column": "customer_id", "right_column": "id"}],
             "conditions": [{"source": 1, "column": "name", "operator": "contains", "value": "Acme"}],
+            "sort": {"source": 0, "column": "id", "direction": "desc"},
             "limit": 100,
         })
         self.assertEqual((operation, mutation, target), ("select", False, "sales.orders"))
         self.assertEqual(params, ["%Acme%", 100])
+        self.assertIn("DESC", str(_query))
 
 
 if __name__ == "__main__":

@@ -2224,6 +2224,8 @@ function DataStudioWorkspace() {
   const [selection, setSelection] = useState<DataStudioSelection | null>(null);
   const [tab, setTab] = useState<DataStudioTab>("builder");
   const [catalogSearch, setCatalogSearch] = useState("");
+  const [explorerCollapsed, setExplorerCollapsed] = useState(false);
+  const [resultExpanded, setResultExpanded] = useState(false);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [resultColumns, setResultColumns] = useState<string[]>([]);
   const [page, setPage] = useState(1);
@@ -2238,6 +2240,8 @@ function DataStudioWorkspace() {
   const [builderJoins, setBuilderJoins] = useState<DsJoin[]>([]);
   const [builderConditions, setBuilderConditions] = useState<DsCondition[]>([]);
   const [builderValues, setBuilderValues] = useState<DsValue[]>([]);
+  const [sortColumn, setSortColumn] = useState("");
+  const [sortDirection, setSortDirection] = useState("asc");
   const [ddlName, setDdlName] = useState("");
   const [ddlType, setDdlType] = useState("text");
   const [createTableName, setCreateTableName] = useState("");
@@ -2342,6 +2346,7 @@ function DataStudioWorkspace() {
       operation: builderOp, schema: selection.schema,
       table: builderOp === "create_table" ? createTableName : selection.object.object_name,
       fields: builderFields, joins: builderJoins, conditions: builderConditions, values: builderValues,
+      sort: sortColumn ? { source: 0, column: sortColumn, direction: sortDirection } : {},
       columns: createColumns, alter_action: alterAction, column: ddlName, new_name: newName, data_type: ddlType, limit: 100,
     };
   }
@@ -2351,7 +2356,12 @@ function DataStudioWorkspace() {
     try {
       const result = await call("data-query", builderPayload());
       if (!result.ok) setErr(result.error || t("dsLoadError"));
-      else setPlan(result);
+      else if (result.mutation) setPlan(result);
+      else {
+        const executed = await call("data-query", { ...builderPayload(), execute: true, plan_hash: result.plan_hash });
+        if (!executed.ok) setErr(executed.error || t("dsLoadError"));
+        else setBuilderResult({ columns: executed.columns || [], rows: executed.rows || [] });
+      }
     } catch (error) { setErr(String(error)); } finally { setBusy(false); }
   }
 
@@ -2396,9 +2406,14 @@ function DataStudioWorkspace() {
       </div>
     </header>
     {err && <div className="key-warn">{err}</div>}
-    <div className="ds-layout">
+    <div className={`ds-layout${explorerCollapsed ? " explorer-collapsed" : ""}${resultExpanded ? " result-expanded" : ""}`}>
       <aside className="ds-explorer">
-        <div className="ds-pane-title"><Database size={16} /><strong>{t("dsExplorer")}</strong></div>
+        <div className="ds-pane-title"><Database size={16} /><strong>{t("dsExplorer")}</strong>
+          <button className="icon-action" onClick={() => setExplorerCollapsed((value) => !value)}
+            title={explorerCollapsed ? t("dsExpandExplorer") : t("dsCollapseExplorer")}>
+            {explorerCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+          </button>
+        </div>
         <label className="queue-search ds-search">
           <Search size={15} /><input value={catalogSearch} onChange={(event) => setCatalogSearch(event.currentTarget.value)} placeholder={t("dsSearch")} />
         </label>
@@ -2453,9 +2468,9 @@ function DataStudioWorkspace() {
                 <option value="update">UPDATE</option><option value="delete">DELETE</option>
                 <option value="create_table">CREATE TABLE</option><option value="alter_table">ALTER TABLE</option>
               </select></label>
-              <div className="ds-target"><span>{t("dsTarget")}</span><strong>{selection.schema}.{builderOp === "create_table" ? (createTableName || "…") : selection.object.object_name}</strong></div>
+              <button className="secondary ds-describe" onClick={() => setTab("structure")}><Columns3 size={15} />{t("dsDescribe")}</button>
             </div>
-            {builderOp === "select" && <section className="ds-builder-section">
+            {builderOp === "select" && <section className="ds-builder-section ds-fields-section">
               <header><div><strong>1. {t("dsFields")}</strong><small>{t("dsFieldsHelp")}</small></div>
                 <button className="secondary" onClick={() => {
                   const first = selection.object.columns.find((column) => !column.protected);
@@ -2470,7 +2485,7 @@ function DataStudioWorkspace() {
                 </select><button className="icon-action danger" onClick={() => setBuilderFields(builderFields.filter((_, item) => item !== index))}><Trash2 size={14} /></button>
               </div>)}</div>
             </section>}
-            {builderOp === "select" && <section className="ds-builder-section">
+            {builderOp === "select" && <section className="ds-builder-section ds-joins-section">
               <header><div><strong>2. {t("dsJoins")}</strong><small>{t("dsJoinsHelp")}</small></div>
                 <button className="secondary" onClick={() => {
                   const candidate = schemas.flatMap((schema) => schema.objects.map((object) => ({ schema: schema.name, object }))).find((item) => item.object.object_type.includes("table"));
@@ -2497,8 +2512,8 @@ function DataStudioWorkspace() {
                 </div>;
               })}</div>
             </section>}
-            {(builderOp === "select" || builderOp === "update" || builderOp === "delete") && <section className="ds-builder-section">
-              <header><div><strong>{builderOp === "select" ? "3." : "1."} {t("dsConditions")}</strong><small>{builderOp !== "select" ? t("dsConditionsRequired") : t("dsConditionsHelp")}</small></div>
+            {(builderOp === "select" || builderOp === "update" || builderOp === "delete") && <section className="ds-builder-section ds-conditions-section">
+              <header><div><strong>{builderOp === "select" ? "1." : "1."} {t("dsConditions")}</strong><small>{builderOp !== "select" ? t("dsConditionsRequired") : t("dsConditionsHelp")}</small></div>
                 <button className="secondary" onClick={() => {
                   const first = selection.object.columns.find((column) => !column.protected);
                   if (first) setBuilderConditions([...builderConditions, { source: 0, column: first.column_name, operator: "eq", value: "", connector: "and" }]);
@@ -2516,6 +2531,14 @@ function DataStudioWorkspace() {
                 </select><input value={condition.value} disabled={condition.operator.includes("null")} placeholder={t("dsFilterValue")} onChange={(e) => { const next = [...builderConditions]; next[index] = { ...condition, value: e.currentTarget.value }; setBuilderConditions(next); }} />
                 <button className="icon-action danger" onClick={() => setBuilderConditions(builderConditions.filter((_, item) => item !== index))}><Trash2 size={14} /></button>
               </div>)}</div>
+            </section>}
+            {builderOp === "select" && <section className="ds-builder-section ds-sort-section">
+              <header><div><strong>2. {t("dsOrderBy")}</strong><small>{t("dsOrderHelp")}</small></div></header>
+              <div className="ds-sort-row"><select value={sortColumn} onChange={(event) => { setSortColumn(event.currentTarget.value); setPlan(null); }}>
+                <option value="">{t("dsNoOrder")}</option>{selection.object.columns.filter((column) => !column.protected).map((column) => <option key={column.column_name}>{column.column_name}</option>)}
+              </select><select value={sortDirection} disabled={!sortColumn} onChange={(event) => setSortDirection(event.currentTarget.value)}>
+                <option value="asc">{t("dsAscending")}</option><option value="desc">{t("dsDescending")}</option>
+              </select></div>
             </section>}
             {(builderOp === "insert" || builderOp === "update") && <section className="ds-builder-section">
               <header><div><strong>{builderOp === "update" ? "2." : "1."} {t("dsValues")}</strong><small>{t("dsValuesHelp")}</small></div>
@@ -2553,15 +2576,23 @@ function DataStudioWorkspace() {
                 {alterAction === "rename_column" && <input value={newName} onChange={(e) => setNewName(e.currentTarget.value)} placeholder={t("dsNewName")} />}</div>
             </section>}
             <footer className="ds-builder-actions">
-              <button className="secondary" onClick={previewBuilder} disabled={busy}><Code2 size={15} />{t("dsPreview")}</button>
-              {plan && <button onClick={executeBuilder} disabled={busy} className={plan.mutation ? "danger-button" : ""}><Play size={15} />{plan.mutation ? t("dsConfirmExecute") : t("dsRun")}</button>}
+              <span>{builderOp === "select" ? t("dsResultBelow") : t("dsPreviewBeforeChange")}</span>
+              <button className={builderOp === "select" ? "" : "secondary"} onClick={previewBuilder} disabled={busy}>
+                {busy ? <span className="spinner" /> : builderOp === "select" ? <Play size={15} /> : <Code2 size={15} />}
+                {builderOp === "select" ? t("dsRun") : t("dsPreview")}
+              </button>
+              {plan?.mutation && <button onClick={executeBuilder} disabled={busy} className="danger-button"><Play size={15} />{t("dsConfirmExecute")}</button>}
             </footer>
-            {plan && <div className="ds-sql-preview"><header><strong>{t("dsGeneratedSql")}</strong><span>{t("dsParameterized")}</span></header><code>{plan.sql}</code></div>}
             {builderResult && <div className="ds-builder-result">
+              <header className="ds-result-head"><div><strong>{t("dsQueryResult")}</strong><span>{builderResult.rows.length} {t("dsRows")}</span></div>
+                <button className="secondary" onClick={() => setResultExpanded((value) => !value)}>
+                  {resultExpanded ? <X size={15} /> : <Square size={14} />}{resultExpanded ? t("dsRestoreResult") : t("dsExpandResult")}
+                </button></header>
               {builderResult.affected !== undefined && <div className="notice">{t("dsAffected", { n: builderResult.affected })}</div>}
               {!!builderResult.columns.length && <div className="ds-data-scroll"><table className="ds-data-table"><thead><tr>{builderResult.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
                 <tbody>{builderResult.rows.map((row, index) => <tr key={index}>{builderResult.columns.map((column) => <td key={column}>{row[column] === null ? <i>NULL</i> : typeof row[column] === "object" ? JSON.stringify(row[column]) : String(row[column])}</td>)}</tr>)}</tbody></table></div>}
             </div>}
+            {plan && <details className="ds-sql-preview"><summary><strong>{t("dsTechnicalDetails")}</strong><span>{t("dsParameterized")}</span></summary><code>{plan.sql.replace(/"t\d+"\./g, "")}</code></details>}
           </div>}
           {tab === "data" && <>
             <div className="ds-filterbar">
