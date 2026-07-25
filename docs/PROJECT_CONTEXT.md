@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.26.0 - SQL Editor profissional no Data Studio)
-**Estado mais recente:** 25 de julho de 2026 (v0.26.0 - editor PostgreSQL com autocomplete e execução protegida)
+**Última atualização:** 25 de julho de 2026 (v0.26.1 - alinhamento das ações do SQL Editor)
+**Estado mais recente:** 25 de julho de 2026 (v0.26.1 - editor PostgreSQL validado com ações alinhadas)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,7 +24,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.26.0**. Instalador local: `UpexNote_0.26.0_x64-setup.exe`.
+- A versao desktop instalada e **v0.26.1**. Instalador local: `UpexNote_0.26.1_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
@@ -426,6 +426,13 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (l): alinhamento das ações do SQL Editor — v0.26.1
+
+- Corrigido o espaçamento interno dos botões `Settings` e `Format SQL`: ícone e texto agora usam alinhamento central, gap fixo e padding lateral proporcional.
+- Ícones não encolhem nem recebem margem herdada, evitando sobreposição com os rótulos em diferentes larguras e densidades.
+- Build Tauri/NSIS, instalação silenciosa e inspeção visual no SQL Editor instalado foram aprovados.
+- SHA-256 do instalador: `34340C062A8E5DFEBF88CD32ACB38669E15B0085AE33ADD7F7F72A9302E30047`.
 
 ### Registro — 2026-07-25 (k): SQL Editor profissional — v0.26.0
 

@@ -1545,7 +1545,8 @@ input[type="range"] {
 .ds-editor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 52px; padding: 8px 10px 8px 14px; border: 1px solid var(--border); border-radius: var(--radius-ctl) var(--radius-ctl) 0 0; background: var(--panel-2); }
 .ds-editor-toolbar > span { min-width: 0; overflow: hidden; color: var(--text-dim); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; }
 .ds-editor-toolbar > div { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-.ds-editor-toolbar button { min-height: 36px; white-space: nowrap; }
+.ds-editor-toolbar button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 36px; padding-inline: 15px; white-space: nowrap; }
+.ds-editor-toolbar button svg { flex: 0 0 auto; margin: 0; }
 .ds-editor-toolbar button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); }
 .ds-editor-toolbar button:hover { transform: none; }
 .ds-sql-settings { display: grid; gap: 15px; padding: 16px; border-inline: 1px solid var(--border); background: color-mix(in srgb, var(--panel-2) 92%, var(--accent) 8%); }
