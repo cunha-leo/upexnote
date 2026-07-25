@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.24.2 - papel externo do administrador abreviado)
-**Estado mais recente:** 25 de julho de 2026 (v0.24.2 - rodapé usa `Admin`; modal preserva o papel completo)
+**Última atualização:** 25 de julho de 2026 (v0.25.0 - Data Studio Foundation entregue e validado)
+**Estado mais recente:** 25 de julho de 2026 (v0.25.0 - exploração PostgreSQL por schema em modo somente leitura)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,16 +24,18 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.24.2**. Instalador local: `UpexNote_0.24.2_x64-setup.exe`.
+- A versao desktop instalada e **v0.25.0**. Instalador local: `UpexNote_0.25.0_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
-- A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry e Support.
+- A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
+- O Data Studio Foundation explora schemas, tabelas, views, colunas, tipos, primary/foreign keys e indices; permite leitura paginada e filtro parametrizado, sempre `Read only`.
+- O corredor do Data Studio exige sessao MFA valida, revalida `role=admin` na base, compoe identificadores pelo driver PostgreSQL e mascara colunas associadas a passwords, tokens, secrets, hashes, digests, TOTP e credenciais.
 - O suporte possui back-end funcional isolado no schema PostgreSQL ingles `support`, com identidades, tickets, descricoes, comentarios, anexos, historico de status, atribuicoes, notificacoes e auditoria.
 - Respostas administrativas de suporte usam a identidade oficial `@upexnote`; o solicitante conserva sua identidade de utilizador.
 - Evidencias nao ficam como BLOB no banco. O banco guarda metadados e referencias; o desenho previsto usa spool persistente na VPS e arquivamento por job/rclone no Google Drive, com manifesto do caso.
 - A interface de suporte segue o fluxo: **dashboard operacional -> caixa de entrada tabular -> caso detalhado**.
 - As versoes v0.23.2 a v0.23.6 consolidaram: navegacao administrativa lateral, Support como dashboard -> inbox -> caso, controles e campos no tema, barras de rolagem discretas, filtros de Activity por opcoes reais, tabelas administrativas responsivas e a fila de suporte com distribuicao equilibrada de ID, assunto, solicitante, data e status.
-- Build Tauri de producao, TypeScript/Vite, `cargo check`, testes do worker e testes da API passaram. A v0.24.0 foi instalada e teve versao/tela inicial validadas visualmente.
+- Build Tauri de producao, TypeScript/Vite, `cargo check` e 6 testes do worker passaram. A v0.25.0 foi instalada; catalogos `public` e `support`, leitura de tabela e estrutura foram validados visualmente na sessao administrativa real.
 
 ### Decisoes de produto e UX vigentes
 
@@ -50,8 +52,11 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 
 1. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
 2. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
-3. Projetar e implementar Integracoes/Webhooks como modulo separado, sem campos falsos de front-end.
-4. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
+3. Implementar o SQL Editor somente leitura do Data Studio com autocomplete local.
+4. Implementar Saved Ad Hocs com parametros, execucao, edicao e arquivamento.
+5. Implementar o Visual Builder com filtros e joins entre tabelas e schemas.
+6. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
+7. Retomar Integracoes/Webhooks depois dos contratos concretos de consultas, eventos e automacoes.
 
 ---
 
@@ -423,6 +428,33 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (e): Data Studio Foundation — v0.25.0
+
+### O que mudou
+- `Administration` ganhou a prateleira hierarquica Data Studio.
+- O explorer organiza objetos PostgreSQL por schema e apresenta tabelas, tabelas particionadas, views e materialized views.
+- O workspace oferece dados paginados, filtro parametrizado, estrutura de colunas, relações por foreign key e índices.
+- A interface segue os temas e idiomas PT/EN/ES e adapta o layout em larguras menores.
+- A arquitetura da frente foi formalizada em `docs/DATA_STUDIO_ARCHITECTURE.md`; Webhooks ficam posteriores aos contratos de consultas, Ad Hocs, eventos e automações.
+
+### Segurança e privacidade
+- A fundação é exclusivamente somente leitura: não cria schema, não executa SQL livre e não oferece escrita, deleção ou DDL.
+- MFA é validado na API e o papel administrativo é revalidado no PostgreSQL.
+- Identificadores precisam existir no catálogo e são compostos com `psycopg2.sql`; filtros usam parâmetros.
+- Campos associados a passwords, tokens, secrets, hashes, digests, TOTP, credenciais e identificadores de provedor são mascarados antes de sair do worker.
+- Nenhuma credencial, consulta ou resultado foi registrado na documentação ou nos testes.
+
+### Evidência / teste
+- TypeScript/Vite aprovado com 1810 módulos.
+- `cargo check` e build Tauri release aprovados.
+- Compilação Python aprovada; testes do worker: 6 aprovados.
+- Worker PyInstaller e instalador NSIS gerados.
+- Instalação silenciosa concluída com código `0`; executável instalado confirmou `0.25.0`.
+- Validação visual real confirmou os schemas `public` e `support`, leitura paginada de uma tabela não sensível e a aba de estrutura.
+
+### Próximo passo
+- SQL Editor somente leitura com autocomplete local baseado no catálogo, seguido por Saved Ad Hocs e Visual Builder cruzando schemas.
 
 ### Registro — 2026-07-25 (d): rótulo compacto de administração — v0.24.2
 

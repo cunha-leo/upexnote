@@ -1,6 +1,6 @@
 [package]
 name = "upexnote"
-version = "0.24.2"
+version = "0.25.0"
 description = "UpexNote — transcrição, contexto e estudo"
 authors = ["Leonardo Cunha"]
 edition = "2021"

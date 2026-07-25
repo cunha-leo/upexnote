@@ -111,6 +111,8 @@ O valor da marca-pai seria permitir que produtos compartilhassem princípios, id
 
 ## 6. Data Studio — laboratório possível dentro do UpexNote
 
+> Atualização: a fundação somente leitura foi aprovada e entregue na v0.25.0. O escopo vigente está em `DATA_STUDIO_ARCHITECTURE.md`; as expansões abaixo continuam exploratórias até autorização específica.
+
 O Data Studio foi imaginado inicialmente como nova prateleira hierárquica dentro de `Administration`, abaixo dos módulos existentes. Ele atenderia à necessidade de consultar e administrar o PostgreSQL sem abrir ferramentas externas ou expor outras conexões profissionais durante reuniões.
 
 Possível navegação:

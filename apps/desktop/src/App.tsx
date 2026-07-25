@@ -9,6 +9,7 @@ import {
   Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
   Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight, Pencil, Archive, Trash2,
   Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw, UserRound,
+  Database, Table2, Columns3, KeyRound, LockKeyhole, Filter, ChevronsLeft, ChevronsRight,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import FONTS from "./fonts.json";
@@ -154,7 +155,7 @@ type ResultData = {
 };
 
 type View = "transcribe" | "library" | "support" | "settings" | "admin";
-type AdminSection = "users" | "activity" | "audit" | "telemetry" | "support";
+type AdminSection = "users" | "activity" | "audit" | "telemetry" | "support" | "data-studio";
 
 // ---------------------------------------------------------------------------
 // Aparência — tema (galeria) + densidade. Cada tema é um bloco de variáveis
@@ -2193,6 +2194,235 @@ function admCacheKey(): string {
   return `${ADM_CACHE_PREFIX}::${s?.mode || "?"}::${s?.id ?? "?"}`;
 }
 
+type DataStudioColumn = {
+  column_name: string; data_type: string; nullable: boolean; column_default: string | null;
+  primary_key: boolean; ordinal: number; protected: boolean;
+};
+type DataStudioRelation = {
+  column_name: string; target_schema: string; target_table: string;
+  target_column: string; constraint_name: string;
+};
+type DataStudioIndex = { index_name: string; definition: string };
+type DataStudioObject = {
+  object_name: string; object_type: string; estimated_rows: number;
+  columns: DataStudioColumn[]; relations: DataStudioRelation[]; indexes: DataStudioIndex[];
+};
+type DataStudioSchema = { name: string; objects: DataStudioObject[] };
+type DataStudioSelection = { schema: string; object: DataStudioObject };
+type DataStudioTab = "data" | "structure" | "relations" | "indexes";
+
+function DataStudioWorkspace() {
+  const { t } = useLang();
+  const sess = getSession();
+  const [schemas, setSchemas] = useState<DataStudioSchema[]>([]);
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const [selection, setSelection] = useState<DataStudioSelection | null>(null);
+  const [tab, setTab] = useState<DataStudioTab>("data");
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [resultColumns, setResultColumns] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [filterColumn, setFilterColumn] = useState("");
+  const [filterOperator, setFilterOperator] = useState("contains");
+  const [filterValue, setFilterValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function call(op: "data-catalog" | "data-table", payload: Record<string, unknown> = {}) {
+    const raw = await invoke<string>("admin", {
+      op, mode: sess?.mode ?? null,
+      payload: JSON.stringify({
+        actor: sess?.id ?? null,
+        admin_email: sess?.email || "",
+        admin_token: sess?.admin_token || "",
+        ...payload,
+      }),
+    });
+    return JSON.parse(raw);
+  }
+
+  async function loadCatalog() {
+    setBusy(true); setErr("");
+    try {
+      const result = await call("data-catalog");
+      if (!result.ok) {
+        setErr(result.error || t("dsLoadError"));
+        return;
+      }
+      const next = result.schemas || [];
+      setSchemas(next);
+      setExpanded((current) => current.length ? current : next.slice(0, 2).map((schema: DataStudioSchema) => schema.name));
+      if (selection) {
+        const schema = next.find((item: DataStudioSchema) => item.name === selection.schema);
+        const object = schema?.objects.find((item: DataStudioObject) => item.object_name === selection.object.object_name);
+        if (object) setSelection({ schema: schema.name, object });
+      }
+    } catch (error) {
+      setErr(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadTable(target = selection, targetPage = page) {
+    if (!target) return;
+    setBusy(true); setErr("");
+    try {
+      const filters = filterColumn && (filterOperator === "is_null" || filterValue.trim())
+        ? [{ column: filterColumn, operator: filterOperator, value: filterValue }]
+        : [];
+      const result = await call("data-table", {
+        schema: target.schema, table: target.object.object_name,
+        page: targetPage, page_size: 50, filters,
+      });
+      if (!result.ok) {
+        setErr(result.error || t("dsLoadError"));
+        return;
+      }
+      setRows(result.rows || []);
+      setResultColumns(result.columns || []);
+      setPage(result.page || targetPage);
+      setHasMore(Boolean(result.has_more));
+    } catch (error) {
+      setErr(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function selectObject(schema: string, object: DataStudioObject) {
+    const target = { schema, object };
+    setSelection(target);
+    setTab("data");
+    setPage(1);
+    setFilterColumn("");
+    setFilterValue("");
+    setRows([]);
+    void loadTable(target, 1);
+  }
+
+  useEffect(() => { void loadCatalog(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filteredSchemas = useMemo(() => {
+    const query = catalogSearch.trim().toLowerCase();
+    if (!query) return schemas;
+    return schemas.map((schema) => ({
+      ...schema,
+      objects: schema.objects.filter((object) =>
+        `${schema.name}.${object.object_name}`.toLowerCase().includes(query)),
+    })).filter((schema) => schema.objects.length);
+  }, [schemas, catalogSearch]);
+  const filterableColumns = selection?.object.columns.filter((column) => !column.protected) || [];
+
+  return <section className="card admin-workspace data-studio">
+    <header className="workspace-head">
+      <div>
+        <span className="eyebrow">{t("navAdmin")}</span>
+        <h2>{t("dsTitle")}</h2>
+        <p className="muted ds-lead">{t("dsLead")}</p>
+      </div>
+      <div className="row workspace-actions">
+        <span className="ds-connection"><LockKeyhole size={14} />{t("dsCentral")}<b>{t("dsReadOnly")}</b></span>
+        <button className="secondary icon-button" onClick={loadCatalog} disabled={busy}>
+          {busy ? <span className="spinner" /> : <RefreshCw size={16} />}<span>{t("libRefresh")}</span>
+        </button>
+      </div>
+    </header>
+    {err && <div className="key-warn">{err}</div>}
+    <div className="ds-layout">
+      <aside className="ds-explorer">
+        <div className="ds-pane-title"><Database size={16} /><strong>{t("dsExplorer")}</strong></div>
+        <label className="queue-search ds-search">
+          <Search size={15} /><input value={catalogSearch} onChange={(event) => setCatalogSearch(event.currentTarget.value)} placeholder={t("dsSearch")} />
+        </label>
+        <div className="ds-tree">
+          {!schemas.length && busy && <div className="status"><span className="spinner" />{t("dsLoading")}</div>}
+          {filteredSchemas.map((schema) => {
+            const isOpen = expanded.includes(schema.name) || Boolean(catalogSearch);
+            return <div className="ds-schema" key={schema.name}>
+              <button onClick={() => setExpanded((current) => current.includes(schema.name)
+                ? current.filter((item) => item !== schema.name) : [...current, schema.name])}>
+                {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <Database size={14} /><strong>{schema.name}</strong><span>{schema.objects.length}</span>
+              </button>
+              {isOpen && <div className="ds-objects">{schema.objects.map((object) =>
+                <button key={object.object_name}
+                  className={selection?.schema === schema.name && selection.object.object_name === object.object_name ? "active" : ""}
+                  onClick={() => selectObject(schema.name, object)}>
+                  <Table2 size={14} /><span>{object.object_name}</span>
+                  <small>{object.object_type === "view" ? "view" : object.estimated_rows.toLocaleString()}</small>
+                </button>)}</div>}
+            </div>;
+          })}
+          {!filteredSchemas.length && !busy && <p className="empty-queue">{t("dsNoObjects")}</p>}
+        </div>
+      </aside>
+      <div className="ds-workspace">
+        {!selection ? <div className="ds-welcome">
+          <Database size={34} />
+          <h3>{t("dsWelcome")}</h3>
+          <p>{t("dsWelcomeLead")}</p>
+        </div> : <>
+          <div className="ds-object-head">
+            <div><span>{selection.schema}</span><h3>{selection.object.object_name}</h3></div>
+            <span className="status-pill">{selection.object.object_type.replace(/_/g, " ")}</span>
+          </div>
+          <div className="ds-tabs" role="tablist">
+            {([
+              ["data", <Table2 size={15} />, t("dsData")],
+              ["structure", <Columns3 size={15} />, t("dsStructure")],
+              ["relations", <KeyRound size={15} />, t("dsRelations")],
+              ["indexes", <FileText size={15} />, t("dsIndexes")],
+            ] as const).map(([id, icon, label]) => <button key={id} role="tab" aria-selected={tab === id}
+              className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{icon}{label}</button>)}
+          </div>
+          {tab === "data" && <>
+            <div className="ds-filterbar">
+              <Filter size={16} />
+              <select value={filterColumn} onChange={(event) => setFilterColumn(event.currentTarget.value)}>
+                <option value="">{t("dsFilterColumn")}</option>
+                {filterableColumns.map((column) => <option key={column.column_name} value={column.column_name}>{column.column_name}</option>)}
+              </select>
+              <select value={filterOperator} onChange={(event) => setFilterOperator(event.currentTarget.value)}>
+                <option value="contains">{t("dsContains")}</option><option value="eq">{t("dsEquals")}</option>
+                <option value="starts">{t("dsStarts")}</option><option value="gt">&gt;</option>
+                <option value="gte">≥</option><option value="lt">&lt;</option><option value="lte">≤</option>
+                <option value="is_null">NULL</option>
+              </select>
+              <input value={filterValue} disabled={filterOperator === "is_null"} onChange={(event) => setFilterValue(event.currentTarget.value)} placeholder={t("dsFilterValue")} />
+              <button className="secondary" onClick={() => { setPage(1); void loadTable(selection, 1); }} disabled={busy}>{t("dsApply")}</button>
+            </div>
+            <div className="ds-data-scroll">
+              <table className="ds-data-table"><thead><tr>{resultColumns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+                <tbody>{rows.map((row, index) => <tr key={index}>{resultColumns.map((column) =>
+                  <td key={column} title={String(row[column] ?? "")}>{row[column] === null ? <i>NULL</i> : typeof row[column] === "object" ? JSON.stringify(row[column]) : String(row[column])}</td>)}</tr>)}</tbody>
+              </table>
+              {!rows.length && !busy && <p className="empty-queue">{t("dsNoRows")}</p>}
+            </div>
+            <footer className="ds-pager">
+              <span>{t("dsPage", { n: page })} · {rows.length} {t("dsRows")}</span>
+              <div><button className="icon-action" disabled={page <= 1 || busy} onClick={() => void loadTable(selection, page - 1)} title={t("dsPrevious")}><ChevronsLeft size={16} /></button>
+                <button className="icon-action" disabled={!hasMore || busy} onClick={() => void loadTable(selection, page + 1)} title={t("dsNext")}><ChevronsRight size={16} /></button></div>
+            </footer>
+          </>}
+          {tab === "structure" && <div className="ds-meta-list">{selection.object.columns.map((column) =>
+            <div key={column.column_name}><span>{column.primary_key ? <KeyRound size={14} /> : <Columns3 size={14} />}</span>
+              <strong>{column.column_name}</strong><code>{column.data_type}</code>
+              <small>{column.protected ? t("dsProtected") : column.nullable ? "NULL" : "NOT NULL"}</small></div>)}</div>}
+          {tab === "relations" && <div className="ds-meta-list">{selection.object.relations.map((relation) =>
+            <div key={`${relation.constraint_name}-${relation.column_name}`}><KeyRound size={14} /><strong>{relation.column_name}</strong>
+              <span>→</span><code>{relation.target_schema}.{relation.target_table}.{relation.target_column}</code></div>)}
+            {!selection.object.relations.length && <p className="empty-queue">{t("dsNoRelations")}</p>}</div>}
+          {tab === "indexes" && <div className="ds-indexes">{selection.object.indexes.map((index) =>
+            <article key={index.index_name}><strong>{index.index_name}</strong><code>{index.definition}</code></article>)}
+            {!selection.object.indexes.length && <p className="empty-queue">{t("dsNoIndexes")}</p>}</div>}
+        </>}
+      </div>
+    </div>
+  </section>;
+}
+
 function AdminView({ active, section }: { active: boolean; section: AdminSection }) {
   const { t, locale } = useLang();
   const sess = getSession();
@@ -2442,6 +2672,8 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
 
   const evOk = (v: boolean | number | null) => v === true || v === 1;
   const auditSnapshotEntries = (snapshot: Record<string, unknown> | null) => Object.entries(snapshot || {}).filter(([key]) => !["provider_scopes", "provider_id", "access_token", "refresh_token", "password_hash"].includes(key));
+
+  if (tab === "data-studio") return <DataStudioWorkspace />;
 
   if (tab === "support") {
     return <section className="card admin-workspace">
@@ -3192,6 +3424,7 @@ function App() {
                 ["audit", <FileText size={15} />, t("admTabAudit")],
                 ["telemetry", <BarChart3 size={15} />, "Telemetry"],
                 ["support", <LifeBuoy size={15} />, t("admTabSupport")],
+                ["data-studio", <Database size={15} />, t("dsTitle")],
               ] as const).map(([section, icon, label]) => <button key={section} className={"admin-subnav-item" + (view === "admin" && adminSection === section ? " active" : "")} onClick={() => openAdmin(section)}><span>{icon}</span>{label}</button>)}
             </div>}
           </>}

@@ -433,7 +433,7 @@ def cmd_oauth(args):
 def cmd_admin(args):
     # Aba de Administração (2026-07-19). Payload por stdin; o ator (users.id da
     # sessão) vai no payload e é REVALIDADO na base (role=admin) pelo worker.
-    from . import accounts, db
+    from . import accounts, data_studio, db
     if getattr(args, "mode", None):
         db.set_mode_override(args.mode)
     data = _stdin_json()
@@ -462,6 +462,10 @@ def cmd_admin(args):
         elif op == "admin-events":
             res = db.list_access_events(actor, since=data.get("since"), event=data.get("event"),
                                         search=data.get("search"))
+        elif op == "admin-data-catalog":
+            res = data_studio.catalog(actor)
+        elif op == "admin-data-table":
+            res = data_studio.table_data(actor, data)
         else:  # admin-audit
             res = db.list_audit(actor, table=data.get("table"), record_id=data.get("record_id"),
                                 since=data.get("since"))
@@ -872,7 +876,8 @@ def build_parser():
     p_asg.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
 
     for name in ("admin-overview", "admin-users", "admin-create-user", "admin-update-user",
-                 "admin-delete-user", "admin-events", "admin-audit"):
+                 "admin-delete-user", "admin-events", "admin-audit",
+                 "admin-data-catalog", "admin-data-table"):
         p_adm = sub.add_parser(name, help="Administracao (payload por stdin; ator revalidado na base).")
         p_adm.add_argument("--mode", choices=["local", "vps"], help="Base alvo. Sem gravar.")
     p_oa = sub.add_parser("oauth", help="Login social (Google loopback+PKCE / GitHub device flow).")
@@ -929,6 +934,8 @@ def main(argv=None):
         "admin-delete-user": cmd_admin,
         "admin-events": cmd_admin,
         "admin-audit": cmd_admin,
+        "admin-data-catalog": cmd_admin,
+        "admin-data-table": cmd_admin,
         "oauth": cmd_oauth,
         "api-reset-request": cmd_api_reset,
         "api-reset-verify": cmd_api_reset,
