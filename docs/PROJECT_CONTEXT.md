@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.25.3 - correções responsivas do Data Studio)
-**Estado mais recente:** 25 de julho de 2026 (v0.25.3 - cabeçalho e perfil ajustados)
+**Última atualização:** 25 de julho de 2026 (v0.25.4 - correção definitiva do hover do perfil)
+**Estado mais recente:** 25 de julho de 2026 (v0.25.4 - perfil sem preenchimento sobreposto)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,7 +24,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.25.3**. Instalador local: `UpexNote_0.25.3_x64-setup.exe`.
+- A versao desktop instalada e **v0.25.4**. Instalador local: `UpexNote_0.25.4_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
@@ -427,6 +427,14 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (i): hover do perfil — v0.25.4
+
+- Corrigida a precedência CSS que permitia à regra global de hover dos botões substituir o estilo específico do perfil.
+- O hover do perfil agora mantém o fundo completamente transparente, preserva avatar, nome, e-mail e papel sem sobreposição de cor e exibe apenas um contorno discreto.
+- Validação visual realizada na aplicação instalada, posicionando o cursor sobre o perfil sem abrir o popup; todos os dados permaneceram legíveis.
+- TypeScript/Vite, testes Rust, Tauri/NSIS e instalação silenciosa foram aprovados.
+- SHA-256 do instalador: `007317ED0B2DBBF434639527718FEF25D641C5A111E8E6A426295B99BC45923A`.
 
 ### Registro — 2026-07-25 (h): correções responsivas — v0.25.3
 
