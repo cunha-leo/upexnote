@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.25.2 - fluxo simplificado do Data Studio)
-**Estado mais recente:** 25 de julho de 2026 (v0.25.2 - consulta visual direta e resultado inline)
+**Última atualização:** 25 de julho de 2026 (v0.25.3 - correções responsivas do Data Studio)
+**Estado mais recente:** 25 de julho de 2026 (v0.25.3 - cabeçalho e perfil ajustados)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,7 +24,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 25 de julho de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versao desktop instalada e **v0.25.2**. Instalador local: `UpexNote_0.25.2_x64-setup.exe`.
+- A versao desktop instalada e **v0.25.3**. Instalador local: `UpexNote_0.25.3_x64-setup.exe`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
@@ -427,6 +427,15 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-25 (h): correções responsivas — v0.25.3
+
+- O cabeçalho do Data Studio agora redistribui e quebra suas ações dentro da área útil, mantendo `Refresh` contido no card quando o menu principal está aberto ou recolhido.
+- A região de ações ganhou limites flexíveis e o conteúdo textual do cabeçalho pode encolher sem produzir estouro horizontal.
+- O hover do perfil deixou de aplicar um preenchimento opaco sobre avatar e dados; passou a usar realce translúcido discreto e contorno interno.
+- Validação visual realizada na aplicação instalada com o Data Studio aberto nos dois estados do menu principal; o botão `Refresh` permaneceu totalmente visível e dentro da grade.
+- TypeScript/Vite, testes Rust, Tauri/NSIS e instalação silenciosa foram aprovados.
+- SHA-256 do instalador: `B680DD448849D7FAFECC5A314627C1E37945DA7D49D004FBE1A2A8090020E5FE`.
 
 ### Registro — 2026-07-25 (g): simplificação do Data Studio — v0.25.2
 

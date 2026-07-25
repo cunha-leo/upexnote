@@ -414,8 +414,14 @@ body { margin: 0; }
   color: var(--text);
   text-align: left;
   border-radius: var(--radius-ctl);
+  box-shadow: inset 0 0 0 1px transparent;
+  overflow: hidden;
 }
-.profile-trigger:hover { background: var(--panel-2); color: var(--text); }
+.profile-trigger:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
 .side-profile.collapsed .profile-trigger { flex: 0 0 auto; padding: 4px; }
 .side-profile .avatar {
   width: 32px;
@@ -1317,10 +1323,23 @@ input[type="range"] {
 /* ---- Administração / suporte: workspace operacional, inspirado em filas de atendimento ---- */
 .admin-workspace { padding: 22px; }
 .workspace-head, .queue-head, .case-title, .composer-actions { display: flex; align-items: center; gap: 16px; justify-content: space-between; }
-.workspace-head { padding-bottom: 18px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.workspace-head {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.workspace-head > :first-child { flex: 1 1 480px; min-width: 0; }
 .workspace-head h2, .support-dashboard h3, .support-queue h3, .case-title h3, .case-card h3 { margin: 3px 0 0; }
 .eyebrow { display: block; color: var(--text-dim); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.workspace-actions { min-width: 0; }
+.workspace-actions {
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
 .icon-button { display: inline-flex; align-items: center; gap: 7px; }
 .support-workspace { display: grid; gap: 20px; }
 .support-dashboard { padding: 20px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 10%, var(--panel)), var(--panel)); }
@@ -1395,6 +1414,9 @@ input[type="range"] {
 .ds-lead { margin: 5px 0 0; max-width: 720px; }
 .ds-connection { display: inline-flex; align-items: center; gap: 7px; color: var(--text-dim); font-size: var(--fs-sm); white-space: nowrap; }
 .ds-connection b { display: inline-flex; padding: 3px 8px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); }
+@media (max-width: 1450px) {
+  .data-studio .workspace-actions { flex-basis: 100%; }
+}
 .ds-layout { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); min-height: 630px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); overflow: hidden; background: var(--panel); }
 .ds-layout.explorer-collapsed { grid-template-columns: 48px minmax(0, 1fr); }
 .ds-layout.result-expanded { grid-template-columns: minmax(0, 1fr); }
