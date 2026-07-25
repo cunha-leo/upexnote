@@ -2117,9 +2117,9 @@ function SidebarProfile({ collapsed }: { collapsed: boolean }) {
             <span className="sp-main">
               <span className="sp-name">{displayName}</span>
               <span className="sp-sub">{username}</span>
+              <span className="sp-role">{roleLabel}</span>
             </span>
           )}
-          {!collapsed && <span className="sp-role">{roleLabel}</span>}
         </button>
         {!collapsed && (
           <button className="tb-btn" onClick={logout} title={t("stoLogout")} aria-label={t("stoLogout")}>
