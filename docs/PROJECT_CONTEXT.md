@@ -47,6 +47,7 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 - Telemetria consentida continua privada/anonima e nao deve revelar e-mail. Investigacao individual futura deve usar diagnostico consentido, identificador pseudonimo e ligacao explicita com chamado.
 - Webhooks nao pertencem ao Audit. Precisam de um futuro submodulo de Integracoes com chaves protegidas, entradas/saidas, tentativas, status de entrega e trilha de auditoria.
 - Regra de banco: cada dominio/prateleira do produto usa schema PostgreSQL separado, nomeado em ingles; nao misturar suporte, estudo, chat ou futuros departamentos no `public`.
+- A memoria de produto para Formatação, Estudo, leitura em voz alta, velocidades, vozes, idiomas, sincronização por palavra e modo ao vivo está em `docs/AI_MEDIA_EVOLUTION.md`; consultá-la antes dessas implementações.
 
 ### Pendencias imediatas
 

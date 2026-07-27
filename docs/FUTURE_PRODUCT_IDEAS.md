@@ -405,3 +405,9 @@ No presente, UpexNote pode permanecer uma aplicação pessoal. O desenvolvimento
 As possibilidades comerciais e os produtos futuros ficam preservados neste documento como visão, sem pressionar o projeto a executá-los. A regra é manter opcionalidade:
 
 > Se outras pessoas demonstrarem a mesma necessidade, a base estará preparada para evoluir. Se isso não acontecer, o UpexNote continuará tendo valor como ferramenta pessoal.
+
+## 15. IA, leitura e mídia
+
+As capacidades futuras de Formatação, Estudo, leitura em voz alta, velocidades de reprodução, vozes, idiomas, sincronização por palavra, inteligência de conteúdo e modo ao vivo estão consolidadas em `AI_MEDIA_EVOLUTION.md`.
+
+Esse documento deve ser consultado antes de implementar formatação, leitura/edição, player de áudio, text-to-speech, timestamps por palavra, Action Items, novos idiomas ou agentes de voz.
