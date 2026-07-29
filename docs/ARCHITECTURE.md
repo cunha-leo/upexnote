@@ -1,6 +1,6 @@
 # Arquitetura do UpexNote
 
-> Estado alinhado à versão desktop `0.25.2`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.28.0`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
 
 ## Visão geral
 
@@ -27,10 +27,11 @@ API central FastAPI (/v1, HTTPS)
         v
 PostgreSQL no EasyPanel
   ├─ dados de transcrição e identidade
-  └─ schema `support` isolado para atendimento
+  ├─ schema `support` isolado para atendimento
+  └─ schema `data_studio` para consultas salvas e execuções
 ```
 
-O Data Studio administrativo explora o catálogo e oferece um construtor visual PostgreSQL protegido, documentado em `DATA_STUDIO_ARCHITECTURE.md`. Valores são parametrizados; mutações exigem plano confirmado, transação e auditoria. SQL digitado manualmente e automações permanecem fora da linha v0.25.
+O Data Studio administrativo explora o catálogo e oferece um construtor visual PostgreSQL protegido, SQL Editor manual, Saved Queries parametrizadas e diagramas ER, conforme `DATA_STUDIO_ARCHITECTURE.md`. Valores são parametrizados; mutações exigem plano confirmado, transação e auditoria. Scheduler, jobs, eventos, entregas e integrações externas permanecem posteriores à v0.28.
 
 ## Aplicação desktop
 
@@ -59,7 +60,7 @@ O Data Studio administrativo explora o catálogo e oferece um construtor visual 
 | Transcript clean e derivados | Identificados como derivados; guardados localmente primeiro. |
 | Histórico remoto | Escrita best-effort no PostgreSQL; a falha da VPS não pode impedir a preservação local. |
 | Credenciais | Windows Credential Manager no desktop; variáveis protegidas no EasyPanel para serviços. Nunca Git, logs ou chat. |
-| Evidências de suporte | Metadados e hashes no banco; binários em spool temporário e arquivo verificado no Google Drive autorizado. |
+| Evidências de suporte | Metadados e hashes no banco; o contrato prevê binários em spool temporário e arquivo verificado no Google Drive autorizado. O volume persistente e o job final ainda são backlog operacional. |
 
 ## Banco e domínios
 
@@ -76,4 +77,4 @@ O suporte segue hub-and-spoke: `support.tickets` é a matriz e satélites preser
 
 ## Estado e próximos domínios
 
-Entregues: transcrição, Biblioteca, identidade, MFA, administração, telemetria consentida e suporte. Os próximos domínios de produto são contexto/decisões/ações/riscos, estudo e chat ancorado no material. Integrações e webhooks só serão implementados após a definição de eventos e contratos reais.
+Entregues: transcrição, Biblioteca, identidade, MFA, administração, telemetria consentida, suporte e Data Studio até diagramas ER. As frentes imediatas registradas são concluir a infraestrutura de evidências, tornar a telemetria agregada mais acionável, evoluir Saved Queries para execução central e amadurecer a operação de suporte. Os próximos domínios de conteúdo são contexto/decisões/ações/riscos, estudo e chat ancorado no material. Integrações e webhooks só serão implementados após a definição de eventos e contratos reais.

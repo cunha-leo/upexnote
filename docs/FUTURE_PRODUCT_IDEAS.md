@@ -109,13 +109,13 @@ Possibilidades levantadas:
 
 O valor da marca-pai seria permitir que produtos compartilhassem princípios, identidade e componentes sem perder limites de domínio.
 
-## 6. Data Studio — laboratório possível dentro do UpexNote
+## 6. Data Studio — laboratório entregue dentro do UpexNote
 
-> Atualização: a fundação foi entregue na v0.25.0 e o construtor visual protegido na v0.25.1. O SQL Editor manual foi reservado à v0.26. O escopo vigente está em `DATA_STUDIO_ARCHITECTURE.md`; as demais expansões continuam exploratórias até autorização específica.
+> Atualização: o laboratório foi entregue da v0.25 à v0.28. Visual Builder, SQL Editor, Saved Queries e ER Diagram já existem. O escopo vigente está em `DATA_STUDIO_ARCHITECTURE.md`; somente as expansões posteriores continuam exploratórias.
 
-O Data Studio foi imaginado inicialmente como nova prateleira hierárquica dentro de `Administration`, abaixo dos módulos existentes. Ele atenderia à necessidade de consultar e administrar o PostgreSQL sem abrir ferramentas externas ou expor outras conexões profissionais durante reuniões.
+O Data Studio é uma prateleira hierárquica de `Administration`. Ele permite consultar e administrar o PostgreSQL sem abrir ferramentas externas ou expor outras conexões profissionais durante reuniões.
 
-Possível navegação:
+Navegação entregue:
 
 ```text
 Administration
@@ -127,59 +127,54 @@ Administration
 └─ Data Studio
 ```
 
-O laboratório no UpexNote deve seguir o visual, os temas, a acessibilidade e os padrões de UX existentes. PyQt ou PySide não são necessários: a interface pode permanecer em Tauri e React, utilizando o worker e serviços controlados para acessar o PostgreSQL.
+O laboratório segue o visual, os temas, a acessibilidade e os padrões de UX do UpexNote. A interface permanece em Tauri e React e utiliza o corredor protegido do worker para acessar o PostgreSQL.
 
 ## 7. Três caminhos de consulta
 
 ### 7.1. Visual Builder
 
-Construção intuitiva por seleções, sem exigir SQL:
+Entregue: construção intuitiva por seleções, sem exigir SQL, com:
 
-- escolher um ou vários schemas;
-- selecionar tabelas do mesmo schema ou de schemas diferentes;
+- catálogo por schema e seleção de tabelas do mesmo schema ou de schemas diferentes;
 - escolher colunas;
 - relacionar campos;
-- definir `INNER`, `LEFT`, `RIGHT`, `FULL` ou `CROSS JOIN`;
-- criar relações temporárias mesmo sem foreign key;
-- adicionar filtros, grupos, agregações e ordenação;
-- gerar e exibir o SQL correspondente;
-- executar e exportar resultados.
+- definir `INNER`, `LEFT`, `RIGHT` ou `FULL JOIN`;
+- criar relações de consulta mesmo sem foreign key;
+- combinar condições por `AND` ou `OR` e definir ordenação;
+- gerar prévia SQL não editável com valores parametrizados;
+- executar `SELECT` e mutações protegidas com resultado inline;
+- criar tabela e adicionar, renomear ou excluir coluna.
 
-Os controles devem se adaptar aos tipos dos campos: datas, números, textos, booleanos e relações.
+Agregações, agrupamentos, `CROSS JOIN` e exportações tabulares além da cópia atual continuam possibilidades posteriores, não capacidades entregues.
 
 ### 7.2. SQL Editor
 
-Editor interno para construir consultas manualmente:
+Entregue: editor CodeMirror PostgreSQL com:
 
-- SQL livre;
-- múltiplas consultas;
-- execução da seleção ou script;
-- formatação e realce de sintaxe;
-- parâmetros;
-- histórico e favoritos;
-- cancelamento, timeout e limite;
-- resultados tabulares;
-- `EXPLAIN`;
-- exportação.
+- uma instrução por execução;
+- formatação, realce de sintaxe, folding e correspondência de parênteses;
+- autocomplete local baseado no catálogo permitido;
+- fontes, tamanhos e temas próprios do editor;
+- timeout e limite de resultados;
+- execução protegida de leitura e mutações;
+- resultados tabulares inline.
 
-O autocomplete não precisa de IA nem de API externa. Pode utilizar Monaco Editor ou CodeMirror e o catálogo PostgreSQL carregado localmente para sugerir schemas, tabelas, colunas, aliases, relações, funções e palavras-chave.
+O autocomplete não usa IA nem API externa. Ele utiliza CodeMirror e o catálogo PostgreSQL já filtrado para sugerir schemas, tabelas, colunas e palavras-chave.
 
-Consultas visuais podem ser abertas no editor. Quando uma alteração manual não puder mais ser representada integralmente pelo construtor visual, a interface deve informar isso sem modificar ou perder o SQL.
+Múltiplas instruções/scripts, execução de seleção parcial, cancelamento, exportações e integrações continuam possibilidades futuras.
 
-### 7.3. Saved Ad Hocs
+### 7.3. Saved Queries
 
-Consultas personalizadas e recorrentes podem ser salvas como ativos executáveis:
+Entregue na v0.27: consultas personalizadas podem ser salvas como ativos executáveis com:
 
 - nome e descrição;
-- SQL versionado;
-- origem visual ou manual;
-- schemas e tabelas envolvidos;
-- parâmetros;
-- autor;
-- categoria ou pasta;
-- favorito;
-- estado: rascunho, ativo, pausado ou arquivado;
-- última edição e execução.
+- SQL editável;
+- parâmetros seguros na notação `:nome`;
+- proprietário;
+- categoria;
+- estado ativo ou arquivado;
+- pesquisa, restauração e exclusão explícita;
+- histórico operacional sem valores de parâmetros nem resultados persistidos.
 
 Ações fundamentais:
 
@@ -187,9 +182,9 @@ Ações fundamentais:
 Executar | Editar | Excluir/Arquivar
 ```
 
-Também podem existir duplicação, histórico, exportação, atalhos e versões anteriores.
+Duplicação, favoritos, pastas, versionamento e exportações permanecem possibilidades futuras.
 
-Consultas parametrizadas podem gerar formulários automaticamente:
+As consultas parametrizadas geram campos para os parâmetros identificados:
 
 ```sql
 SELECT *
@@ -208,28 +203,27 @@ Status        [Todos  ▼]
 
 Os valores devem ser vinculados como parâmetros, nunca concatenados diretamente no SQL.
 
-## 8. Exploração e gestão de dados
+## 8. Exploração e gestão de dados — estado atual
 
-Possibilidades do Data Studio:
+Já estão entregues:
 
-- navegador de conexões, schemas, tabelas, views, colunas, índices e constraints;
+- navegador de schemas, tabelas, views, colunas, índices e relações;
 - relações e chaves estrangeiras;
 - dados paginados;
 - filtros, busca e ordenação;
 - seleção de colunas;
 - visualização de uma ou várias tabelas relacionadas;
-- exportação CSV, JSON, XLSX e outros formatos futuros;
 - inserção e edição de registros;
-- criação de tabelas, colunas, índices e constraints;
+- criação de tabelas e alterações de coluna permitidas;
 - preview do SQL antes de alterações;
-- transações e rollback quando possível;
+- transações para mutações;
 - confirmação reforçada para operações destrutivas.
 
-A primeira versão, caso autorizada, deve começar somente leitura. Escrita, DDL e deleção exigem desenho adicional de permissões, confirmação e auditoria.
+A v0.25.0 começou somente leitura. Escrita, DDL e deleção foram acrescentadas depois com sessão MFA, revalidação administrativa, parâmetros, preview, hash de confirmação, transação e auditoria sem valores privados. Criação de índices/constraints, exportações CSV/JSON/XLSX e modelagem visual com geração de SQL continuam futuras.
 
 ## 9. Scheduler, jobs e eventos
 
-Um Ad Hoc pode futuramente receber agendamentos:
+Uma Saved Query pode futuramente receber agendamentos:
 
 - execução única, diária, semanal ou mensal;
 - fuso horário;
@@ -270,7 +264,7 @@ Data Studio
 ├─ Explorer
 ├─ Visual Builder
 ├─ SQL Editor
-├─ Saved Ad Hocs
+├─ Saved Queries
 ├─ Automations
 │  ├─ Schedules
 │  ├─ Events
@@ -287,7 +281,7 @@ Fluxos possíveis:
 
 ```text
 site/CRM → Webhook/API → validação → mapeamento → fila → dados
-dados/Ad Hoc → transformação → Webhook/API → CRM/n8n/outro sistema
+dados/Saved Query → transformação → Webhook/API → CRM/n8n/outro sistema
 ```
 
 Integrações futuras devem prever autenticação, contratos versionados, idempotência, assinaturas, retry, limites, dead-letter queue, histórico e proteção de payloads.
@@ -335,7 +329,7 @@ Data Studio Core
 ├─ Catalog
 ├─ Query Engine
 ├─ Visual Query Builder
-├─ Saved Ad Hocs
+├─ Saved Queries
 ├─ Execution Engine
 ├─ Scheduler
 ├─ Events
@@ -346,30 +340,33 @@ Data Studio Core
 
 O UpexNote seria um adaptador/consumidor desse núcleo, não sua única razão de existir.
 
-## 12. Isolamento e segurança
+## 12. Isolamento e segurança — base entregue e extensões futuras
 
-Caso o Data Studio seja desenvolvido:
+O corredor atual já aplica:
 
-- domínio novo usa schema PostgreSQL próprio e em inglês, possivelmente `data_studio`;
+- schema PostgreSQL próprio e em inglês, `data_studio`;
 - somente administradores elevados por MFA acessam operações administrativas;
-- modo inicial somente leitura;
-- escrita liberada explicitamente e por sessão;
-- timeout, cancelamento e limites padrão;
+- escrita e DDL apenas pelas operações explicitamente permitidas;
+- timeout e limites padrão;
 - operações visuais usam parâmetros;
 - alterações destrutivas mostram preview e exigem confirmação;
 - credenciais nunca aparecem na interface, SQL, logs ou histórico;
 - Audit registra ator, alvo, tipo e resultado sem copiar conteúdo privado;
-- resultados completos não são persistidos indiscriminadamente;
+- resultados e valores de parâmetros não são persistidos no histórico.
+
+Extensões futuras devem manter as mesmas garantias e acrescentar:
+
+- cancelamento controlado de execuções longas;
 - entregas externas exigem destino e consentimento explícitos.
 
-Possível estrutura futura:
+Objetos existentes e possíveis extensões:
 
 ```text
-data_studio.saved_queries
+data_studio.saved_queries             # entregue
+data_studio.saved_query_runs          # entregue
 data_studio.query_versions
 data_studio.query_parameters
 data_studio.query_folders
-data_studio.execution_history
 data_studio.schedules
 data_studio.schedule_runs
 data_studio.delivery_targets

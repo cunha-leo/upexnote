@@ -1,10 +1,10 @@
 # UpexNote Data Studio
 
-> Frente aprovada em 25 de julho de 2026. Este documento define os limites arquiteturais do módulo. O histórico de implementação e validação permanece em `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.28.0`. Este documento define os limites arquiteturais do módulo. O histórico de implementação e validação permanece em `PROJECT_CONTEXT.md`.
 
 ## Objetivo
 
-O Data Studio é uma prateleira administrativa do UpexNote para explorar e, em fases posteriores, consultar, relacionar e automatizar dados PostgreSQL sem depender de uma ferramenta externa durante o uso do produto.
+O Data Studio é uma prateleira administrativa do UpexNote para explorar, consultar e relacionar dados PostgreSQL sem depender de uma ferramenta externa durante o uso do produto. Automação, agendamento e integrações permanecem fases posteriores.
 
 Ele nasce dentro do UpexNote, mas utiliza nomes e contratos genéricos para preservar uma possível extração futura como produto UpexFlow.
 

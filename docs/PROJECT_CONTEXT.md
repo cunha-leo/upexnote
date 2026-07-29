@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 25 de julho de 2026 (v0.28.0 - diagramas ER)
-**Estado mais recente:** 25 de julho de 2026 (v0.28.0 - ER Diagram implementado)
+**Última atualização:** 28 de julho de 2026 (consolidação documental após v0.28.0)
+**Estado mais recente:** 25 de julho de 2026 (v0.28.0 - ER Diagram implementado e validado)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -427,6 +427,29 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-28: consolidação da documentação no estado v0.28.0
+
+### O que mudou
+- O `README.md` da raiz deixou de descrever a fundação inicial e passou a resumir a aplicação instalada, a arquitetura local-first, as capacidades entregues e a ordem das fontes de verdade.
+- Os READMEs do desktop, worker e API foram alinhados ao código atual: sidecar empacotado, superfícies da aplicação, SQLite/PostgreSQL, identidade, MFA, telemetria, suporte e Data Studio.
+- `ARCHITECTURE.md`, `PRODUCT.md` e `DATA_STUDIO_ARCHITECTURE.md` passaram a declarar alinhamento à v0.28.0, incluindo Saved Queries, diagramas ER e o schema `data_studio`.
+- `FUTURE_PRODUCT_IDEAS.md` agora separa explicitamente o Data Studio já entregue das expansões ainda exploratórias. O nome atual `Saved Queries` substituiu referências antigas a `Saved Ad Hocs` nos resumos vigentes.
+
+### Evidência / teste
+- Conteúdo cruzado com os manifests v0.28.0, comandos Tauri, parser do worker, routers da API e registros de validação mais recentes deste documento.
+- Busca textual confirmou a remoção das descrições obsoletas de fundação, futura ligação desktop-worker e alinhamento à v0.25.2 nos documentos correntes.
+- Alteração exclusivamente documental; nenhum build, teste funcional, deploy ou operação externa foi necessário.
+
+### Decisão
+- READMEs e documentos de arquitetura descrevem o estado vigente; decisões superadas permanecem apenas nos registros históricos deste arquivo, onde a cronologia é parte da fonte de verdade.
+- `FUTURE_PRODUCT_IDEAS.md` não deve apresentar como hipótese aquilo que já foi entregue. Somente extensões não implementadas permanecem como possibilidades.
+
+### Impacto em dados, custo ou privacidade
+- Nenhum. Não houve alteração de código, banco, mídia, credenciais, infraestrutura ou dados de utilizador.
+
+### Próximo passo
+- Retomar uma das pendências imediatas já registradas no topo deste documento, conforme autorização do utilizador.
 
 ### Registro — 2026-07-25 (n): diagramas ER — v0.28.0
 

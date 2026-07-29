@@ -1,69 +1,78 @@
 # UpexNote Worker
 
-Worker local responsável por encapsular os pipelines Python já validados.
+Worker local Python do UpexNote, empacotado com PyInstaller como sidecar da aplicação desktop.
 
-## Estado
+## Responsabilidades atuais
 
-Migrado de `C:\Users\cunha\Project\scripts\` (protótipo Tkinter) em 2026-07-12, sem alterar a lógica de nenhum motor — só o destino dos ficheiros gerados, que passou de `resultados\<motor>\` para `storage\transcripts\<motor>\`, e a remoção do acoplamento à interface Tkinter (essa UI será substituída por Tauri + React, ver `docs/ARCHITECTURE.md`).
+- executar os motores de transcrição e emitir progresso por NDJSON;
+- preservar os ficheiros `raw` e `clean` e validar cobertura, timestamps e repetições;
+- gerir credenciais pelo Windows Credential Manager;
+- guardar definições e escolher entre SQLite local e PostgreSQL administrativo;
+- manter o túnel SSH persistente quando o modo VPS está ativo;
+- servir Biblioteca, identidade local, administração e Data Studio ao shell Tauri;
+- chamar a API central HTTPS para recuperação de senha, MFA, telemetria e suporte.
 
-## Estrutura
+O worker não é um servidor HTTP local. O desktop lança processos controlados e troca payloads por stdin/stdout; operações longas emitem eventos NDJSON.
 
-`transcription/` — pacote Python com os motores e utilitários partilhados:
+## Estrutura principal
 
-- `assemblyai.py` — motor principal (AssemblyAI Universal-3.5 Pro).
-- `whisper_openai.py` — whisper-1 (OpenAI), alternativa económica/monolingue.
-- `deepgram.py` — Nova-3, candidato a modo ao vivo futuro.
-- `gpt4o_openai.py` — gpt-4o-transcribe, **não recomendado** (mantido só por referência; ver docstring do módulo).
-- `audio_chunks.py` / `transcript_utils.py` — chunking em silêncio, mapa de timestamps, deteção de alucinações/loops, validação de cobertura.
-- `paths.py` — resolve `storage/transcripts/<motor>/` a partir da raiz do projeto.
-- `credentials.py` — chaves via Windows Credential Manager (`keyring`), nunca em ficheiro.
-- `registry.py` — `ENGINES` dict framework-agnostic para uma futura CLI/IPC invocar qualquer motor sem acoplar à lógica de cada provedor.
+- `transcription/assemblyai.py` — motor principal para arquivos, AssemblyAI Universal-3.5 Pro.
+- `transcription/whisper_openai.py` — alternativa económica/monolingue.
+- `transcription/deepgram.py` — Nova-3, alternativa e candidato futuro a baixa latência.
+- `transcription/gpt4o_openai.py` — implementação de referência, não recomendada para arquivos longos.
+- `transcription/audio_chunks.py` e `transcript_utils.py` — áudio, timestamps e validação.
+- `transcription/paths.py` — destino local e preferências de armazenamento.
+- `transcription/credentials.py` — integração com Windows Credential Manager.
+- `transcription/db.py` — SQLite/PostgreSQL, Biblioteca, histórico e auditoria.
+- `transcription/accounts.py` e `oauth.py` — contas e login social.
+- `transcription/data_studio.py` — catálogo, consultas protegidas, SQL Editor e Saved Queries.
+- `transcription/api_client.py` — cliente HTTPS da API central.
+- `transcription/cli.py` — contrato de entrada do sidecar.
 
-## Ponto de entrada: CLI NDJSON (`transcription.cli`)
+## Segurança e privacidade
 
-O `apps/desktop` (shell Tauri) lança este worker como processo/sidecar e lê o **stdout linha a linha** — cada linha é um objeto JSON completo (NDJSON). Sem servidor HTTP, portas ou CORS.
+- Chaves nunca são passadas por argumentos.
+- Payloads sensíveis da UI seguem por stdin.
+- Vídeo permanece no caminho original.
+- Áudio só vai a um motor cloud por ação explícita.
+- O arquivo local é gravado antes da escrita best-effort no banco.
+- Edição da Biblioteca altera apenas o `clean`; o `raw` permanece imutável.
+- Operações administrativas revalidam o ator e, quando exigido, a sessão MFA.
+- Data Studio compõe identificadores pelo driver, parametriza valores, mascara colunas protegidas e confirma mutações por hash do plano.
 
-### Segurança das chaves
+## CLI NDJSON
 
-As chaves API **nunca** são passadas por argumentos (argv é visível na lista de processos). O `transcribe` lê a chave do Windows Credential Manager sozinho. Para gravar uma chave, o utilizador corre `set-key`, que lê o valor por stdin **sem eco** (`getpass`) — a chave nunca fica no comando nem no histórico do terminal.
+Exemplos básicos em desenvolvimento:
 
-### Comandos
-
-```bash
-# Listar motores (JSON único), incluindo se a chave já está configurada
+```powershell
 python -m transcription.cli engines
-
-# Transcrever — emite eventos NDJSON: start, progress (0..N), result | error
-python -m transcription.cli transcribe --engine assemblyai --file "C:/gravacoes/reuniao.mp4"
-
-# Guardar uma chave (corre isto tu mesmo; lê por stdin, sem eco)
-python -m transcription.cli set-key --name ASSEMBLYAI_API_KEY
-
-# Ver se uma chave está configurada (nunca revela o valor)
-python -m transcription.cli check-key --name ASSEMBLYAI_API_KEY
+python -m transcription.cli transcribe --engine assemblyai --file "C:\gravacoes\reuniao.mp4"
+python -m transcription.cli get-settings
+python -m transcription.cli list-keys
+python -m transcription.cli db-check --mode local
 ```
 
-### Protocolo de eventos do `transcribe` (stdout, um JSON por linha)
+Os grupos de comandos atuais abrangem:
 
-| `type` | Quando | Campos |
-|---|---|---|
-| `start` | ao iniciar | `engine`, `file` |
-| `progress` | 0..N vezes | `message` |
-| `result` | sucesso | `ok`, `clean_text`, `clean_path`, `raw_path`, `cost`, `duration_s`, `problems`, `language` |
-| `error` | falha | `message` |
+- motores, transcrição, destino e definições;
+- credenciais;
+- SQLite/PostgreSQL e túnel persistente;
+- Biblioteca e migrações;
+- contas, OAuth e administração;
+- Data Studio;
+- recuperação de senha e MFA central;
+- telemetria;
+- suporte.
 
-Prints internos soltos do pipeline vão para **stderr**, para o stdout ficar só com NDJSON. Código de saída: `0` sucesso, `2` concluído mas com validação falhada (ver `problems`), `1` erro.
+O comando `transcribe` emite `start`, zero ou mais eventos `progress` e `result` ou `error`. O stdout permanece reservado a JSON/NDJSON; mensagens internas seguem para stderr.
 
-### Uso direto em Python (para testes)
+## Empacotamento e testes
 
-```python
-from transcription.credentials import get_key
-from transcription import assemblyai
-
-result = assemblyai.run("C:/caminho/para/reuniao.mp4", get_key("ASSEMBLYAI_API_KEY"))
-print(result["clean_text"])
+```powershell
+.\build_worker.ps1
+python -m unittest discover -s tests
 ```
 
-## Próximo passo
+`build_worker.ps1` gera o sidecar onedir e copia o recurso necessário para o bundle Tauri. O formato onedir evita a descompactação repetida e a latência de um executável onefile em cada operação curta.
 
-Ligar o `apps/desktop` (Tauri) a esta CLI: lançar o sidecar, mapear `engines`/`check-key` para o ecrã de definições e `transcribe` para a barra de progresso + vista de transcript.
+O estado validado mais recente e os resultados dos testes ficam em [`docs/PROJECT_CONTEXT.md`](../../docs/PROJECT_CONTEXT.md).

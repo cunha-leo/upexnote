@@ -1,6 +1,6 @@
 # Produto UpexNote
 
-> Estado alinhado à versão desktop `0.25.2`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.28.0`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
 
 ## Marca e propósito
 
@@ -43,13 +43,15 @@ visão geral → filtros → lista/fila → detalhe → ação ou contexto
 
 A pessoa precisa compreender onde está, o que pode fazer, o resultado da ação e como avançar ou retornar sem se perder. Tabelas devem ser legíveis em desktop normal sem barra horizontal exposta; ações secundárias usam ícones com rótulos acessíveis.
 
-## Próximas frentes aprovadas, ainda não implementadas
+## Backlog atual, ainda não implementado
 
-1. Scheduler, jobs, eventos e entregas para Saved Queries.
-2. Contexto estruturado: resumo, decisões, ações, riscos e perguntas, sempre derivado e identificado.
-3. Material de estudo: explicações, fluxos, tabelas, quiz e exportações.
-4. Chat ancorado no material, sem transformar inferências em fatos do transcript.
-5. Evolução operacional do suporte: filtros, SLA, prioridade, notificações e arquivo de evidências na infraestrutura prevista.
-6. Integrações/Webhooks após contratos concretos de consultas, eventos e automações.
+1. Concluir o volume persistente, o job e o manifesto de arquivo das evidências de suporte.
+2. Tornar a telemetria agregada mais acionável sem quebrar consentimento ou anonimato.
+3. Acrescentar scheduler, jobs, eventos e entregas às Saved Queries.
+4. Evoluir suporte com filtros, SLA futuro, prioridade, atribuição, notificações e histórico.
+5. Implementar contexto estruturado: resumo, decisões, ações, riscos e perguntas, sempre derivado e identificado.
+6. Implementar material de estudo: explicações, fluxos, tabelas, quiz e exportações.
+7. Implementar chat ancorado no material, sem transformar inferências em fatos do transcript.
+8. Retomar Integrações/Webhooks somente após contratos concretos de consultas, eventos e automações.
 
 Captura ao vivo por microfone e loopback WASAPI, reprodução/síntese de voz e tradução contextual permanecem fases posteriores.

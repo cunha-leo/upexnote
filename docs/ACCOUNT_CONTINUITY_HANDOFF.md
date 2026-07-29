@@ -65,7 +65,7 @@ O UpexNote pode continuar como ferramenta pessoal excelente e preservar a possib
   - autocomplete de catálogo;
   - temas e formatação;
   - execução e resultado na mesma jornada;
-  - Saved Ad Hocs;
+  - Saved Queries;
   - parâmetros seguros e histórico;
   - diagramas ER por schema, tabela e SQL atual ou salvo.
 
