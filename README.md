@@ -19,6 +19,12 @@ UpexNote é o produto de transcrição, contexto e estudo do ecossistema UpexFlo
 - `docs` — arquitetura, produto e decisões técnicas.
 - `storage` — conteúdo gerado pelo utilizador; ignorado pelo Git.
 
+## Continuidade de contexto
+
+- `AGENTS.md` — regras permanentes para qualquer agente que trabalhe no repositório.
+- `docs/ACCOUNT_CONTINUITY_HANDOFF.md` — dossiê de continuidade entre contas e agentes.
+- `docs/NEW_ACCOUNT_BOOTSTRAP_PROMPT.md` — prompt para iniciar uma nova conta ChatGPT/Codex no contexto correto.
+
 ## Estado
 
 Fundação inicial do projeto. Os pipelines de transcrição já validados serão migrados do protótipo anterior para `services/worker` sem alterar os resultados que foram testados.
