@@ -2,7 +2,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 28 de julho de 2026 (consolidação documental após v0.28.0)
+**Última atualização:** 29 de julho de 2026 (regra durável para abrir o ambiente de trabalho)
 **Estado mais recente:** 25 de julho de 2026 (v0.28.0 - ER Diagram implementado e validado)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
@@ -427,6 +427,27 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-07-29: regra durável para “abrir o ambiente”
+
+### O que mudou
+- A expressão “abra o ambiente” passa a significar, de forma determinística entre sessões, abrir ou reutilizar no navegador interno do Codex uma aba para cada serviço habitual de trabalho: Google Cloud/API do projeto UpexNote, GitHub de `cunha-leo`, EasyPanel/VPS, Hostinger hPanel e o webmail de `contact@upexflow.com`.
+- Os destinos canônicos foram registrados em `AGENTS.md` e no handoff de continuidade; o prompt de entrada de uma nova conta também remete a essa regra.
+- Abas e sessões existentes devem ser reutilizadas quando possível, sem duplicatas, e permanecer abertas para acompanhamento do utilizador.
+
+### Evidência / teste
+- Alteração exclusivamente documental; os destinos e o comportamento foram conferidos entre as três instruções de continuidade.
+- Nenhum site foi aberto e nenhuma ação externa foi executada durante este registro.
+
+### Decisão
+- Se um destino pedir autenticação, o agente deixa a página visível para Leonardo concluir o acesso e continua abrindo os demais serviços.
+- Cookies, sessões, senhas, tokens e outras credenciais nunca são copiados, expostos ou registrados.
+
+### Impacto em dados, custo ou privacidade
+- Nenhum dado ou credencial foi acessado. A regra apenas documenta a navegação futura solicitada pelo utilizador.
+
+### Próximo passo
+- Na próxima solicitação “abra o ambiente”, executar o fluxo no navegador interno do Codex e deixar as abas disponíveis para acompanhamento.
 
 ### Registro — 2026-07-28: consolidação da documentação no estado v0.28.0
 

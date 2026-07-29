@@ -50,6 +50,7 @@ Regras permanentes:
 - Uma interface visual só está concluída quando a funcionalidade opera de ponta a ponta.
 - Não faça ações externas ou destrutivas sem autorização específica.
 - Numa tarefa autorizada, trabalhe com autonomia até concluir: implementar, validar, testar visualmente quando aplicável, atualizar docs/PROJECT_CONTEXT.md, criar commit claro e fazer push conforme autorização e segurança.
+- Quando eu disser “abra o ambiente”, abra ou reutilize no navegador interno do Codex os destinos definidos em AGENTS.md: Google Cloud/API do projeto UpexNote, GitHub, EasyPanel/VPS, Hostinger hPanel e o webmail de contact@upexflow.com. Deixe as abas abertas, evite duplicatas e nunca copie ou registre credenciais, cookies, sessões ou tokens.
 
 Ao terminar essa atualização inicial, pare e aguarde a próxima tarefa.
 ```

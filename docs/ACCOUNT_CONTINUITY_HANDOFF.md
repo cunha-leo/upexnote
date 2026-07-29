@@ -205,15 +205,17 @@ Versão visual sem funcionalidade real não é considerada conclusão.
 
 Quando Leonardo pedir “abra o ambiente”, ele está falando do navegador do Codex.
 
-Destinos usuais:
+Abrir ou reutilizar uma aba no navegador interno do Codex para cada destino habitual:
 
-- GitHub;
-- Google Cloud/API do UpexNote;
-- Hostinger;
-- EasyPanel/VPS;
-- webmail necessário para a tarefa.
+- Google Cloud/API do projeto UpexNote: `https://console.cloud.google.com/apis/credentials?project=upexnote&pli=1`;
+- GitHub: `https://github.com/cunha-leo`;
+- EasyPanel/VPS: `https://vps.upexflow.com/`;
+- Hostinger hPanel: `https://hpanel.hostinger.com/`;
+- webmail da conta `contact@upexflow.com`, usando a sessão autenticada disponível.
 
-Não criar documento de “sites do projeto” para isso e não confundir navegador com ambiente de código. Sessões, cookies e credenciais não devem ser copiados nem registrados.
+Reutilizar abas e sessões existentes quando possível, evitar duplicatas e deixar os destinos abertos para Leonardo acompanhar. Se algum serviço pedir autenticação, deixar a página visível para ele concluir o acesso e continuar abrindo os outros destinos.
+
+Não criar documento separado de “sites do projeto” para isso e não confundir navegador com ambiente de código. Sessões, cookies, credenciais, senhas e tokens não devem ser copiados, expostos nem registrados.
 
 ## 10. Migração oficial entre contas ChatGPT
 

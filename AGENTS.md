@@ -55,5 +55,12 @@ Leia `docs/ACCOUNT_CONTINUITY_HANDOFF.md` quando houver troca de conta, sessão 
 ## Vocabulário do utilizador
 
 - “Ambiente” significa o navegador do Codex com os acessos de trabalho, não uma pasta ou documento do repositório.
-- O ambiente costuma incluir GitHub, Google Cloud/API, Hostinger, EasyPanel/VPS e webmail.
-- Não registrar cookies, sessões, senhas ou tokens desses serviços.
+- Quando Leonardo disser “abra o ambiente”, abrir ou reutilizar, no navegador interno do Codex, uma aba para cada destino habitual:
+  - Google Cloud/API do projeto UpexNote: `https://console.cloud.google.com/apis/credentials?project=upexnote&pli=1`;
+  - GitHub: `https://github.com/cunha-leo`;
+  - EasyPanel/VPS: `https://vps.upexflow.com/`;
+  - Hostinger hPanel: `https://hpanel.hostinger.com/`;
+  - webmail da conta `contact@upexflow.com`, usando a sessão autenticada disponível.
+- Reutilizar abas e sessões existentes quando possível, evitar duplicatas e deixar os destinos abertos para acompanhamento do utilizador.
+- Se algum serviço solicitar autenticação, deixar a página visível para Leonardo concluir o acesso e continuar abrindo os demais destinos.
+- Nunca copiar, expor ou registrar cookies, sessões, senhas, tokens ou outros dados de autenticação desses serviços.
