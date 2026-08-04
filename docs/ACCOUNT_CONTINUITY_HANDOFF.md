@@ -4,7 +4,9 @@
 >
 > **Segurança:** este documento não contém senhas, tokens, chaves, OAuth, conteúdo corporativo, áudio, vídeo ou transcrições privadas.
 >
-> **Estado do dossiê:** 28 de julho de 2026.
+> **Estado do dossiê:** 4 de agosto de 2026.
+>
+> **Entrada obrigatória atual:** antes de usar este arquivo isoladamente, ler `docs/CONTEXT_ORCHESTRATION.md`. Ele coordena a camada pessoal e decisória no Google Drive, a matriz principal, a submatriz operacional e os documentos especializados.
 
 ## 1. Por que este documento existe
 
@@ -19,6 +21,8 @@ Não basta entregar o código. A nova conta precisa compreender:
 - onde está a fonte de verdade;
 - como evitar repetir funcionalidades existentes;
 - como continuar sem perder a cadência e a qualidade construídas.
+
+Este arquivo permanece como dossiê de handoff entre contas e agentes. A ordem completa de reconstrução do contexto passou a ser governada por `docs/CONTEXT_ORCHESTRATION.md`.
 
 ## 2. O criador e a intenção do produto
 
@@ -35,6 +39,8 @@ O objetivo não é criar funcionalidades por moda. O produto resolve dores concr
 
 O UpexNote pode continuar como ferramenta pessoal excelente e preservar a possibilidade de produto comercial. Possibilidades comerciais são hipóteses, não obrigação.
 
+Para reconstruir com fidelidade como Leonardo pensa, trabalha e decide, consultar primeiro os documentos pessoais coordenados por `CONTEXT_ORCHESTRATION.md`, na ordem Dossiê e depois Contexto Vivo. Este resumo não substitui esses arquivos vivos.
+
 ## 3. Estado consolidado no momento da transição
 
 - Repositório privado: `cunha-leo/upexnote`.
@@ -42,7 +48,7 @@ O UpexNote pode continuar como ferramenta pessoal excelente e preservar a possib
 - Raiz local: `C:\Users\cunha\Projects\upexflow\upexnote`.
 - Versão instalada/desenvolvida documentada: `v0.28.0`.
 - Total observado em 28 de julho de 2026: 156 commits.
-- Último commit anterior a este dossiê: `22165e2`.
+- Último commit anterior à primeira versão deste dossiê: `22165e2`.
 
 ### Capacidades entregues
 
@@ -71,6 +77,8 @@ O UpexNote pode continuar como ferramenta pessoal excelente e preservar a possib
 
 O estado exato e os testes validados estão em `docs/PROJECT_CONTEXT.md`. Não confiar apenas neste resumo para editar.
 
+As frentes ainda não entregues, seu estado, prioridade, critérios e fluxo de promoção estão em `docs/FEATURE_VALIDATION_AND_ROADMAP.md`.
+
 ## 4. Arquitetura principal
 
 ```text
@@ -93,24 +101,23 @@ VPS / EasyPanel
 
 Princípio arquitetural: a interface pode ser moderna e conectada, mas o material bruto permanece sob controle local. Integrações externas são explícitas e delimitadas.
 
-## 5. Fonte de verdade
+## 5. Fonte de verdade e sequência de retomada
 
-Ordem obrigatória:
+A porta de entrada é `docs/CONTEXT_ORCHESTRATION.md`.
 
-1. estado real do código e do Git;
-2. `docs/PROJECT_CONTEXT.md`;
-3. `docs/ARCHITECTURE.md`;
-4. documentos específicos:
-   - `docs/DATA_STUDIO_ARCHITECTURE.md`
-   - `docs/SUPPORT_ARCHITECTURE.md`
-   - `docs/PRODUCT.md`
-5. `docs/UX_PRODUCT_STANDARD.md`;
-6. `docs/FUTURE_PRODUCT_IDEAS.md`;
-7. `docs/AI_MEDIA_EVOLUTION.md`;
-8. este dossiê;
-9. chats exportados como material histórico complementar.
+A sequência mínima coordenada por ele é:
 
-Uma conversa antiga pode estar desatualizada. O repositório e o documento vivo vencem.
+1. Dossiê pessoal no Google Drive;
+2. Contexto Vivo no Google Drive;
+3. `AGENTS.md` aplicável;
+4. `docs/PROJECT_CONTEXT.md`;
+5. `docs/FEATURE_VALIDATION_AND_ROADMAP.md`;
+6. documentos especializados exigidos pela tarefa;
+7. código, Git e comportamento executável;
+8. este dossiê quando houver troca de conta, agente ou ambiente;
+9. chats exportados apenas como material histórico complementar.
+
+Para determinar o que realmente existe, prevalecem comportamento validado, código e Git. Para estado consolidado e decisões vigentes, prevalece `PROJECT_CONTEXT.md`. Para prioridade e trabalho ainda não consolidado, prevalece `FEATURE_VALIDATION_AND_ROADMAP.md`. Uma conversa antiga pode estar desatualizada.
 
 ## 6. Regras permanentes
 
@@ -118,6 +125,7 @@ Uma conversa antiga pode estar desatualizada. O repositório e o documento vivo 
 
 - nunca revelar ou registrar credenciais;
 - nunca copiar áudio, vídeo ou transcrição privada para Git, logs ou chats;
+- não copiar os documentos pessoais integrais do Drive para o repositório;
 - credenciais ficam no Windows Credential Manager;
 - nenhum material bruto sai da máquina sem ação e consentimento explícitos;
 - telemetria não contém conteúdo;
@@ -136,6 +144,7 @@ Uma conversa antiga pode estar desatualizada. O repositório e o documento vivo 
 ### UX
 
 - UI/UX é requisito de arquitetura;
+- `docs/UX_PRODUCT_STANDARD.md` é consulta obrigatória para qualquer impacto de layout, front-end, fluxo, interação, acessibilidade ou estado visual;
 - administração usa menu lateral hierárquico;
 - uma tela deve deixar claro onde o utilizador está, o que deve fazer, o resultado da ação e como voltar;
 - layout precisa ser fluido e proporcional;
@@ -158,10 +167,13 @@ Uma conversa antiga pode estar desatualizada. O repositório e o documento vivo 
 - se disser que algo está confuso, carregado, pequeno, estourando ou sobreposto, inspecionar no tamanho real e corrigir a causa;
 - não confundir concordância com evidência: verificar código, estado e comportamento.
 
+O Dossiê pessoal no Drive é a fonte mais completa para o método de colaboração e deve ser relido quando houver nova sessão, ferramenta, conta ou possível atualização.
+
 ### Cadência de desenvolvimento
 
 ```text
 necessidade real
+  → orquestração de contexto
   → inspeção do que já existe
   → definição da jornada
   → implementação pequena e completa
@@ -169,7 +181,9 @@ necessidade real
   → build/instalação quando aplicável
   → validação visual e funcional real
   → correções
-  → atualização do contexto
+  → atualização do documento especializado
+  → retroalimentação do roadmap
+  → promoção ao contexto consolidado
   → commit e push
 ```
 
@@ -191,8 +205,9 @@ Versão visual sem funcionalidade real não é considerada conclusão.
 - privacidade e controle pertencem ao utilizador;
 - o produto precisa servir trabalho, reuniões, ensino e estudo;
 - biblioteca permanente importa mais que respostas descartáveis;
-- formatação futura também será superfície de leitura e edição;
-- haverá reprodução do áudio original e leitura sintetizada;
+- a frente aprovada atual transforma transcript clean em documento estruturado e workspace rico de estudo;
+- comentários ancorados, referências de estudo, dicionário/glossário, persistência e exportação fazem parte dessa frente para refinamento;
+- haverá reprodução do áudio original e leitura sintetizada em fases posteriores;
 - leitura deverá ter velocidades até `2×`, escolha de voz/idioma e navegação pelo texto;
 - timestamps por palavra permitirão sincronização, destaque e salto no áudio;
 - Action Items, tópicos e inteligência de conteúdo serão avaliados sob solicitação;
@@ -200,6 +215,8 @@ Versão visual sem funcionalidade real não é considerada conclusão.
 - Data Studio nasceu no UpexNote como laboratório, mas pode tornar-se produto UpexFlow separado;
 - webhooks, scheduler, jobs, eventos e integrações vêm depois de contratos claros;
 - não criar várias frentes simultâneas sem necessidade real.
+
+O estado preciso dessas frentes está em `FEATURE_VALIDATION_AND_ROADMAP.md`; este dossiê não deve duplicar o roadmap operacional.
 
 ## 9. “Abrir o ambiente”
 
@@ -245,7 +262,13 @@ Limitações importantes:
 
 ## 11. Estratégia recomendada para UpexNote
 
-### Camada 1 — repositório
+### Camada 1 — orquestração de contexto
+
+- `CONTEXT_ORCHESTRATION.md` é a porta única;
+- ele coordena Dossiê, Contexto Vivo, matriz, submatriz, documentos de domínio e retorno documental;
+- `NEW_ACCOUNT_BOOTSTRAP_PROMPT.md` fornece o prompt mínimo para iniciar a leitura.
+
+### Camada 2 — repositório
 
 O GitHub é a continuidade operacional. A nova conta deve:
 
@@ -254,12 +277,6 @@ O GitHub é a continuidade operacional. A nova conta deve:
 - trabalhar na mesma raiz local quando apropriado;
 - ler `AGENTS.md` e a documentação obrigatória;
 - conferir `git status` e histórico antes de agir.
-
-### Camada 2 — dossiê e prompt
-
-- este arquivo transfere método e contexto;
-- `NEW_ACCOUNT_BOOTSTRAP_PROMPT.md` inicia a primeira sessão;
-- `PROJECT_CONTEXT.md` fornece o estado vivo.
 
 ### Camada 3 — histórico exportado
 
@@ -275,7 +292,7 @@ Enviar o export oficial apenas como arquivo de referência. Para reduzir ruído 
 - [ ] Recriar instruções personalizadas e preferências relevantes.
 - [ ] Abrir o repositório na nova conta.
 - [ ] Colar o prompt de bootstrap.
-- [ ] Pedir ao novo Codex que leia e resuma antes de alterar.
+- [ ] Pedir ao novo Codex que leia `CONTEXT_ORCHESTRATION.md` e siga suas coordenadas antes de alterar.
 - [ ] Fazer uma tarefa pequena de verificação.
 - [ ] Manter a conta antiga acessível até confirmar a continuidade.
 - [ ] Revisar assinaturas para evitar cobrança duplicada.
@@ -284,13 +301,15 @@ Enviar o export oficial apenas como arquivo de referência. Para reduzir ruído 
 
 A nova conta está pronta quando o novo Codex consegue, sem inventar:
 
+- declarar se conseguiu acessar e atualizar-se pelo Dossiê e Contexto Vivo;
+- explicar como Leonardo trabalha e valida;
 - identificar a versão e o último commit;
 - explicar a arquitetura local-first;
 - listar as regras de privacidade, banco e UX;
-- distinguir entregue, backlog e visão futura;
+- distinguir entregue, frente aprovada, backlog e visão futura;
 - localizar os documentos corretos;
-- entender o estilo de colaboração;
-- executar uma pequena tarefa preservando o worktree e atualizando o contexto corretamente.
+- executar uma pequena tarefa preservando o worktree;
+- atualizar documento especializado, roadmap e contexto consolidado na ordem correta.
 
 ## 14. Referências oficiais da migração
 
