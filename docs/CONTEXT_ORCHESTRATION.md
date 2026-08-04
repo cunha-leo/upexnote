@@ -1,16 +1,18 @@
 # UpexNote — Context Orchestration
 
-> **Papel:** porta única e obrigatória de entrada para qualquer IA, agente, conta, ambiente ou nova sessão que precise compreender Leonardo, suas decisões e o projeto UpexFlow/UpexNote antes de propor ou executar trabalho.
+> **Papel:** porta única e obrigatória de entrada para qualquer IA, agente, conta, ambiente ou sessão que precise compreender Leonardo, suas decisões e o projeto UpexFlow/UpexNote antes de propor ou executar trabalho.
 >
-> **Uso esperado:** em vez de reconstruir manualmente um prompt com vários arquivos, Leonardo pode instruir apenas: **“Leia `docs/CONTEXT_ORCHESTRATION.md` e siga integralmente suas coordenadas antes de agir.”**
+> **Uso esperado:** Leonardo pode instruir apenas: **“Leia `docs/CONTEXT_ORCHESTRATION.md` e siga integralmente suas coordenadas antes de agir.”**
 >
-> **Regra principal:** este documento coordena a ordem de leitura. Ele não substitui as fontes referenciadas e não autoriza implementação por si só.
+> **Regra principal:** este documento coordena a ordem, a necessidade e a profundidade da leitura. Ele não substitui as fontes referenciadas e não autoriza implementação por si só.
+>
+> **Regra de eficiência:** documentos extensos que já estejam disponíveis na sessão na mesma versão não devem ser relidos integralmente. A IA deve verificar presença e versão, reler apenas quando necessário e registrar o que reutilizou.
 
 ---
 
 ## 1. Objetivo
 
-Este documento elimina a necessidade de Leonardo repetir, em cada nova IA ou sessão, quais documentos devem ser lidos, em que ordem e com qual autoridade.
+Este documento elimina a necessidade de Leonardo reconstruir manualmente, em cada IA ou sessão, quais fontes devem ser lidas, em que ordem, com qual autoridade e quando podem ser reutilizadas.
 
 A contextualização deve reconstruir quatro camadas distintas e conectadas:
 
@@ -25,12 +27,13 @@ A IA somente estará contextualizada quando tiver percorrido as camadas aplicáv
 
 ## 2. Ponto único de entrada
 
-Toda nova sessão relevante deve começar por este arquivo.
+Toda nova sessão relevante deve começar por este arquivo, mas a leitura das fontes seguintes é **condicional à presença, versão e atualidade**.
 
 ```text
 CONTEXT_ORCHESTRATION.md
-  → Dossiê Leonardo Cunha
-  → Contexto Vivo Portugal/Brasil
+  → verificar presença e versão do Dossiê
+  → verificar presença e versão do Contexto Vivo
+  → ler ou reutilizar cada um conforme a regra de atualização
   → AGENTS.md aplicável
   → PROJECT_CONTEXT.md
   → FEATURE_VALIDATION_AND_ROADMAP.md
@@ -48,7 +51,7 @@ Não iniciar pelo código isoladamente, por uma conversa antiga ou por um único
 
 ## 3. Camada humana e decisória — Google Drive
 
-Antes de descer para o projeto, consultar os dois documentos vivos localizados em:
+Os dois documentos vivos estão localizados em:
 
 ```text
 Google Drive
@@ -57,12 +60,16 @@ Google Drive
       └─ Life
 ```
 
-Ordem obrigatória:
+Ordem lógica obrigatória:
 
 1. `Dossie_Leonardo_Cunha_LIFE_v1.0.docx`
 2. `Contexto_Vivo_Decisao_Portugal_Brasil_Leonardo_v2.3.docx`
 
+A ordem permanece obrigatória quando houver leitura ou releitura. O Dossiê estabelece o método e a forma de colaboração; o Contexto Vivo aplica esse método às decisões humanas e profissionais atuais.
+
 ### 3.1. Dossiê Leonardo Cunha
+
+**Versão de referência na criação desta regra:** `v1.0`.
 
 **Função:** explicar como Leonardo pensa, investiga, decide, trabalha, valida e colabora com IA.
 
@@ -76,6 +83,8 @@ A leitura deve preservar, entre outros pontos:
 - preferência por continuidade, precisão, validação real e separação entre fato, hipótese e promessa.
 
 ### 3.2. Contexto Vivo
+
+**Versão de referência na criação desta regra:** `v2.3`.
 
 **Função:** atualizar as decisões humanas e profissionais que podem influenciar prioridades, disponibilidade, risco, direção comercial e critérios de escolha.
 
@@ -92,24 +101,116 @@ O contexto pessoal orienta a colaboração e as decisões relevantes, mas não d
 
 ---
 
-## 4. Verificação de atualidade
+## 4. Protocolo de presença, versão e releitura
 
-Os dois documentos do Drive são vivos e podem ser retroalimentados por outro fluxo, conta ou IA.
+O objetivo deste protocolo é manter o contexto atualizado sem desperdiçar janela de contexto, tokens, tempo ou processamento.
 
-Por isso:
+A IA deve avaliar **cada documento separadamente**.
 
-- não confiar apenas em memória de uma sessão anterior;
-- verificar a versão, data de alteração ou conteúdo mais recente disponível;
-- reler quando houver nova sessão, nova ferramenta, troca de conta, handoff ou indício de atualização;
-- numa sessão contínua e sem alteração dos arquivos, pode-se reutilizar o contexto já lido;
-- quando houver dúvida razoável sobre atualização, prevalece a releitura;
-- não assumir que o nome da versão no arquivo garante que o conteúdo local ou do Drive não mudou.
+### 4.1. Pode reutilizar sem releitura integral quando
 
-A IA deve informar com honestidade quando não tiver acesso a esses arquivos. Não deve fingir que os leu nem reconstruir detalhes ausentes por inferência.
+Todos os pontos abaixo forem verdadeiros:
+
+- o documento já foi lido integralmente nesta mesma sessão ou conversa persistente;
+- o nome completo e a versão lida estão identificáveis no contexto da sessão;
+- a versão disponível no Drive é igual à versão já lida;
+- não existe indicação de que o conteúdo tenha sido alterado sem mudança de versão;
+- o resumo contextual preservado é suficiente para a tarefa atual;
+- não há dúvida material sobre uma seção específica.
+
+Nesse caso, a IA deve:
+
+1. registrar internamente ou na resposta de inicialização qual versão está reutilizando;
+2. não reler o documento inteiro;
+3. seguir para a próxima camada;
+4. reler apenas trechos específicos se a tarefa exigir precisão adicional.
+
+Exemplo:
+
+```text
+Dossiê v1.0 já lido e presente nesta sessão; versão atual permanece v1.0.
+Reutilizar contexto existente e não reler integralmente.
+```
+
+### 4.2. Releitura integral obrigatória quando
+
+Qualquer ponto abaixo for verdadeiro:
+
+- o documento não está presente ou não foi lido nesta sessão;
+- a IA não consegue identificar com segurança a versão já lida;
+- a versão disponível é superior ou diferente da versão registrada na sessão;
+- o nome do arquivo mudou de modo a sugerir nova edição;
+- existe indicação de atualização relevante, mesmo sem mudança de versão;
+- houve troca de conta, agente ou ambiente sem continuidade verificável;
+- o contexto preservado está incompleto, contraditório ou insuficiente;
+- Leonardo pede expressamente nova leitura integral.
+
+Exemplos:
+
+```text
+Sessão contém Dossiê v1.0; Drive contém v1.1.
+Ler integralmente v1.1 antes de continuar.
+```
+
+```text
+Sessão não identifica qual versão do Contexto Vivo foi lida.
+Ler a versão atual integralmente.
+```
+
+### 4.3. Releitura parcial permitida quando
+
+- a versão permanece igual;
+- o documento já foi lido integralmente;
+- a tarefa exige apenas uma seção específica;
+- existe dúvida localizada;
+- foi informada alteração pontual sem nova versão.
+
+A releitura parcial deve ser suficiente para reconciliar o ponto afetado, sem consumir novamente o documento inteiro.
+
+### 4.4. Comparação de versão
+
+A versão do nome do arquivo é o primeiro indicador de atualização:
+
+- `v1.1` é posterior a `v1.0`;
+- `v2.4` é posterior a `v2.3`;
+- versões diferentes exigem leitura da mais recente;
+- versões iguais permitem reutilização somente se não houver outro indício de alteração.
+
+A IA não deve assumir que o número no nome é garantia absoluta. Quando disponível, deve também considerar data de modificação, metadados, manifesto, histórico de decisões ou aviso explícito de Leonardo.
+
+### 4.5. Registro mínimo de contexto carregado
+
+Ao concluir a inicialização, a IA deve conseguir declarar algo equivalente a:
+
+```text
+Contexto humano reutilizado: Dossiê v1.0 já presente na sessão.
+Contexto decisório atualizado: Contexto Vivo v2.4 relido porque superava v2.3.
+Contexto técnico: PROJECT_CONTEXT e roadmap verificados no estado atual do repositório.
+```
+
+Não é necessário repetir o conteúdo dos documentos; basta declarar versão, ação tomada e eventuais limitações.
 
 ---
 
-## 5. Indisponibilidade dos documentos pessoais
+## 5. Manifesto e decisões como indicadores de atualização
+
+Quando a pasta `Life` possuir manifesto, índice, changelog ou arquivo de decisões que identifique versões e atualizações, ele deve ser consultado antes de abrir os documentos extensos.
+
+Esse indicador deve responder, quando disponível:
+
+- nome canônico do documento;
+- versão atual;
+- data de atualização;
+- resumo das mudanças;
+- necessidade de releitura integral ou parcial.
+
+O manifesto reduz custo de verificação, mas não substitui a leitura quando as regras da seção 4 determinarem releitura obrigatória.
+
+Se não houver manifesto acessível, comparar os nomes completos, versões, datas disponíveis e o contexto da sessão.
+
+---
+
+## 6. Indisponibilidade dos documentos pessoais
 
 Quando o ambiente não puder acessar o Google Drive ou os arquivos não forem fornecidos:
 
@@ -124,17 +225,17 @@ Conteúdo pessoal, decisões sensíveis e documentos do Drive não devem ser cop
 
 ---
 
-## 6. Camada UpexFlow/UpexNote — sequência obrigatória
+## 7. Camada UpexFlow/UpexNote — sequência obrigatória
 
-Depois da camada humana e decisória, descer para o repositório nesta ordem:
+Depois de ler ou reutilizar validamente a camada humana e decisória, descer para o repositório.
 
-### 6.1. Regras locais
+### 7.1. Regras locais
 
 1. localizar e ler o `AGENTS.md` da raiz;
 2. localizar qualquer `AGENTS.md` mais próximo dos arquivos afetados;
 3. cumprir a regra mais específica aplicável ao caminho modificado.
 
-### 6.2. Matriz consolidada
+### 7.2. Matriz consolidada
 
 Ler `docs/PROJECT_CONTEXT.md` para compreender:
 
@@ -148,7 +249,7 @@ Ler `docs/PROJECT_CONTEXT.md` para compreender:
 
 O `PROJECT_CONTEXT.md` não é área livre de exploração. Ele recebe a verdade consolidada depois da entrega e validação.
 
-### 6.3. Submatriz operacional
+### 7.3. Submatriz operacional
 
 Ler `docs/FEATURE_VALIDATION_AND_ROADMAP.md` para compreender:
 
@@ -163,7 +264,7 @@ Ler `docs/FEATURE_VALIDATION_AND_ROADMAP.md` para compreender:
 
 Não tratar `Approved`, `Later Backlog` ou `Exploratory Possibilities` como funcionalidade já entregue.
 
-### 6.4. Documentos especializados
+### 7.4. Documentos especializados
 
 Consultar apenas os documentos exigidos pelo domínio, sem deixá-los isolados:
 
@@ -180,9 +281,11 @@ Consultar apenas os documentos exigidos pelo domínio, sem deixá-los isolados:
 
 O detalhamento de quando consultar e atualizar cada documento permanece em `FEATURE_VALIDATION_AND_ROADMAP.md`.
 
+Documentos técnicos menores também podem ser reutilizados quando a mesma versão ou conteúdo já estiver presente na sessão, mas devem ser reabertos sempre que o código, a branch, o commit ou a tarefa puder ter alterado seu estado.
+
 ---
 
-## 7. Confronto com a realidade técnica
+## 8. Confronto com a realidade técnica
 
 Depois da leitura documental e antes de propor alteração:
 
@@ -208,7 +311,7 @@ Uma divergência não deve ser escondida. Ela deve ser resolvida ou marcada ante
 
 ---
 
-## 8. Autorização e execução
+## 9. Autorização e execução
 
 Ler esta rede documental não equivale a autorização para alterar arquivos, infraestrutura ou serviços externos.
 
@@ -232,7 +335,7 @@ Durante a implementação:
 
 ---
 
-## 9. Caminho de retorno documental
+## 10. Caminho de retorno documental
 
 O fluxo não termina na implementação.
 
@@ -258,10 +361,11 @@ Regras:
 
 ---
 
-## 10. Contexto mínimo que a IA deve conseguir reconstruir
+## 11. Contexto mínimo que a IA deve conseguir reconstruir
 
 Antes de começar trabalho relevante, a IA deve conseguir explicar sem inventar:
 
+- quais versões do Dossiê e do Contexto Vivo foram lidas ou reutilizadas;
 - quem é Leonardo no processo de decisão e colaboração;
 - como ele investiga, valida e aceita trabalho;
 - quais decisões vivas podem ser pertinentes;
@@ -278,28 +382,30 @@ Se não conseguir responder a esses pontos, a contextualização está incomplet
 
 ---
 
-## 11. Prompt mínimo reutilizável
-
-Para iniciar qualquer nova IA, sessão ou ambiente com acesso às fontes:
+## 12. Prompt mínimo reutilizável
 
 ```text
-Leia primeiro `docs/CONTEXT_ORCHESTRATION.md` e siga integralmente todas as coordenadas de leitura, verificação de atualidade, precedência e retorno documental. Não proponha nem implemente nada antes de concluir a contextualização aplicável e confrontá-la com o estado real do repositório. Ao terminar, apresente o contexto reconstruído, as limitações de acesso encontradas e aguarde ou execute apenas o escopo que eu autorizar.
+Leia primeiro `docs/CONTEXT_ORCHESTRATION.md` e siga integralmente suas coordenadas. Antes de reler documentos extensos, verifique se eles já estão presentes nesta sessão e compare a versão já lida com a versão atual. Reutilize o contexto quando a versão for a mesma e não houver indício de alteração; releia quando o documento estiver ausente, a versão for diferente ou superior, houver dúvida de atualidade ou eu solicitar. Depois confronte o contexto aplicável com o estado real do repositório. Não proponha nem implemente antes de concluir essa verificação e execute somente o escopo autorizado.
 ```
 
-Quando os documentos pessoais forem anexados diretamente à conversa, a mesma ordem deve ser preservada: Dossiê primeiro, Contexto Vivo depois.
+Quando os documentos pessoais forem anexados diretamente à conversa, a mesma ordem permanece: Dossiê primeiro, Contexto Vivo depois, observando a regra de versão.
 
 ---
 
-## 12. Checklist de inicialização
+## 13. Checklist de inicialização
 
 - [ ] `CONTEXT_ORCHESTRATION.md` lido integralmente.
-- [ ] Dossiê pessoal localizado e lido, ou indisponibilidade registrada.
-- [ ] Contexto Vivo localizado e lido, ou indisponibilidade registrada.
-- [ ] Atualidade dos dois documentos verificada.
+- [ ] Versão do Dossiê disponível identificada.
+- [ ] Versão do Dossiê já presente na sessão identificada, quando houver.
+- [ ] Decisão registrada: reutilizar, reler parcialmente ou reler integralmente o Dossiê.
+- [ ] Versão do Contexto Vivo disponível identificada.
+- [ ] Versão do Contexto Vivo já presente na sessão identificada, quando houver.
+- [ ] Decisão registrada: reutilizar, reler parcialmente ou reler integralmente o Contexto Vivo.
+- [ ] Indisponibilidades registradas honestamente.
 - [ ] `AGENTS.md` aplicável lido.
-- [ ] `PROJECT_CONTEXT.md` lido.
-- [ ] `FEATURE_VALIDATION_AND_ROADMAP.md` lido.
-- [ ] Documentos especializados da tarefa identificados e lidos.
+- [ ] `PROJECT_CONTEXT.md` verificado.
+- [ ] `FEATURE_VALIDATION_AND_ROADMAP.md` verificado.
+- [ ] Documentos especializados da tarefa identificados e lidos quando necessários.
 - [ ] Código, Git, versão e worktree verificados.
 - [ ] Divergências registradas.
 - [ ] Estado entregue separado de backlog e exploração.
@@ -307,7 +413,7 @@ Quando os documentos pessoais forem anexados diretamente à conversa, a mesma or
 
 ---
 
-## 13. Checklist de encerramento
+## 14. Checklist de encerramento
 
 - [ ] Implementação e validação registradas.
 - [ ] Documento especializado atualizado quando necessário.
@@ -316,12 +422,22 @@ Quando os documentos pessoais forem anexados diretamente à conversa, a mesma or
 - [ ] Resumo promovido ao `PROJECT_CONTEXT.md` quando validado.
 - [ ] Commits, versão e evidências registrados.
 - [ ] Nenhum conteúdo pessoal ou sensível copiado indevidamente para o repositório.
+- [ ] Próxima sessão consegue identificar quais versões contextuais foram usadas.
 - [ ] Próxima sessão consegue retomar pelo mesmo ponto único de entrada.
 
 ---
 
-## 14. Regra durável
+## 15. Regra durável
 
-A arquitetura documental deve permitir que Leonardo pare de reconstruir prompts longos.
+A arquitetura documental deve permitir que Leonardo pare de reconstruir prompts longos sem obrigar cada sessão a reler conteúdos extensos desnecessariamente.
 
-Quando uma IA receber apenas a instrução para ler este arquivo, ela deve conseguir distribuir sozinha a leitura correta, reconstruir o contexto completo disponível, identificar o que falta, descer para a tarefa técnica e retornar pelas camadas documentais adequadas.
+Quando uma IA receber apenas a instrução para ler este arquivo, ela deve conseguir:
+
+1. distribuir sozinha a leitura correta;
+2. verificar presença e versão das fontes extensas;
+3. reutilizar contexto válido;
+4. reler apenas o que mudou ou estiver ausente;
+5. reconstruir o contexto completo aplicável;
+6. identificar o que falta;
+7. descer para a tarefa técnica;
+8. retornar pelas camadas documentais adequadas.
