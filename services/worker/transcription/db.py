@@ -66,8 +66,15 @@ CREATE TABLE IF NOT EXISTS transcriptions_history (
 # docs/FEATURE_VALIDATION_AND_ROADMAP.md). transcription_id liga ao transcript
 # de origem; blocos/glossario pendurados por FK, exclusao em cascata; delete
 # real e' soft (deleted_at) + snapshot em documents_history, igual ao resto.
+#
+# Schema Postgres proprio `documents` (corrigido em 2026-08-07 — nascera em
+# `public` por engano; ver Registro em PROJECT_CONTEXT.md e migrate_documents_
+# schema() abaixo): mesmo espirito de `support`/`data_studio`, submodulo
+# isolado. SQLite (modo local) nao tem esse conceito de schema — continua
+# tudo num namespace so; a traducao `_to_sqlite_sql()` remove o prefixo
+# "documents." e faz do "CREATE SCHEMA" um no-op so' para esse backend.
 DOCUMENTS_HISTORY_DDL = """
-CREATE TABLE IF NOT EXISTS documents_history (
+CREATE TABLE IF NOT EXISTS documents.documents_history (
     history_id       bigserial PRIMARY KEY,
     archived_at      timestamptz NOT NULL DEFAULT now(),
     change_type      text NOT NULL,
@@ -194,7 +201,8 @@ SCHEMA_SQL = [
            detected_at timestamptz NOT NULL DEFAULT now()
        )""",
     HISTORY_DDL,
-    """CREATE TABLE IF NOT EXISTS structured_documents (
+    "CREATE SCHEMA IF NOT EXISTS documents",
+    """CREATE TABLE IF NOT EXISTS documents.structured_documents (
            id bigserial PRIMARY KEY,
            created_at timestamptz NOT NULL DEFAULT now(),
            edited_at timestamptz,
@@ -208,9 +216,9 @@ SCHEMA_SQL = [
            raw_clean_check_ok boolean,
            host text
        )""",
-    """CREATE TABLE IF NOT EXISTS document_blocks (
+    """CREATE TABLE IF NOT EXISTS documents.document_blocks (
            id bigserial PRIMARY KEY,
-           document_id bigint REFERENCES structured_documents(id) ON DELETE CASCADE,
+           document_id bigint REFERENCES documents.structured_documents(id) ON DELETE CASCADE,
            block_key text NOT NULL,
            position integer NOT NULL,
            block_type text NOT NULL,
@@ -219,14 +227,14 @@ SCHEMA_SQL = [
            speaker text,
            block_timestamp text
        )""",
-    """CREATE TABLE IF NOT EXISTS document_glossary (
+    """CREATE TABLE IF NOT EXISTS documents.document_glossary (
            id bigserial PRIMARY KEY,
-           document_id bigint REFERENCES structured_documents(id) ON DELETE CASCADE,
+           document_id bigint REFERENCES documents.structured_documents(id) ON DELETE CASCADE,
            term text NOT NULL,
            meaning text
        )""",
-    """CREATE TABLE IF NOT EXISTS document_metrics (
-           document_id bigint PRIMARY KEY REFERENCES structured_documents(id) ON DELETE CASCADE,
+    """CREATE TABLE IF NOT EXISTS documents.document_metrics (
+           document_id bigint PRIMARY KEY REFERENCES documents.structured_documents(id) ON DELETE CASCADE,
            processing_s numeric,
            input_tokens integer,
            output_tokens integer
@@ -300,16 +308,16 @@ WHERE t.id = %s
 # de editar/apagar. blocks/jargon vao agregados (mesma logica de "problems"
 # em SNAPSHOT_JOIN, so que dois agregados em vez de um).
 DOC_SNAPSHOT_JOIN = """
-INSERT INTO documents_history
+INSERT INTO documents.documents_history
 (change_type, original_id, created_at, transcription_id, engine, profile, title, objective, blocks, jargon, host)
 SELECT %s, d.id, d.created_at, d.transcription_id, e.code, d.profile, d.title, d.objective,
  (SELECT jsonb_agg(jsonb_build_object('block_key', b.block_key, 'type', b.block_type,
     'heading', b.heading, 'content', b.content, 'speaker', b.speaker, 'timestamp', b.block_timestamp)
-    ORDER BY b.position) FROM document_blocks b WHERE b.document_id = d.id),
+    ORDER BY b.position) FROM documents.document_blocks b WHERE b.document_id = d.id),
  (SELECT jsonb_agg(jsonb_build_object('term', g.term, 'meaning', g.meaning) ORDER BY g.id)
-    FROM document_glossary g WHERE g.document_id = d.id),
+    FROM documents.document_glossary g WHERE g.document_id = d.id),
  d.host
-FROM structured_documents d
+FROM documents.structured_documents d
 LEFT JOIN engines e ON e.id = d.engine_id
 WHERE d.id = %s
 """
@@ -416,6 +424,12 @@ _SQLITE_DDL_RULES = [
 
 
 def _to_sqlite_sql(sql: str) -> str:
+    # SQLite nao tem schemas (namespace unico) — o "documents" so existe pra
+    # separar o submodulo no Postgres (ver DOCUMENTS_HISTORY_DDL). O CREATE
+    # SCHEMA vira no-op e o prefixo "documents." e' removido das tabelas.
+    if sql.strip().upper().startswith("CREATE SCHEMA"):
+        return "SELECT 1"
+    sql = sql.replace("documents.", "")
     for a, b in _SQLITE_DDL_RULES:
         sql = sql.replace(a, b)
     sql = sql.replace(" ILIKE ", " LIKE ")
@@ -1164,6 +1178,59 @@ def insert_transcription(record, log=print):
 # admin de transcriptions (_actor), soft-delete + snapshot em documents_history.
 # --------------------------------------------------------------------------
 
+_DOCUMENT_TABLES = (
+    "structured_documents",
+    "document_blocks",
+    "document_glossary",
+    "document_metrics",
+    "documents_history",
+)
+
+
+def migrate_documents_schema(log=print):
+    """Migração pontual (2026-08-07): as 5 tabelas do ADF-01 nasceram em
+    `public` por engano — a decisão de arquitetura de 05/08/2026 pede um
+    schema Postgres próprio (`documents`), no mesmo espírito de `support`/
+    `data_studio` (ver ARCHITECTURE.md, PROJECT_CONTEXT.md Registro 2026-08-07).
+    Idempotente: se já estiverem em `documents`, não faz nada. Preserva todos
+    os dados, índices, sequências e FKs — ALTER TABLE ... SET SCHEMA não copia,
+    só reclassifica. Só se aplica ao modo VPS (o SQLite local não tem esse
+    conceito de schema)."""
+    if storage_mode() == "local":
+        log("Migração de schema: modo local (SQLite) não usa schemas — nada a migrar.")
+        return {"ok": True, "migrated": []}
+    conn = connect()
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute("CREATE SCHEMA IF NOT EXISTS documents")
+            to_move = []
+            for table in _DOCUMENT_TABLES:
+                cur.execute(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = %s",
+                    (table,),
+                )
+                if cur.fetchone():
+                    to_move.append(table)
+            if not to_move:
+                log("Migração de schema: já está tudo em `documents` (nada a mover).")
+                conn.commit()
+                return {"ok": True, "migrated": []}
+            log(f"Migração de schema: movendo {len(to_move)} tabela(s) de public para documents: {', '.join(to_move)}")
+            for table in to_move:
+                cur.execute(f"ALTER TABLE public.{table} SET SCHEMA documents")
+        conn.commit()
+        log("Migração de schema: concluída, dados preservados.")
+        return {"ok": True, "migrated": to_move}
+    except Exception as e:  # noqa: BLE001 - operação sensível: reportar e não mascarar
+        conn.rollback()
+        log(f"Migração de schema: falhou, nada foi alterado ({e}).")
+        return {"ok": False, "error": str(e)}
+    finally:
+        close_connection(conn)
+
+
 def get_transcript_raw_clean(transcription_id, user_id=None, admin_verified=False):
     """Fonte para o gate raw<->clean + formatacao: texto raw/clean de uma
     transcricao existente (fluxo de formatacao retroativa, Library/edicao).
@@ -1202,7 +1269,7 @@ def insert_document(record, log=print):
             tid = record.get("transcription_id")
             owner = record.get("user_id")
             cur.execute(
-                "INSERT INTO structured_documents "
+                "INSERT INTO documents.structured_documents "
                 "(transcription_id, user_id, engine_id, profile, title, objective, raw_clean_check_ok, host) "
                 "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
                 (int(tid) if tid is not None else None, int(owner) if owner is not None else None,
@@ -1216,7 +1283,7 @@ def insert_document(record, log=print):
                 if isinstance(content, (list, dict)):
                     content = json.dumps(content, ensure_ascii=False)
                 cur.execute(
-                    "INSERT INTO document_blocks "
+                    "INSERT INTO documents.document_blocks "
                     "(document_id, block_key, position, block_type, heading, content, speaker, block_timestamp) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (new_id, block.get("id") or f"b{i + 1}", i, block.get("type") or "section",
@@ -1224,11 +1291,11 @@ def insert_document(record, log=print):
                 )
             for jg in (record.get("jargon") or []):
                 cur.execute(
-                    "INSERT INTO document_glossary (document_id, term, meaning) VALUES (%s,%s,%s)",
+                    "INSERT INTO documents.document_glossary (document_id, term, meaning) VALUES (%s,%s,%s)",
                     (new_id, jg.get("term"), jg.get("meaning")),
                 )
             cur.execute(
-                "INSERT INTO document_metrics (document_id, processing_s, input_tokens, output_tokens) "
+                "INSERT INTO documents.document_metrics (document_id, processing_s, input_tokens, output_tokens) "
                 "VALUES (%s,%s,%s,%s)",
                 (new_id, record.get("processing_s"), record.get("input_tokens"), record.get("output_tokens")),
             )
@@ -1258,9 +1325,9 @@ def document_item(doc_id, user_id=None, admin_verified=False):
                 "SELECT d.id, d.created_at, d.edited_at, d.transcription_id, e.code AS engine, "
                 "d.profile, d.title, d.objective, d.raw_clean_check_ok, "
                 "m.processing_s, m.input_tokens, m.output_tokens "
-                "FROM structured_documents d "
+                "FROM documents.structured_documents d "
                 "LEFT JOIN engines e ON e.id = d.engine_id "
-                "LEFT JOIN document_metrics m ON m.document_id = d.id "
+                "LEFT JOIN documents.document_metrics m ON m.document_id = d.id "
                 f"WHERE d.id = %s AND d.deleted_at IS NULL{own_sql_d}",
                 [int(doc_id)] + own_params,
             )
@@ -1270,12 +1337,12 @@ def document_item(doc_id, user_id=None, admin_verified=False):
             doc = rows[0]
             cur.execute(
                 "SELECT block_key, block_type, heading, content, speaker, block_timestamp "
-                "FROM document_blocks WHERE document_id = %s ORDER BY position",
+                "FROM documents.document_blocks WHERE document_id = %s ORDER BY position",
                 (int(doc_id),),
             )
             doc["blocks"] = _rows_to_dicts(cur)
             cur.execute(
-                "SELECT term, meaning FROM document_glossary WHERE document_id = %s ORDER BY id",
+                "SELECT term, meaning FROM documents.document_glossary WHERE document_id = %s ORDER BY id",
                 (int(doc_id),),
             )
             doc["jargon"] = _rows_to_dicts(cur)
@@ -1294,12 +1361,12 @@ def delete_document(doc_id, user_id=None, admin_verified=False):
         with conn.cursor() as cur:
             own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
             own_sql_d = own_sql.replace("t.user_id", "d.user_id")
-            cur.execute(f"SELECT 1 FROM structured_documents d WHERE d.id = %s AND d.deleted_at IS NULL{own_sql_d}",
+            cur.execute(f"SELECT 1 FROM documents.structured_documents d WHERE d.id = %s AND d.deleted_at IS NULL{own_sql_d}",
                         [int(doc_id)] + own_params)
             if not cur.fetchone():
                 return {"ok": False, "error": "not_found"}
             cur.execute(_doc_snapshot_sql(), ("delete", int(doc_id)))
-            cur.execute("UPDATE structured_documents SET deleted_at = now() WHERE id = %s", (int(doc_id),))
+            cur.execute("UPDATE documents.structured_documents SET deleted_at = now() WHERE id = %s", (int(doc_id),))
         conn.commit()
         return {"ok": True}
     finally:

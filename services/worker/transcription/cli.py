@@ -975,6 +975,22 @@ def cmd_db_migrate(args):
     return 1
 
 
+def cmd_db_migrate_documents_schema(args):
+    from . import db
+    if getattr(args, "mode", None):
+        db.set_mode_override(args.mode)
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    res = db.migrate_documents_schema(log=lambda m: _emit(sys.stderr, {"type": "progress", "message": m}))
+    if res.get("ok"):
+        _emit(sys.stdout, {"type": "ok", **res})
+        return 0
+    _emit(sys.stdout, {"type": "error", "message": f"Migração de schema falhou: {res}"})
+    return 1
+
+
 def cmd_db_adopt_orphans(args):
     from . import db
     if getattr(args, "mode", None):
@@ -1156,6 +1172,9 @@ def build_parser():
 
     sub.add_parser("db-migrate", help="Migra o schema flat (v1) para hub-and-spoke (v2). Uma vez.")
 
+    p_dbms = sub.add_parser("db-migrate-documents-schema", help="Move as tabelas do ADF-01 (documentos estruturados) de public para o schema Postgres 'documents'. Idempotente, sem perda de dados (VPS apenas).")
+    p_dbms.add_argument("--mode", choices=["local", "vps"], help="Forca o modo (sem gravar).")
+
     p_lib = sub.add_parser("library", help="Historico + agregados da Biblioteca (JSON).")
     p_lib.add_argument("--limit", type=int, default=200, help="Maximo de itens na lista.")
     p_lib.add_argument("--search", help="Filtra por nome do ficheiro (case-insensitive).")
@@ -1236,6 +1255,7 @@ def main(argv=None):
         "list-keys": cmd_list_keys,
         "db-check": cmd_db_check,
         "db-migrate": cmd_db_migrate,
+        "db-migrate-documents-schema": cmd_db_migrate_documents_schema,
         "get-settings": cmd_get_settings,
         "set-settings": cmd_set_settings,
         "telemetry": cmd_telemetry,
