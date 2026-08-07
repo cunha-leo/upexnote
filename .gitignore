@@ -45,6 +45,7 @@ target/
 .idea/
 .DS_Store
 Thumbs.db
+.fuse_hidden*
 
 # Logs e temporários
 *.log
