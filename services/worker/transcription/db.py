@@ -1348,6 +1348,10 @@ def document_item(doc_id, user_id=None, admin_verified=False):
             doc["jargon"] = _rows_to_dicts(cur)
         doc["created_at"] = _iso(doc["created_at"])
         doc["edited_at"] = _iso(doc["edited_at"])
+        # numeric do Postgres vem como Decimal (nao serializa em JSON) —
+        # mesma coercao que library_item/library_list ja fazem nas metricas.
+        if doc.get("processing_s") is not None:
+            doc["processing_s"] = float(doc["processing_s"])
         return doc
     finally:
         close_connection(conn)

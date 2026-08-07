@@ -1052,6 +1052,51 @@ def cmd_library_delete(args):
         return 1
 
 
+def cmd_document_item(args):
+    """Um documento estruturado completo (hub + blocos + glossario + metricas).
+    Espelha library-item, para a Biblioteca/editor abrirem um documento ja
+    gerado sem o reformatar."""
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        _, admin_verified = _library_payload(args)
+        item = db.document_item(args.id, user_id=getattr(args, "user", None),
+                                admin_verified=admin_verified)
+        if item is None:
+            _emit(sys.stdout, {"type": "error", "message": f"Documento #{args.id} não encontrado."})
+            return 1
+        _emit(sys.stdout, {"type": "document_item", "item": item})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter o documento: {e}"})
+        return 1
+
+
+def cmd_document_delete(args):
+    """Soft-delete de um documento (snapshot em documents_history). Espelha
+    library-delete — o transcript de origem fica intacto."""
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        _, admin_verified = _library_payload(args)
+        res = db.delete_document(args.id, user_id=getattr(args, "user", None),
+                                 admin_verified=admin_verified)
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Documento #{args.id} não encontrado."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "message": "Documento apagado (arquivado no histórico)."})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar o documento: {e}"})
+        return 1
+
+
 def cmd_get_settings(args):
     # Definicoes de armazenamento (para o ecra de Definicoes): pasta padrao
     # em vigor, se e personalizada, e a organizacao por dia/motor.
@@ -1196,6 +1241,16 @@ def build_parser():
     p_libd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
     p_libd.add_argument("--json-stdin", action="store_true", help="Prova MFA por stdin (uso da app).")
 
+    p_doci = sub.add_parser("document-item", help="Um documento estruturado completo: blocos, glossario e metricas (JSON).")
+    p_doci.add_argument("--id", type=int, required=True, help="ID do documento.")
+    p_doci.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+    p_doci.add_argument("--json-stdin", action="store_true", help="Prova MFA por stdin (uso da app).")
+
+    p_docd = sub.add_parser("document-delete", help="Apaga um documento estruturado (arquiva no historico); o transcript fica intacto.")
+    p_docd.add_argument("--id", type=int, required=True, help="ID do documento.")
+    p_docd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+    p_docd.add_argument("--json-stdin", action="store_true", help="Prova MFA por stdin (uso da app).")
+
     p_lack = sub.add_parser("library-ack", help="Marca/desmarca os avisos de validacao como revistos.")
     p_lack.add_argument("--id", type=int, required=True, help="ID da transcricao.")
     p_lack.add_argument("--reopen", action="store_true", help="Reabre o aviso (em vez de marcar como revisto).")
@@ -1264,6 +1319,8 @@ def main(argv=None):
         "library-item": cmd_library_item,
         "library-update": cmd_library_update,
         "library-delete": cmd_library_delete,
+        "document-item": cmd_document_item,
+        "document-delete": cmd_document_delete,
         "library-ack": cmd_library_ack,
         "tunnel-keep": cmd_tunnel_keep,
         "db-adopt-orphans": cmd_db_adopt_orphans,
