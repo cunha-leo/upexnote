@@ -68,7 +68,7 @@ Novos domínios usam schemas PostgreSQL separados e nomeados em inglês. Não se
 
 O suporte segue hub-and-spoke: `support.tickets` é a matriz e satélites preservam descrição, comentários, anexos, status, atribuições, notificações e auditoria. Anexos não são BLOBs no banco.
 
-**Pendência aberta (2026-08-07):** o schema hub-and-spoke novo de `structured_documents` (ADF-01, ver `PROJECT_CONTEXT.md` Registro 2026-08-07) foi criado no schema `public`, junto de `transcriptions`, em vez de um schema `documents` dedicado — contraria a regra acima. Migração é simples e não perde dados, mas aguarda decisão do utilizador antes de mexer no banco da VPS.
+**Corrigido em 2026-08-07 (commit `3f341fc`):** o schema hub-and-spoke de `structured_documents` (ADF-01) tinha nascido em `public`, junto de `transcriptions`, contrariando a regra acima — corrigido para o schema dedicado `documents` (`documents.structured_documents` + satélites). Migração idempotente (`db-migrate-documents-schema`) preserva dados/índices/sequências das tabelas já existentes; falta só o utilizador rodá-la uma vez contra a VPS real (ver `PROJECT_CONTEXT.md` Registro 2026-08-07).
 
 ## Operação
 
