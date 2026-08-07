@@ -331,7 +331,7 @@ Uma frente só pode chegar a `Ready` quando possuir:
 
 ### ADF-01 — Structured Document Generation
 
-**Status:** `Approved`
+**Status:** `In progress` (passo 1 — backend do worker — entregue em 07/08/2026, commit `0929d66`; UI/Settings/popup ainda fora deste passo, ver "Passo 1 entregue" abaixo).
 
 **Prioridade:** máxima na evolução atual do produto.
 
@@ -345,6 +345,7 @@ Uma frente só pode chegar a `Ready` quando possuir:
 áudio ou vídeo
   → transcript raw imutável
   → transcript clean validado
+  → validação de integridade raw ↔ clean (checagem de que nenhum contexto se perdeu na limpeza)
   → documento estruturado derivado
   → workspace de edição e estudo
   → salvamento, exportação e uso posterior
@@ -384,15 +385,84 @@ Uma frente só pode chegar a `Ready` quando possuir:
 - `PRODUCT.md`;
 - `AI_MEDIA_EVOLUTION.md`.
 
-**Decisões ainda necessárias antes de `Ready`:**
+**Decisões fechadas (05/08/2026):**
 
-- modelo interno do documento;
-- formato de persistência;
-- perfis iniciais de transformação;
-- contrato entre clean, documento e referências;
-- motor inicial e benchmark próprio;
-- custo e limites por execução;
-- comportamento diante de conteúdo ambíguo ou incompleto.
+- **Modelo interno do documento:** o usuário nunca vê Markdown cru. A interface é um editor rico, tipo "bloco de notas inteligente" (estilo Word), renderizado a partir de um modelo estruturado (blocos/seções com dados persistidos, não texto solto).
+- **Formato de persistência:** não é apenas uma tabela nova — é um esquema novo, tratado como submódulo próprio (mesmo padrão de submenus expansíveis da Administration). SQLite local recebe o schema para o usuário pessoal; o Postgres central recebe o schema equivalente para o lado administrativo/multiusuário. Modelo hub-and-spoke por ID: uma tabela matriz de documento, com comentários, referências e glossário pendurados nela por ID, com exclusão em cascata ou soft-delete seguindo o padrão já usado no resto do sistema.
+- **Entrada na UI:** na tela de Transcribe/Library, botões novos (ex.: "Documento formatado", "Estudo") levam à área de edição. Cada botão precisa de uma frase de incentivo/microcopy abaixo, no mesmo espírito visual do aviso de salvar no Google Drive/OneDrive — convidativa, não só funcional (ver `UX_PRODUCT_STANDARD.md` no desenho da tela).
+- **Etapa de validação raw ↔ clean:** antes de qualquer geração de documento formatado, o sistema cruza raw e clean para confirmar que nenhum contexto foi perdido na limpeza. Só depois dessa validação passar o clean segue para a formatação.
+- **Perfis iniciais de transformação:** a base sempre nasce do clean (nunca do raw). A partir daí, variantes via botão — resumo técnico, versão detalhada, formatação de estudo — lista extensível, não fechada nesta fase.
+- **Contrato entre clean, documento e referências:** referência por bloco. Cada seção do documento é um container editável com ID de bloco estável, ponto de ancoragem para comentários, balões e futuras funcionalidades (adicionar, remover, etc.). Preferido a âncora por palavra (frágil a texto repetido e a edição) ou por busca textual.
+- **Motor inicial e benchmark:** este é um benchmark novo, distinto do benchmark de transcrição áudio→texto já feito — aqui o motor recebe texto (clean) e produz documento estruturado. Candidatos comparados: AssemblyAI e Deepgram (versões/modelos novos, inclusive os de voz), GPT, Claude, Gemini, DeepSeek, Grok. Critério: baixo custo e velocidade, com o mesmo rigor usado quando o motor de transcrição principal foi escolhido.
+- **Comportamento diante de conteúdo ambíguo ou incompleto:** o clean já trata ruído, tempo morto e repetição preservando contexto — isso não muda. A camada nova é de reorganização temática: título, objetivo em uma frase, quebra por seção/tema (não necessariamente cronológica — a mesma ideia pode reaparecer espalhada ao longo da reunião e precisa ser agrupada), sinalizando densidade de jargão técnico, sem perder a essência do conteúdo original.
+- **Transparência de custo na UI:** na tela onde o usuário escolhe o motor — tanto na etapa de transcrição (áudio→texto) quanto na etapa de formatação (clean→documento estruturado) — cada opção deve mostrar nome do modelo e custo médio estimado por hora de transcript processado (R$/hora), não só o nome do fornecedor. Objetivo: o usuário decide com fidelidade e custo visíveis lado a lado, sem precisar ir até a tela de configuração de chaves de API pra entender o que está escolhendo.
+- **Fluxo de execução na tela de Transcribe (06/08/2026):** a escolha do motor de formatação acontece no mesmo momento em que o usuário escolhe o motor de transcrição, não depois. A tela de Transcribe ganha uma segunda seção, logo abaixo da seção de seleção de motor de transcrição, para seleção de motor de formatação. Ao executar, o sistema já roda as duas etapas em sequência (transcrição → validação raw↔clean → formatação) e entrega o documento estruturado pronto de uma vez, sem uma segunda ida do usuário à tela.
+  - **Opção "somente transcrição":** a seção de formatação precisa ter uma opção explícita de pular a formatação (ex.: toggle "Formatar depois" ou motor "Nenhum"), pra quem só quer o transcript limpo agora e decide formatar depois.
+  - **Formatação retroativa (tela de edição/biblioteca, não a tela de Transcribe):** cenário separado — usuário tem um transcript já existente (gerado antes, ou que ficou sem formatação) e quer só rodar a etapa de formatação nele. Isso não acontece na tela de Transcribe; é uma ação na tela de edição/biblioteca, permitindo selecionar/subir um transcript existente e escolher o motor de formatação sobre ele, reaproveitando os mesmos botões "Documento formatado"/"Estudo" já decididos para essa tela.
+  - **Motor padrão de formatação e fricção zero (06/08/2026):** o motor/chave de formatação é configurado uma única vez em Configurações (categorizado por finalidade, ver decisão de arquitetura acima). A partir daí, qualquer ação de formatar em qualquer lugar do app (pós-transcrição ou retroativa) executa direto, sem pedir chave/engine de novo a cada clique.
+  - **Botão pós-transcrição quando "só transcrição" foi escolhida:** ao terminar de transcrever sem formatação, aparece um botão fixo (não popup) — "Formatar" como verbo de ação, com "Estudo" como um dos perfis/destinos dentro dele (reaproveitando os perfis "Documento formatado"/"Estudo" já decididos). Clicar executa na hora com o motor padrão já configurado.
+  - **Popup só na primeira vez:** um modal explicativo (o que é cada perfil, qual motor, custo estimado, opção de marcar como padrão) só aparece na primeiríssima vez que o usuário aciona formatação sem ter um motor padrão configurado ainda. Depois disso, nunca mais — vira automático.
+
+**Resultados do benchmark de formatação (06/08/2026), transcript de teste com ~5,3 min de áudio (voz única):**
+
+| Motor | Modelo | Custo por hora de transcript |
+| --- | --- | --- |
+| DeepSeek | `deepseek-chat` (V4-Flash) | R$ 0,04/hora |
+| Grok | `grok-4-fast` | R$ 0,05/hora |
+| OpenAI | `gpt-5-mini` | R$ 0,28/hora |
+| Claude | Haiku 4.5 | R$ 0,54/hora |
+| Gemini | `gemini-3.6-flash` | R$ 1,48/hora |
+| Claude | Sonnet 5 | R$ 1,62/hora |
+
+Nenhum motor alucinou ou perdeu informação do transcript nesse teste. AssemblyAI (LeMUR descontinuado, substituto exige upgrade pago) e Deepgram Read (só inglês, não gera documento estruturado) foram descartados. Falta rodar a mesma bateria com um transcript de múltiplas vozes antes de fechar o motor padrão.
+
+**Achado adicional (06/08/2026):** Gemini e Grok evoluíram em 2026 para suportar transcrição de áudio nativamente nas próprias APIs (Gemini via `generateContent` multimodal; Grok via Voice/STT API dedicada, com diarização e timestamp por palavra already embutidos). Isso os torna candidatos também para a etapa de transcrição (não só formatação), o que pode simplificar o pipeline (potencialmente unir transcrição + estruturação num motor só). Claude e DeepSeek não têm API de áudio — seguem só como motores de formatação de texto. Ainda não testados como motores de transcrição — pendente.
+
+**Teste de transcrição multi-falante (06/08/2026), 2 min de reunião real com ruído e mistura PT/EN:**
+
+- **Grok STT**: 2,7s, diarização nativa por palavra, R$ 0,51/hora. Qualidade duvidosa nesse áudio ruidoso — alucinou um trecho inteiro sem sentido (pareceu húngaro, provável confusão com ruído de fundo) e a diarização ficou desequilibrada.
+- **Gemini (multimodal)**: 22,3s, sem diarização estruturada mas identificou falantes por prompt de forma coerente com a conversa, texto mais legível e sensato. R$ 2,82/hora (~5,5x mais caro que o Grok).
+- Os dois textos divergem entre si em números e nomes — validação de fidelidade real exige o usuário ouvir o áudio e comparar, não dá pra decidir só por velocidade/custo.
+
+**Comparação com AssemblyAI como referência (06/08/2026), mesmo trecho de 2 min:** rodado o motor já em produção (AssemblyAI, com diarização) no mesmo áudio pra servir de baseline de fidelidade.
+
+- **Grok**: alucinação óbvia e grosseira — inventou uma abertura inteira que não existe no áudio, inventou uma frase completa no meio da fala, e transformou um trecho real em texto sem sentido (pareceu húngaro). Fácil de detectar por ser nonsense evidente.
+- **Gemini**: alucinação mais perigosa — texto fluente e coerente, mas com nomes próprios inventados que não existem na referência (pessoas, times, siglas plausíveis mas fabricadas). Mais arriscado que o do Grok justamente por parecer confiável.
+- **AssemblyAI**: confirmado pelo usuário como essencialmente 100% fiel nesse teste — os trechos mais confusos do texto não são erro do motor, e sim uma ligação de telefone real sobreposta no meio da gravação (áudio genuinamente difícil, não falha de transcrição). Não inventou nomes nem frases.
+
+**Conclusão:** Grok e Gemini não passaram no teste de validade para a etapa de transcrição — alucinaram em áudio real. A transcrição permanece com o motor atual (AssemblyAI), sem adicionar outros motores a essa etapa.
+
+**Benchmark de formatação com transcript real e completo (06/08/2026)**, ~20 min de reunião, 4 falantes, muita conversa paralela misturada com conteúdo técnico — teste de estresse real, não sintético:
+
+| Motor | Custo por hora de transcript |
+| --- | --- |
+| DeepSeek | R$ 0,02/hora |
+| Grok | R$ 0,03/hora |
+| OpenAI (`gpt-5-mini`) | R$ 0,10/hora |
+| Claude Haiku 4.5 | R$ 0,21/hora |
+| Gemini (`gemini-3.6-flash`) | R$ 0,51/hora |
+| Claude Sonnet 5 | R$ 0,73/hora (preço promocional até 31/08/2026) |
+
+Todos os seis extraíram corretamente a história principal (tabela de taxas, processo "voada", Apex, responsáveis, reunião marcada) sem inventar fatos novos. Diferenciador é profundidade/organização, não fidelidade — Claude Sonnet foi o mais completo (separou explicitamente conteúdo de trabalho de conversa pessoal), Claude Haiku usou até tabela markdown pra responsabilidades, Grok foi o mais enxuto (cortou parte da conversa pessoal).
+
+**Decisão corrigida (06/08/2026): não escolher um único motor padrão de formatação.** Os seis motores passaram no teste e ficam todos disponíveis na aplicação — o usuário escolhe qual usar na hora (com nome do modelo + custo/hora visível, conforme a decisão de transparência de custo já registrada acima). Não há hierarquia fixa de "padrão vs. alternativa"; a única curadoria é informativa (ex.: destacar o mais barato e o mais completo como sugestão, não como obrigação).
+
+**Decisão de arquitetura (06/08/2026) — configuração de chaves por finalidade:** a tela de configuração de chaves de API deve categorizar cada chave pela função (motor de transcrição áudio→texto vs. motor de formatação texto→documento), não só pelo fornecedor. Um mesmo fornecedor (ex.: OpenAI, Anthropic, Gemini) pode aparecer nas duas categorias se suportar as duas funções; DeepSeek e Claude só aparecem em formatação (sem API de áudio); AssemblyAI e Deepgram só aparecem em transcrição. Uma vez a chave configurada, o pipeline já sabe pra que serve sem perguntar de novo. Fluxo confirmado: áudio → motor de transcrição (raw) → clean → validação raw↔clean → motor de formatação escolhido pelo usuário → documento estruturado.
+
+**Pendente antes de codar (RESOLVIDO 07/08/2026):** a preocupação com limite/quota por execução deixou de se aplicar — decisão fechada de não fazer chunking/fragmentação nesta etapa; transcripts reais testados (~5 a ~20 min) ficam muito abaixo da janela de contexto de qualquer um dos 6 provedores. Sem chunking, sem necessidade de checar rate limit por enquanto.
+
+**Disciplina de entrega:** implementar em fatias pequenas — uma ou duas funcionalidades complementares por vez, build, versão nova, commit e push, seguindo o mesmo padrão incremental já visível no histórico do `PROJECT_CONTEXT.md`. Não acumular funcionalidades grandes numa única versão não lançada.
+
+**Passo 1 entregue (07/08/2026) — backend do worker, commit `0929d66`:**
+
+- **Formatação (`transcription/formatting.py`):** os 6 motores decididos acima implementados e chamáveis (DeepSeek, Grok, `gpt-5-mini`, Claude Haiku 4.5, Claude Sonnet 5, Gemini), com prompt/parsing comuns para o documento em blocos (title/objective/blocks/jargon). Sem motor padrão, como decidido.
+- **Gate raw↔clean (`transcription/doc_validation.py`):** heurística v1 por razão de palavras (documentada como heurística, não diff semântico) — bloqueia formatação se o clean perdeu conteúdo além do esperado por remoção de ruído/repetição.
+- **Chaves por finalidade (`transcription/credentials.py`):** `DEEPSEEK_API_KEY`, `GROK_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` novas, todas categorizadas em `KEY_PURPOSES` (transcrição/formatação/ambas) — pré-requisito direto da futura tela de Configurações por finalidade decidida acima.
+- **Persistência (`transcription/db.py`):** schema hub-and-spoke novo (`structured_documents` + satélites `document_blocks`/`document_glossary`/`document_metrics` + `documents_history`), SQLite e Postgres, espelhando o padrão de `transcriptions`. Motores de formatação entraram na mesma dimensão `engines` (coluna `kind`).
+  - **⚠ Desvio de arquitetura encontrado, ainda não corrigido:** a decisão de 05/08/2026 acima diz explicitamente "é um esquema novo" (Postgres) para este submódulo, no mesmo espírito de `support`/`data_studio` (ver `PROJECT_CONTEXT.md` §10, "Regra de departamentos por schema", 2026-07-23). As tabelas novas foram criadas no schema `public`, ao lado de `transcriptions`, não num schema `documents` dedicado — por estarem tão acopladas por FK ao ciclo de vida de `transcriptions` que pareceu natural colocá-las junto, mas isso contraria a regra escrita. Já existem linhas reais no Postgres da VPS (documentos #1–#9, gerados nos testes, incluindo um documento de conteúdo real do utilizador). Migrar para um schema `documents` próprio é uma operação simples (`CREATE SCHEMA` + `ALTER TABLE ... SET SCHEMA`) e não perderia dados, mas mexe em configuração do banco da VPS — **por isso não foi feito sem autorização explícita (regra §11.8 do `PROJECT_CONTEXT.md`)**. Fica pendente: confirmar com o utilizador se migra para `documents` ou se mantém em `public` por estar tão colado a `transcriptions`.
+- **CLI (`transcription/cli.py`):** `format-engines` (lista motores), `format --engine --profile` (chama um motor isolado, sem persistir), `document-generate --transcription-id --engine --profile` (formatação retroativa — carrega raw/clean já existentes, valida, formata, salva; é o mecanismo por trás do botão retroativo da Biblioteca decidido acima), `transcribe --format-engine --format-profile` (encadeia transcrição + validação + formatação numa só chamada — é o mecanismo por trás do fluxo decidido em 06/08/2026 para a tela de Transcribe). Novo evento NDJSON `format_error`: uma falha na formatação nunca desfaz/invalida a transcrição já gravada com sucesso.
+- **Evidência/teste:** os 6 motores testados pelo utilizador na própria máquina, com chaves e transcripts reais (não sintéticos) — um vídeo técnico de ~18 min (lógica de negócio de emissão de passagens) e uma aula de curso próprio de ~12 min. Sem alucinação detectada em nenhum motor. Achado real durante o teste: `gpt-5-mini` rejeita `temperature` custom (só aceita o default 1) — corrigido tornando `temperature` opcional em `_run_openai_compatible`. Também confirmado nos testes reais de 07/08/2026 que `grok-4-fast` e `deepseek-chat` continuam ativos (contrariando o risco de descontinuação anotado antes). Fluxo encadeado `transcribe --format-engine` testado ponta a ponta com áudio real, documento salvo no Postgres da VPS.
+- **Fora deste passo (próximo trabalho):** UI (botões "Documento formatado"/"Estudo" na Biblioteca e na tela de Transcribe), popup de primeira vez, tela de Configurações para motor padrão de formatação por finalidade, decisão sobre o schema `documents` pendente acima.
 
 ---
 
@@ -712,6 +782,38 @@ A implementação só deve ocorrer depois de contratos reais de evento, payload,
 - consultoria e integrações.
 
 Permanece hipótese comercial até validação de público, disposição de pagamento, custo de suporte e exigências legais.
+
+**Cenários de camada (ainda hipótese, não decisão fechada):**
+
+- **Solo / Local-First / BYOK:** usuário baixa o executável, configura a própria chave de API, banco SQLite local, licença única ou anual. Custo de infraestrutura para quem vende é praticamente zero.
+- **Família / Equipe Pequena:** executável conectando a um banco leve compartilhado ou gerenciado, para poucos usuários relacionados.
+- **Corporativa / Managed Enterprise:** infraestrutura instalada na nuvem do cliente (VPS, Docker, PostgreSQL, painel administrativo), com fee mensal de sustentação.
+
+Um quarto pacote foi cogitado (derivado da camada corporativa) mas ainda não foi definido; retomar quando houver clareza.
+
+**Nota de posicionamento (GTM, não feature):** as camadas acima não são mutuamente exclusivas. É possível manter uma oferta low ticket (licença solo) e, ao mesmo tempo, perseguir contratos high ticket vendendo o produto como segurança e soberania de dados — chave de API e transcript nunca saem da máquina do usuário — para público que paga caro por sigilo (advocacia, saúde, consultorias, estudantes em ambiente de estudo seguro). Isso é uma decisão de mensagem/pitch (`PRODUCT.md`), não uma frente de implementação, e deve ser tratada como hipótese até validação de mercado.
+
+---
+
+### EP-06 — Link/URL Ingestion for Transcription
+
+**Status:** `Exploring`
+
+**Objetivo:** permitir que o usuário cole um link (YouTube, Vimeo, entre outras plataformas de vídeo) e o sistema obtenha o conteúdo para transcrição, sem exigir download manual prévio.
+
+**Caminhos possíveis a explorar:**
+
+- extração do áudio a partir do link para processar pela mesma cadeia de transcrição já existente;
+- em plataformas que expõem transcript próprio (ex.: aba de transcript do YouTube, disponível publicamente para qualquer vídeo), avaliar leitura direta e segura desse texto como atalho, em vez de reprocessar áudio;
+- suporte pode variar por plataforma; não presumir que todo provedor permite as duas rotas.
+
+**Riscos a validar antes de qualquer implementação:**
+
+- termos de serviço de cada plataforma (extração de áudio ou scraping de transcript pode violar ToS dependendo do provedor);
+- direitos autorais do conteúdo de terceiros;
+- estabilidade de qualquer integração não-oficial (pode quebrar sem aviso).
+
+Permanece possibilidade exploratória; não é backlog imediato nem promessa de implementação.
 
 ---
 

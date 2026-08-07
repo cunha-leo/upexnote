@@ -68,6 +68,8 @@ Novos domínios usam schemas PostgreSQL separados e nomeados em inglês. Não se
 
 O suporte segue hub-and-spoke: `support.tickets` é a matriz e satélites preservam descrição, comentários, anexos, status, atribuições, notificações e auditoria. Anexos não são BLOBs no banco.
 
+**Pendência aberta (2026-08-07):** o schema hub-and-spoke novo de `structured_documents` (ADF-01, ver `PROJECT_CONTEXT.md` Registro 2026-08-07) foi criado no schema `public`, junto de `transcriptions`, em vez de um schema `documents` dedicado — contraria a regra acima. Migração é simples e não perde dados, mas aguarda decisão do utilizador antes de mexer no banco da VPS.
+
 ## Operação
 
 - Backups do PostgreSQL são gerados diariamente, validados e copiados ao Google Drive autorizado; a retenção automática é apenas local.

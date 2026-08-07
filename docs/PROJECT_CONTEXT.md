@@ -297,6 +297,7 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 - **Consentimento inicial de telemetria publicado (v0.22.0 / 2026-07-23):** após o login, quem ainda não decidiu vê uma tela inicial clara e não bloqueante: pode ajudar a melhorar o UpexNote (opt-in explícito), usar somente o necessário (recusa explícita) ou abrir as configurações para personalizar. Não há caixas pré-marcadas; a decisão é persistente e revogável nas Definições. O worker distingue a primeira utilização de uma recusa, portanto não repete o pedido após escolha. Textos PT/EN/ES explicam valor prático, limites de dados e caminho para revogar. Instalador `UpexNote_0.22.0_x64-setup.exe` instalado e copiado para o Desktop.
 
 - **Sessão operacional em browser interno do Codex (2026-07-23):** para painéis e serviços externos autorizados pelo utilizador (EasyPanel, Hostinger, Google, GitHub etc.), trabalhar exclusivamente nas abas do navegador interno do Codex em que ele já abriu sessão. Não abrir/controlar navegador externo como alternativa, salvo pedido explícito. Isto mantém o escopo de acesso visível, direto e estável para o utilizador.
+- **ADF-01 passo 1 — formatação clean→documento estruturado, backend do worker (2026-08-07, commit `0929d66`):** os 6 motores de formatação decididos no benchmark (DeepSeek, Grok, `gpt-5-mini`, Claude Haiku 4.5, Claude Sonnet 5, Gemini), gate de validação raw↔clean, schema hub-and-spoke novo (`structured_documents`+satélites) e comandos de CLI (`format-engines`, `format`, `document-generate`, `transcribe --format-engine`), validados com transcripts reais pelo utilizador. Ver Registro 2026-08-07 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md` (ADF-01). Detalhe do item 15 abaixo. **Fora deste passo:** UI, popup de primeira vez, Configurações de motor padrão; **pendência aberta:** desvio de schema Postgres (tabelas em `public` em vez de `documents` dedicado) aguardando decisão do utilizador.
 
 ### Próximo trabalho (deixados em aberto)
 
@@ -377,7 +378,7 @@ Os comandos Tauri `library*` eram síncronos com IO bloqueante (spawn do worker 
    - **(B) Dicionário de dados bilingue (PT/EN):** cada tabela do schema v2 classificada (hub / satélite / dimensão / histórico / legada), cada coluna com nome, tipo, propósito, tradução, constraints e FKs — gerado por introspeção da base real.
    - **(C) Especificação funcional + contrato de integração:** cada funcionalidade especificada passo a passo (entradas/saídas); futuro **API-first**: todos os campos com parâmetros chave/valor definidos, endpoints e webhooks (envio E receção) documentados em **OpenAPI versionado** — importável no Postman/SoapUI para teste e consumível pelo n8n (item 9). NOTA DE ARQUITETURA: esta camada de integrações e a API da Fase 2 do item 13 (auth+telemetria) são A MESMA API — construir uma vez, servir os três propósitos.
 
-15. **Transcript → Documento de Estudo (ideia do utilizador 2026-07-16 — ESPECIFICA as fases 3-4 do roteiro; não agendado).** Regra de ouro: **transformar sem trair** — legibilidade e estudo SEM matar o contexto real nem criar imaginação sobre o que foi dito (alinha com princípio §4.6: derivado e identificado, raw intocável). Pipeline: retirar timestamps → organizar conteúdo → identificar redundâncias → identificar conexões do assunto (início/meio/fim) → documento legível com: resumo geral, palavras/trechos-chave (temáticas), índice de tópicos, secções por tópico, glossário de termos técnicos (explicação vinda do próprio transcript primeiro; dicionário/internet só com verificação minuciosa para não trazer sujeira), fluxogramas/infográficos onde houver blocos de passos (durante e/ou no fim das secções + contexto final), e **barra de edição Markdown na app** (evoluindo depois para edições específicas). Saída futura (decidir depois): chat interativo na app OU documento + prompt portátil para estudo em qualquer IA (fluxo multi-IA do utilizador). BANDEIRA para implementação: primeira funcionalidade que exige LLM de TEXTO (além dos motores STT) — escolher motor e mostrar custo antes de processar (§4.5).
+15. **Transcript → Documento de Estudo (ideia do utilizador 2026-07-16 — ESPECIFICA as fases 3-4 do roteiro).** **EM PROGRESSO desde 2026-08-07 sob o nome ADF-01** (ver `docs/FEATURE_VALIDATION_AND_ROADMAP.md` §8 e Registro 2026-08-07 acima) — passo 1 (backend do worker: 6 motores de formatação, gate raw↔clean, schema hub-and-spoke, CLI) entregue no commit `0929d66`; UI/Settings/popup ainda por fazer. Regra de ouro: **transformar sem trair** — legibilidade e estudo SEM matar o contexto real nem criar imaginação sobre o que foi dito (alinha com princípio §4.6: derivado e identificado, raw intocável). Pipeline: retirar timestamps → organizar conteúdo → identificar redundâncias → identificar conexões do assunto (início/meio/fim) → documento legível com: resumo geral, palavras/trechos-chave (temáticas), índice de tópicos, secções por tópico, glossário de termos técnicos (explicação vinda do próprio transcript primeiro; dicionário/internet só com verificação minuciosa para não trazer sujeira), fluxogramas/infográficos onde houver blocos de passos (durante e/ou no fim das secções + contexto final), e **barra de edição Markdown na app** (evoluindo depois para edições específicas). Saída futura (decidir depois): chat interativo na app OU documento + prompt portátil para estudo em qualquer IA (fluxo multi-IA do utilizador). BANDEIRA para implementação: primeira funcionalidade que exige LLM de TEXTO (além dos motores STT) — escolher motor e mostrar custo antes de processar (§4.5).
    **Extensão — documento em dupla-língua (utilizador, 2026-07-16):** tradução CONTEXTUAL (mesmo LLM do pipeline, com o contexto da reunião — explicitamente NÃO estilo Google Translate), matriz origem→alvo entre EN/PT/ES (6 pares). UI: seletor mono/dupla-língua; em dupla, frase original em cima e tradução na linha abaixo até ao fim, com hierarquia visual = padrão UNB do utilizador (original com peso principal, tradução como shadowing discreto). Objetivo: estudo e eternização de vocabulário técnico do mercado (ponte futura possível com o LMSC dele — anotado, não comprometido). Insumo de teste real disponível: reunião do utilizador 100% em inglês.
 
 16. **Primeiras automações n8n — MOVE + ETL + webhooks (ideia do utilizador 2026-07-16 — bootstrap prático do item 14C; não agendado).** Automações escolhidas por dupla utilidade: resolver dores reais E padronizar parâmetros/webhooks de entrada/saída (testáveis em Postman/SoapUI, com documentação evolutiva — cada uma constrói o contrato do item 14):
@@ -427,6 +428,36 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-08-07: ADF-01 passo 1 — formatação clean→documento estruturado (backend do worker)
+
+### O que mudou
+- Nova etapa de FORMATAÇÃO (clean → documento em blocos), distinta da transcrição (áudio → texto): `transcription/formatting.py` implementa os 6 motores decididos no benchmark de 06/08/2026 (DeepSeek, Grok, `gpt-5-mini`, Claude Haiku 4.5, Claude Sonnet 5, Gemini), sem motor padrão.
+- `transcription/doc_validation.py`: gate raw↔clean (heurística v1 por razão de palavras) decidido em 05/08/2026 — bloqueia a formatação se o clean perdeu conteúdo além do esperado.
+- `transcription/credentials.py`: chaves novas por finalidade (`DEEPSEEK_API_KEY`, `GROK_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`), categorizadas em `KEY_PURPOSES` (transcrição/formatação/ambas).
+- `transcription/db.py`: schema hub-and-spoke novo (`structured_documents` + `document_blocks`/`document_glossary`/`document_metrics`/`documents_history`), SQLite e Postgres, espelhando o padrão de `transcriptions`.
+- `transcription/cli.py`: `format-engines`, `format --engine --profile` (motor isolado, sem persistir), `document-generate --transcription-id --engine --profile` (formatação retroativa), `transcribe --format-engine --format-profile` (encadeia transcrição + formatação numa chamada só). Novo evento NDJSON `format_error` — falha na formatação nunca desfaz a transcrição já gravada.
+
+### Evidência / teste
+- 6 motores validados com transcripts reais do utilizador (não sintéticos): ~18 min técnico (lógica de negócio de bilhetagem aérea) e ~12 min de aula do curso próprio dele. Sem alucinação em nenhum motor.
+- Bug real encontrado e corrigido: `gpt-5-mini` rejeita `temperature` customizado (só aceita o default). `grok-4-fast` e `deepseek-chat` confirmados ainda ativos.
+- Fluxo encadeado `transcribe --format-engine` testado ponta a ponta com áudio real; documento salvo no Postgres da VPS (documentos #1–#9 durante os testes).
+- Detalhe completo do benchmark e da evidência em `docs/FEATURE_VALIDATION_AND_ROADMAP.md` (seção ADF-01, "Passo 1 entregue").
+
+### Decisão
+- Sem chunking/fragmentação nesta etapa (transcripts reais ficam muito abaixo da janela de contexto de qualquer motor) — item "pendente antes de codar" do roadmap fechado por essa razão.
+- Commit `0929d66` inclui só os ficheiros desta entrega (`formatting.py`, `doc_validation.py`, `registry.py`, `credentials.py`, `db.py`, `cli.py`); alterações pré-existentes soltas na árvore (`AGENTS.md`, `FEATURE_VALIDATION_AND_ROADMAP.md`, `apps/desktop/*`, etc.) foram deixadas de fora por não terem sido escritas nesta sessão. Push ainda não feito — pendente de confirmação do utilizador.
+
+### Impacto em dados, custo ou privacidade
+- **Desvio de arquitetura encontrado, não corrigido sem autorização:** a decisão de 05/08/2026 pede um schema Postgres próprio para este submódulo (mesmo espírito de `support`/`data_studio`, ver item "Regra de departamentos por schema" em `Estado atual`). As tabelas novas foram criadas em `public`, junto de `transcriptions`, por estarem fortemente acopladas por FK ao ciclo de vida dela — mas isso contraria a regra escrita. Já há dados reais (documentos #1–#9) no Postgres da VPS. Migrar para um schema `documents` é simples e não perde dados, mas mexe em configuração do banco da VPS — fica pendente de decisão do utilizador antes de qualquer alteração (regra §11.8).
+- Nenhuma chave, transcript ou conteúdo pessoal foi escrito no repositório Git; os scripts de bancada usados para validar os motores (com chaves reais) ficaram fora do repo, em pasta de trabalho local.
+
+### Próximo passo
+- Decidir o schema (`documents` dedicado vs. manter em `public`) e migrar se for essa a decisão.
+- UI: botões "Documento formatado"/"Estudo" na Biblioteca e na tela de Transcribe, popup de primeira vez, tela de Configurações para motor padrão de formatação por finalidade.
+- Confirmar com o utilizador se faz `git push` do commit `0929d66` (e desta atualização de documentação).
+
+---
 
 ### Registro — 2026-07-29: regra durável para “abrir o ambiente”
 
