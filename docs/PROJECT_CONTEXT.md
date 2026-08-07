@@ -446,7 +446,8 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ### Decisão
 - Sem chunking/fragmentação nesta etapa (transcripts reais ficam muito abaixo da janela de contexto de qualquer motor) — item "pendente antes de codar" do roadmap fechado por essa razão.
-- Commit `0929d66` inclui só os ficheiros desta entrega (`formatting.py`, `doc_validation.py`, `registry.py`, `credentials.py`, `db.py`, `cli.py`); alterações pré-existentes soltas na árvore (`AGENTS.md`, `FEATURE_VALIDATION_AND_ROADMAP.md`, `apps/desktop/*`, etc.) foram deixadas de fora por não terem sido escritas nesta sessão. Push ainda não feito — pendente de confirmação do utilizador.
+- Commit `0929d66` inclui só os ficheiros desta entrega (`formatting.py`, `doc_validation.py`, `registry.py`, `credentials.py`, `db.py`, `cli.py`); alterações pré-existentes soltas na árvore (`AGENTS.md`, `apps/desktop/*`, `.fuse_hidden*`, `docs/handoff/`, etc.) foram deixadas de fora por não terem sido escritas nesta sessão e continuam por rever.
+- **Marco publicado em `origin/main` (07/08/2026):** 6 commits — `0929d66` (backend de formatação), `9e55907` (docs), `3f341fc` (schema `documents`), `c573420` (docs), `57e518e` (`document-item`/`document-delete` + fix Decimal), `334de8b` (docs) — mais `9c31eb2` a fechar este registo. Sem bump de versão nem instalador: esta fatia é só worker/CLI, sem UI; a versão nova sobe quando a parte visual do ADF-01 for entregue.
 
 ### Impacto em dados, custo ou privacidade
 - **Desvio de arquitetura encontrado (05/08/2026) e CORRIGIDO no código (07/08/2026, commit `3f341fc`):** a decisão de 05/08/2026 pede um schema Postgres próprio para este submódulo (mesmo espírito de `support`/`data_studio`). As tabelas tinham sido criadas em `public`; o utilizador autorizou a migração. `db.py` passou a criar/referenciar `documents.structured_documents`, `documents.document_blocks`, `documents.document_glossary`, `documents.document_metrics`, `documents.documents_history` (SQLite local sem alteração — não tem esquemas, tradução no-op). Nova função idempotente `db.migrate_documents_schema()` + comando `db-migrate-documents-schema` movem as tabelas já existentes (`ALTER TABLE ... SET SCHEMA`, preserva dados/índices/sequências, não copia). Validado localmente (SQLite) de ponta a ponta antes do commit.
@@ -454,8 +455,8 @@ Ao trabalhar neste projeto, uma IA deve:
 - Nenhuma chave, transcript ou conteúdo pessoal foi escrito no repositório Git; os scripts de bancada usados para validar os motores (com chaves reais) ficaram fora do repo, em pasta de trabalho local.
 
 ### Próximo passo
-- UI: botões "Documento formatado"/"Estudo" na Biblioteca e na tela de Transcribe, popup de primeira vez, tela de Configurações para motor padrão de formatação por finalidade.
-- Confirmar com o utilizador se faz `git push` dos commits deste marco: `0929d66` (backend), `9e55907` (docs), `3f341fc` (schema `documents`), `c573420` (docs), `57e518e` (`document-item`/`document-delete` + fix Decimal).
+- UI do ADF-01 (próxima fatia, fecha o passo 2): botões "Documento formatado"/"Estudo" na Biblioteca e na tela de Transcribe, popup de primeira vez, tela de Configurações para motor padrão de formatação por finalidade. Termina com build, versão nova e instalador, como manda a disciplina de entrega.
+- Rever e decidir o destino das alterações soltas na árvore que não são deste marco (`AGENTS.md` com diff real, `docs/handoff/`, `UpexNote_CONTINUIDADE_DOCUMENTACAO_VISUAL.md`); limpar os `.fuse_hidden*` (lixo de mount, candidatos a `.gitignore`).
 
 ---
 
