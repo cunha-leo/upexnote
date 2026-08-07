@@ -436,7 +436,7 @@ Ao trabalhar neste projeto, uma IA deve:
 - `transcription/doc_validation.py`: gate raw↔clean (heurística v1 por razão de palavras) decidido em 05/08/2026 — bloqueia a formatação se o clean perdeu conteúdo além do esperado.
 - `transcription/credentials.py`: chaves novas por finalidade (`DEEPSEEK_API_KEY`, `GROK_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`), categorizadas em `KEY_PURPOSES` (transcrição/formatação/ambas).
 - `transcription/db.py`: schema hub-and-spoke novo (`structured_documents` + `document_blocks`/`document_glossary`/`document_metrics`/`documents_history`), SQLite e Postgres, espelhando o padrão de `transcriptions`.
-- `transcription/cli.py`: `format-engines`, `format --engine --profile` (motor isolado, sem persistir), `document-generate --transcription-id --engine --profile` (formatação retroativa), `transcribe --format-engine --format-profile` (encadeia transcrição + formatação numa chamada só). Novo evento NDJSON `format_error` — falha na formatação nunca desfaz a transcrição já gravada.
+- `transcription/cli.py`: `format-engines`, `format --engine --profile` (motor isolado, sem persistir), `document-generate --transcription-id --engine --profile` (formatação retroativa), `transcribe --format-engine --format-profile` (encadeia transcrição + formatação numa chamada só), `document-item --id` e `document-delete --id` (leitura/soft-delete de um documento gerado, espelhando `library-item`/`library-delete`). Novo evento NDJSON `format_error` — falha na formatação nunca desfaz a transcrição já gravada.
 
 ### Evidência / teste
 - 6 motores validados com transcripts reais do utilizador (não sintéticos): ~18 min técnico (lógica de negócio de bilhetagem aérea) e ~12 min de aula do curso próprio dele. Sem alucinação em nenhum motor.
@@ -450,13 +450,12 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ### Impacto em dados, custo ou privacidade
 - **Desvio de arquitetura encontrado (05/08/2026) e CORRIGIDO no código (07/08/2026, commit `3f341fc`):** a decisão de 05/08/2026 pede um schema Postgres próprio para este submódulo (mesmo espírito de `support`/`data_studio`). As tabelas tinham sido criadas em `public`; o utilizador autorizou a migração. `db.py` passou a criar/referenciar `documents.structured_documents`, `documents.document_blocks`, `documents.document_glossary`, `documents.document_metrics`, `documents.documents_history` (SQLite local sem alteração — não tem esquemas, tradução no-op). Nova função idempotente `db.migrate_documents_schema()` + comando `db-migrate-documents-schema` movem as tabelas já existentes (`ALTER TABLE ... SET SCHEMA`, preserva dados/índices/sequências, não copia). Validado localmente (SQLite) de ponta a ponta antes do commit.
-- **Falta rodar uma vez contra a VPS real** — não acessível a partir do ambiente de trabalho desta IA. Comando exato para o utilizador rodar no terminal (mesma pasta `services/worker`, mesmo padrão dos outros comandos db-*): `python -m transcription.cli db-migrate-documents-schema`. Idempotente (pode rodar mais de uma vez sem risco) e move os documentos #1–#9 já existentes sem perda de dados.
+- **Migração EXECUTADA e validada na VPS real (07/08/2026):** o utilizador rodou `db-migrate-documents-schema`; as 5 tabelas foram movidas de `public` para `documents`, a segunda execução confirmou a idempotência ("já está tudo em `documents`"), e o documento #1 foi lido de volta intacto (21 blocos, 30 termos de glossário, métricas). Confirmado que o join com a dimensão `engines` — que permanece em `public`, partilhada com a transcrição — funciona normalmente entre schemas. Pendência fechada.
 - Nenhuma chave, transcript ou conteúdo pessoal foi escrito no repositório Git; os scripts de bancada usados para validar os motores (com chaves reais) ficaram fora do repo, em pasta de trabalho local.
 
 ### Próximo passo
-- **Utilizador roda `db-migrate-documents-schema` uma vez contra a VPS** para mover os dados já existentes (código já commitado e testado localmente).
 - UI: botões "Documento formatado"/"Estudo" na Biblioteca e na tela de Transcribe, popup de primeira vez, tela de Configurações para motor padrão de formatação por finalidade.
-- Confirmar com o utilizador se faz `git push` dos commits `0929d66`, `9e55907` e `3f341fc` (e desta atualização de documentação).
+- Confirmar com o utilizador se faz `git push` dos commits deste marco: `0929d66` (backend), `9e55907` (docs), `3f341fc` (schema `documents`), `c573420` (docs), `57e518e` (`document-item`/`document-delete` + fix Decimal).
 
 ---
 
