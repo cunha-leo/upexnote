@@ -464,11 +464,22 @@ Todos os seis extraíram corretamente a história principal (tabela de taxas, pr
 - **Evidência/teste:** os 6 motores testados pelo utilizador na própria máquina, com chaves e transcripts reais (não sintéticos) — um vídeo técnico de ~18 min (lógica de negócio de emissão de passagens) e uma aula de curso próprio de ~12 min. Sem alucinação detectada em nenhum motor. Achado real durante o teste: `gpt-5-mini` rejeita `temperature` custom (só aceita o default 1) — corrigido tornando `temperature` opcional em `_run_openai_compatible`. Também confirmado nos testes reais de 07/08/2026 que `grok-4-fast` e `deepseek-chat` continuam ativos (contrariando o risco de descontinuação anotado antes). Fluxo encadeado `transcribe --format-engine` testado ponta a ponta com áudio real, documento salvo no Postgres da VPS.
 - **Fora deste passo (próximo trabalho):** UI (botões "Documento formatado"/"Estudo" na Biblioteca e na tela de Transcribe), popup de primeira vez, tela de Configurações para motor padrão de formatação por finalidade. O backend de leitura que a UI vai consumir já existe (`document-item`/`document-delete`, commit `57e518e`).
 
+**Passo 2 — próxima fatia (planeada 07/08/2026, ainda não iniciada).** Objetivo: tornar visível na app o que o passo 1 já produz no banco. Ordem proposta, mantendo a disciplina de fatias pequenas:
+
+1. **Ponte Rust → worker.** `apps/desktop/src-tauri/src/main.rs` já embrulha os comandos `library*` do worker; falta o mesmo para `format-engines`, `document-generate`, `document-item` e `document-delete`. Mesmo padrão dos existentes: `async` via `spawn_blocking` (ver Correção v0.5.1 no `PROJECT_CONTEXT.md` — comando síncrono congela a janela inteira).
+2. **Botões de entrada.** Na Biblioteca (detalhe do transcript) e no fim da tela de Transcribe: "Documento formatado" e "Estudo", cada um com a frase de incentivo por baixo (decisão de 05/08/2026; espírito visual do aviso de Drive/OneDrive). Ícones Lucide, nunca emojis. Textos nos três idiomas em `i18n.ts` (dicionário tipado — falta de chave é erro de compilação).
+3. **Leitor do documento (só leitura, antes de editar).** Nova vista que consome `document-item` e desenha os blocos por `block_type`, mais o glossário. É o menor passo que já entrega valor e valida o contrato de blocos na prática, antes de investir no editor. Vistas ficam montadas e escondidas por CSS (padrão do item 11 do backlog), e carregam na primeira abertura, não no arranque (item 12).
+4. **Motor padrão em Configurações** + popup de primeira vez, fechando as decisões de 06/08/2026 sobre fricção zero.
+
+Só depois disto o ADF-02 (edição) começa — o leitor do ponto 3 é a base sobre a qual o editor cresce. Esta fatia termina com build, versão nova e instalador.
+
+**Decisão em aberto para o utilizador (não bloqueia começar pelos pontos 1-3):** se "Documento formatado" e "Estudo" são dois botões separados ou um botão "Formatar" com os perfis dentro. As decisões de 06/08/2026 registam as duas formulações em momentos diferentes e não convergem.
+
 ---
 
 ### ADF-02 — Rich Study Workspace
 
-**Status:** `Approved`
+**Status:** `Approved` (precisa de especificação para chegar a `Ready` — as capacidades abaixo são a lista aprovada, não um plano de implementação; o leitor do passo 2 do ADF-01 é o degrau anterior natural)
 
 **Prioridade:** máxima e acoplada à ADF-01.
 
