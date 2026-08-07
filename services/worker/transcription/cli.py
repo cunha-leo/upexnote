@@ -24,7 +24,7 @@ COMANDOS
       Lista os motores disponiveis (JSON unico), incluindo se a respetiva
       chave ja esta configurada.
 
-  transcribe --engine <id> --file "<caminho>"
+  transcribe --engine <id> --file "<caminho>" [--format-engine <id>] [--format-profile <perfil>]
       Transcreve o ficheiro com o motor escolhido. Emite eventos NDJSON:
         {"type": "start",    "engine": ..., "file": ...}
         {"type": "progress", "message": "..."}      (0..N vezes)
@@ -36,6 +36,21 @@ COMANDOS
       Prints soltos internos do pipeline vao para stderr, para nao
       contaminarem o fluxo NDJSON do stdout.
 
+      Com --format-engine (ADF-01, fluxo decidido 06/08/2026): roda a
+      formatacao logo em seguida, na MESMA chamada (transcricao -> validacao
+      raw<->clean -> formatacao), emitindo mais eventos depois do "result":
+        {"type": "validation",   "ok": bool, "ratio": float|null, "problems": [...]}
+        {"type": "format_result","ok": true, "document": {...}, "document_id": int, ...}
+      ou, se a formatacao (nao a transcricao) falhar:
+        {"type": "format_error", "message": "..."}
+      format_error NUNCA significa que a transcricao falhou — ela ja foi
+      gravada antes desta etapa. Sem --format-engine (ou com "none"), o
+      comportamento e' identico a antes (= toggle "Formatar depois").
+
+  document-generate --transcription-id <id> --engine <id> [--profile <perfil>]
+      Formatacao RETROATIVA: mesma etapa acima, mas a partir de uma
+      transcricao ja existente (fluxo da Biblioteca/edicao, nao do Transcribe).
+
   set-key --name <NOME_DA_CHAVE>
       Le o valor por stdin sem eco e guarda-o no Windows Credential
       Manager. Corre isto tu mesmo no teu terminal.
@@ -46,6 +61,8 @@ COMANDOS
 Exemplos:
     python -m transcription.cli engines
     python -m transcription.cli transcribe --engine assemblyai --file "C:/gravacoes/reuniao.mp4"
+    python -m transcription.cli transcribe --engine assemblyai --file "C:/gravacoes/reuniao.mp4" --format-engine claude_haiku
+    python -m transcription.cli document-generate --transcription-id 21 --engine gemini
     python -m transcription.cli set-key --name ASSEMBLYAI_API_KEY
 """
 import argparse
@@ -57,8 +74,8 @@ import secrets
 from pathlib import Path
 
 from . import paths
-from .registry import ENGINES
-from .credentials import get_key, set_key, clear_key, KNOWN_KEYS
+from .registry import ENGINES, FORMAT_ENGINES
+from .credentials import get_key, set_key, clear_key, KNOWN_KEYS, key_purposes
 
 
 def _emit(stream, event):
@@ -99,6 +116,192 @@ def cmd_engines(args):
             "key_set": bool(get_key(cfg["key_name"])),
         })
     _emit(sys.stdout, {"type": "engines", "engines": out})
+    return 0
+
+
+def cmd_format_engines(args):
+    # Motores de FORMATACAO (clean -> documento estruturado, ADF-01) —
+    # separado de `engines` (transcricao). Sem motor padrao: os seis ficam
+    # disponiveis e a UI mostra modelo + custo/hora lado a lado.
+    out = []
+    for engine_id, cfg in FORMAT_ENGINES.items():
+        out.append({
+            "id": engine_id,
+            "label": cfg["label"],
+            "info": cfg["info"],
+            "key_name": cfg["key_name"],
+            "key_set": bool(get_key(cfg["key_name"])),
+            "cost_hora_brl": cfg.get("cost_hora_brl"),
+        })
+    _emit(sys.stdout, {"type": "format_engines", "engines": out})
+    return 0
+
+
+def cmd_format(args):
+    from .formatting import PROFILES
+
+    real_stdout = sys.stdout
+    engine = FORMAT_ENGINES.get(args.engine)
+    if engine is None:
+        _emit(real_stdout, {
+            "type": "error",
+            "message": f"Motor de formatacao desconhecido: {args.engine!r}. Opcoes: {', '.join(FORMAT_ENGINES)}",
+        })
+        return 1
+
+    profile = getattr(args, "profile", None) or "detalhado"
+    if profile not in PROFILES:
+        _emit(real_stdout, {"type": "error", "message": f"Perfil desconhecido: {profile!r}. Opcoes: {', '.join(PROFILES)}"})
+        return 1
+
+    data = _stdin_json()
+    clean_text = (data or {}).get("text", "").strip()
+    if not clean_text:
+        _emit(real_stdout, {"type": "error", "message": "Nenhum texto recebido por stdin (esperado JSON {\"text\": \"...\"})."})
+        return 1
+
+    api_key = get_key(engine["key_name"])
+    if not api_key:
+        _emit(real_stdout, {
+            "type": "error",
+            "message": f"Chave {engine['key_name']} nao configurada. Corre: "
+                       f"python -m transcription.cli set-key --name {engine['key_name']}",
+        })
+        return 1
+
+    _emit(real_stdout, {"type": "start", "engine": args.engine, "profile": profile})
+
+    def progress(m):
+        _emit(real_stdout, {"type": "progress", "message": str(m)})
+
+    sys.stdout = sys.stderr
+    try:
+        result = engine["run"](clean_text, api_key, profile=profile, log=progress)
+    except Exception as e:  # noqa: BLE001
+        sys.stdout = real_stdout
+        _emit(real_stdout, {"type": "error", "message": str(e)})
+        return 1
+    finally:
+        sys.stdout = real_stdout
+
+    if not result.get("ok"):
+        _emit(real_stdout, {"type": "error", "message": "; ".join(result.get("problems") or ["Falha desconhecida na formatacao."])})
+        return 1
+
+    _emit(real_stdout, {
+        "type": "format_result",
+        "ok": True,
+        "engine": args.engine,
+        "profile": profile,
+        "document": result["document"],
+        "processing_s": result.get("processing_s"),
+        "usage": result.get("usage", {}),
+    })
+    return 0
+
+
+def cmd_document_generate(args):
+    """Formatacao retroativa (ADF-01): parte de uma transcricao JA existente
+    (Library/edicao — nao a tela de Transcribe), roda o gate raw<->clean, chama
+    o motor de formatacao escolhido e persiste o documento estruturado.
+
+    Eventos NDJSON: start -> progress* -> validation (sempre) -> format_result
+    (se ok) ou error (se o gate ou a formatacao falharem).
+    """
+    from . import db
+    from .formatting import PROFILES
+    from .doc_validation import validate_raw_clean
+
+    real_stdout = sys.stdout
+    engine = FORMAT_ENGINES.get(args.engine)
+    if engine is None:
+        _emit(real_stdout, {
+            "type": "error",
+            "message": f"Motor de formatacao desconhecido: {args.engine!r}. Opcoes: {', '.join(FORMAT_ENGINES)}",
+        })
+        return 1
+
+    profile = getattr(args, "profile", None) or "detalhado"
+    if profile not in PROFILES:
+        _emit(real_stdout, {"type": "error", "message": f"Perfil desconhecido: {profile!r}. Opcoes: {', '.join(PROFILES)}"})
+        return 1
+
+    err = _require_db()
+    if err:
+        _emit(real_stdout, {"type": "error", "message": err})
+        return 1
+
+    uid = getattr(args, "user", None)
+    source = db.get_transcript_raw_clean(args.transcription_id, user_id=uid)
+    if source is None:
+        _emit(real_stdout, {"type": "error", "message": f"Transcrição #{args.transcription_id} não encontrada."})
+        return 1
+
+    _emit(real_stdout, {"type": "start", "engine": args.engine, "profile": profile,
+                        "transcription_id": args.transcription_id})
+
+    validation = validate_raw_clean(source.get("raw_text") or "", source.get("clean_text") or "")
+    _emit(real_stdout, {"type": "validation", "ok": validation["ok"], "ratio": validation["ratio"],
+                        "problems": validation["problems"]})
+    if not validation["ok"]:
+        _emit(real_stdout, {"type": "error", "message": "Validação raw↔clean falhou — "
+                            + " ".join(validation["problems"])})
+        return 1
+
+    api_key = get_key(engine["key_name"])
+    if not api_key:
+        _emit(real_stdout, {
+            "type": "error",
+            "message": f"Chave {engine['key_name']} nao configurada. Corre: "
+                       f"python -m transcription.cli set-key --name {engine['key_name']}",
+        })
+        return 1
+
+    def progress(m):
+        _emit(real_stdout, {"type": "progress", "message": str(m)})
+
+    sys.stdout = sys.stderr
+    try:
+        result = engine["run"](source["clean_text"], api_key, profile=profile, log=progress)
+    except Exception as e:  # noqa: BLE001
+        sys.stdout = real_stdout
+        _emit(real_stdout, {"type": "error", "message": str(e)})
+        return 1
+    finally:
+        sys.stdout = real_stdout
+
+    if not result.get("ok"):
+        _emit(real_stdout, {"type": "error", "message": "; ".join(result.get("problems") or ["Falha desconhecida na formatacao."])})
+        return 1
+
+    document = result["document"]
+    usage = result.get("usage", {})
+    doc_id = db.insert_document({
+        "transcription_id": args.transcription_id,
+        "user_id": uid,
+        "engine": args.engine,
+        "profile": profile,
+        "title": document.get("title"),
+        "objective": document.get("objective"),
+        "raw_clean_check_ok": validation["ok"],
+        "blocks": document.get("blocks") or [],
+        "jargon": document.get("jargon") or [],
+        "processing_s": result.get("processing_s"),
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+    }, log=progress)
+
+    _emit(real_stdout, {
+        "type": "format_result",
+        "ok": True,
+        "engine": args.engine,
+        "profile": profile,
+        "document": document,
+        "document_id": doc_id,
+        "saved": doc_id is not None,
+        "processing_s": result.get("processing_s"),
+        "usage": usage,
+    })
     return 0
 
 
@@ -173,13 +376,14 @@ def cmd_transcribe(args):
 
     # Escrita best-effort no Postgres da VPS (cópia fora da máquina + histórico).
     # O ficheiro local já está gravado; se isto falhar, não afeta o resultado.
+    new_transcription_id = None
+    raw_text = None
     try:
         from . import db
-        raw_text = None
         rp = result.get("raw_path")
         if rp and Path(rp).exists():
             raw_text = Path(rp).read_text(encoding="utf-8")
-        db.insert_transcription({
+        new_transcription_id = db.insert_transcription({
             "engine": args.engine,
             "user_id": getattr(args, "user", None),
             "source_filename": Path(file_path).name,
@@ -197,7 +401,102 @@ def cmd_transcribe(args):
     except Exception as e:  # noqa: BLE001 - best-effort, nunca bloquear
         progress(f"DB: passo ignorado ({e})")
 
+    # Formatacao encadeada (ADF-01, decisao 06/08/2026): "a escolha do motor
+    # de formatacao acontece no mesmo momento em que o usuario escolhe o
+    # motor de transcricao... ao executar, o sistema ja roda as duas etapas
+    # em sequencia". Sem --format-engine (ou "none"/"nenhum"), comportamento
+    # idêntico a antes — equivale ao toggle "Formatar depois"/motor "Nenhum".
+    # Falha aqui NUNCA reabre a transcricao como erro: ela ja foi gravada.
+    format_engine_id = getattr(args, "format_engine", None)
+    if result["ok"] and format_engine_id and format_engine_id not in ("none", "nenhum"):
+        _run_chained_formatting(real_stdout, format_engine_id,
+                                getattr(args, "format_profile", None) or "detalhado",
+                                new_transcription_id, getattr(args, "user", None),
+                                raw_text or "", result.get("clean_text") or "")
+
     return 0 if result["ok"] else 2
+
+
+def _run_chained_formatting(real_stdout, format_engine_id, profile, transcription_id, user_id, raw_text, clean_text):
+    """Etapa 2 do fluxo de Transcribe: valida raw<->clean e formata, reaproveitando
+    o texto que acabou de ser gerado (sem reconsultar a base). Emite os mesmos
+    tipos de evento do document-generate, mais "format_error" (falha aqui NAO
+    e' "error" — a transcricao em si ja terminou bem)."""
+    from .formatting import PROFILES
+    from .doc_validation import validate_raw_clean
+
+    def progress(m):
+        _emit(real_stdout, {"type": "progress", "message": str(m)})
+
+    engine = FORMAT_ENGINES.get(format_engine_id)
+    if engine is None:
+        _emit(real_stdout, {"type": "format_error", "message": f"Motor de formatacao desconhecido: {format_engine_id!r}."})
+        return
+    if profile not in PROFILES:
+        profile = "detalhado"
+    if transcription_id is None:
+        _emit(real_stdout, {"type": "format_error", "message": "Transcrição não foi gravada na base — formatação encadeada precisa do ID; use document-generate depois."})
+        return
+
+    validation = validate_raw_clean(raw_text, clean_text)
+    _emit(real_stdout, {"type": "validation", "ok": validation["ok"], "ratio": validation["ratio"],
+                        "problems": validation["problems"]})
+    if not validation["ok"]:
+        _emit(real_stdout, {"type": "format_error", "message": "Validação raw↔clean falhou — "
+                            + " ".join(validation["problems"])})
+        return
+
+    api_key = get_key(engine["key_name"])
+    if not api_key:
+        _emit(real_stdout, {"type": "format_error",
+                            "message": f"Chave {engine['key_name']} nao configurada. Corre: "
+                                       f"python -m transcription.cli set-key --name {engine['key_name']}"})
+        return
+
+    real_out = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        result = engine["run"](clean_text, api_key, profile=profile, log=progress)
+    except Exception as e:  # noqa: BLE001
+        sys.stdout = real_out
+        _emit(real_stdout, {"type": "format_error", "message": str(e)})
+        return
+    finally:
+        sys.stdout = real_out
+
+    if not result.get("ok"):
+        _emit(real_stdout, {"type": "format_error", "message": "; ".join(result.get("problems") or ["Falha desconhecida na formatacao."])})
+        return
+
+    from . import db
+    document = result["document"]
+    usage = result.get("usage", {})
+    doc_id = db.insert_document({
+        "transcription_id": transcription_id,
+        "user_id": user_id,
+        "engine": format_engine_id,
+        "profile": profile,
+        "title": document.get("title"),
+        "objective": document.get("objective"),
+        "raw_clean_check_ok": validation["ok"],
+        "blocks": document.get("blocks") or [],
+        "jargon": document.get("jargon") or [],
+        "processing_s": result.get("processing_s"),
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+    }, log=progress)
+
+    _emit(real_stdout, {
+        "type": "format_result",
+        "ok": True,
+        "engine": format_engine_id,
+        "profile": profile,
+        "document": document,
+        "document_id": doc_id,
+        "saved": doc_id is not None,
+        "processing_s": result.get("processing_s"),
+        "usage": usage,
+    })
 
 
 def cmd_tunnel_keep(args):
@@ -785,8 +1084,10 @@ def cmd_set_settings(args):
 
 def cmd_list_keys(args):
     # Estado de TODAS as chaves numa so chamada (o ecra de Definicoes usa isto
-    # em vez de lancar o Python uma vez por chave).
-    keys = [{"name": k, "key_set": bool(get_key(k))} for k in KNOWN_KEYS]
+    # em vez de lancar o Python uma vez por chave). "purpose" categoriza por
+    # finalidade (transcription/formatting) — decisao de arquitetura
+    # 06/08/2026, campo aditivo e retrocompativel para quem ja consome isto.
+    keys = [{"name": k, "key_set": bool(get_key(k)), "purpose": key_purposes(k)} for k in KNOWN_KEYS]
     _emit(sys.stdout, {"type": "keys", "keys": keys})
     return 0
 
@@ -802,6 +1103,22 @@ def build_parser():
     p_tr.add_argument("--file", required=True, help="Caminho do video/audio a transcrever.")
     p_tr.add_argument("--dest", help="Pasta de destino SO desta transcricao (ficheiros gravados diretamente nela).")
     p_tr.add_argument("--user", type=int, help="ID (pk) da conta da sessao — dono da transcricao.")
+    p_tr.add_argument("--format-engine", dest="format_engine",
+                       help=f"Formata em seguida com este motor: {', '.join(FORMAT_ENGINES)}, ou 'none' pra so transcrever (= 'Formatar depois').")
+    p_tr.add_argument("--format-profile", dest="format_profile", choices=["detalhado", "resumo_tecnico", "estudo"],
+                       help="Perfil de transformacao (so aplica com --format-engine).")
+
+    sub.add_parser("format-engines", help="Lista os motores de formatacao disponiveis (JSON).")
+
+    p_fmt = sub.add_parser("format", help="Formata um transcript clean em documento estruturado (texto por stdin JSON, eventos NDJSON).")
+    p_fmt.add_argument("--engine", required=True, help=f"ID do motor de formatacao: {', '.join(FORMAT_ENGINES)}")
+    p_fmt.add_argument("--profile", choices=["detalhado", "resumo_tecnico", "estudo"], default="detalhado", help="Perfil de transformacao.")
+
+    p_dg = sub.add_parser("document-generate", help="Formatacao retroativa: gera e SALVA um documento estruturado a partir de uma transcricao existente.")
+    p_dg.add_argument("--transcription-id", type=int, required=True, dest="transcription_id", help="ID da transcricao de origem.")
+    p_dg.add_argument("--engine", required=True, help=f"ID do motor de formatacao: {', '.join(FORMAT_ENGINES)}")
+    p_dg.add_argument("--profile", choices=["detalhado", "resumo_tecnico", "estudo"], default="detalhado", help="Perfil de transformacao.")
+    p_dg.add_argument("--user", type=int, help="ID (pk) da conta da sessao — dono da transcricao.")
 
     sub.add_parser("get-settings", help="Definicoes de armazenamento em vigor (JSON).")
 
@@ -910,6 +1227,9 @@ def main(argv=None):
     handlers = {
         "engines": cmd_engines,
         "transcribe": cmd_transcribe,
+        "format-engines": cmd_format_engines,
+        "format": cmd_format,
+        "document-generate": cmd_document_generate,
         "set-key": cmd_set_key,
         "clear-key": cmd_clear_key,
         "check-key": cmd_check_key,

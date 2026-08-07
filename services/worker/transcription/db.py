@@ -61,6 +61,29 @@ CREATE TABLE IF NOT EXISTS transcriptions_history (
 )
 """
 
+# ADF-01: documento estruturado (clean -> blocos), hub-and-spoke por ID,
+# mesmo padrao das transcricoes (decisao de arquitetura 05/08/2026, ver
+# docs/FEATURE_VALIDATION_AND_ROADMAP.md). transcription_id liga ao transcript
+# de origem; blocos/glossario pendurados por FK, exclusao em cascata; delete
+# real e' soft (deleted_at) + snapshot em documents_history, igual ao resto.
+DOCUMENTS_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS documents_history (
+    history_id       bigserial PRIMARY KEY,
+    archived_at      timestamptz NOT NULL DEFAULT now(),
+    change_type      text NOT NULL,
+    original_id      bigint,
+    created_at       timestamptz,
+    transcription_id bigint,
+    engine           text,
+    profile          text,
+    title            text,
+    objective        text,
+    blocks           jsonb,
+    jargon           jsonb,
+    host             text
+)
+"""
+
 # users vive AQUI (não só em accounts.py) porque o hub transcriptions
 # referencia users(id) — a ordem de criação importa. accounts.py reutiliza.
 USERS_DDL = """CREATE TABLE IF NOT EXISTS users (
@@ -171,6 +194,44 @@ SCHEMA_SQL = [
            detected_at timestamptz NOT NULL DEFAULT now()
        )""",
     HISTORY_DDL,
+    """CREATE TABLE IF NOT EXISTS structured_documents (
+           id bigserial PRIMARY KEY,
+           created_at timestamptz NOT NULL DEFAULT now(),
+           edited_at timestamptz,
+           deleted_at timestamptz,
+           transcription_id bigint REFERENCES transcriptions(id) ON DELETE CASCADE,
+           user_id bigint REFERENCES users(id),
+           engine_id smallint REFERENCES engines(id),
+           profile text NOT NULL DEFAULT 'detalhado',
+           title text,
+           objective text,
+           raw_clean_check_ok boolean,
+           host text
+       )""",
+    """CREATE TABLE IF NOT EXISTS document_blocks (
+           id bigserial PRIMARY KEY,
+           document_id bigint REFERENCES structured_documents(id) ON DELETE CASCADE,
+           block_key text NOT NULL,
+           position integer NOT NULL,
+           block_type text NOT NULL,
+           heading text,
+           content text,
+           speaker text,
+           block_timestamp text
+       )""",
+    """CREATE TABLE IF NOT EXISTS document_glossary (
+           id bigserial PRIMARY KEY,
+           document_id bigint REFERENCES structured_documents(id) ON DELETE CASCADE,
+           term text NOT NULL,
+           meaning text
+       )""",
+    """CREATE TABLE IF NOT EXISTS document_metrics (
+           document_id bigint PRIMARY KEY REFERENCES structured_documents(id) ON DELETE CASCADE,
+           processing_s numeric,
+           input_tokens integer,
+           output_tokens integer
+       )""",
+    DOCUMENTS_HISTORY_DDL,
 ]
 
 ENGINE_SEED = [
@@ -178,6 +239,19 @@ ENGINE_SEED = [
     ("whisper_openai", "whisper-1 (OpenAI)", False),
     ("deepgram", "Deepgram Nova-3", False),
     ("gpt4o_openai", "gpt-4o-transcribe (OpenAI)", False),
+]
+# Motores de FORMATACAO (clean -> documento), dimensao PARTILHADA com os de
+# transcricao (mesma tabela `engines` — so um lookup code->label->id; ver
+# coluna `kind` adicionada em _ensure_document_columns). Mantido como lista
+# estatica aqui (nao importa registry.py) para nao acoplar db.py ao SDK de
+# cada provedor so para escrever no banco.
+FORMAT_ENGINE_SEED = [
+    ("deepseek", "DeepSeek (deepseek-v4-flash)"),
+    ("grok", "Grok (grok-4-fast)"),
+    ("gpt5_mini", "OpenAI (gpt-5-mini)"),
+    ("claude_haiku", "Claude Haiku 4.5"),
+    ("gemini", "Gemini (gemini-3.6-flash)"),
+    ("claude_sonnet", "Claude Sonnet 5"),
 ]
 SERVICE_TYPE_SEED = [("file", "Ficheiro (áudio/vídeo)")]
 REASON_SEED = [
@@ -222,8 +296,48 @@ WHERE t.id = %s
 """
 
 
+# Snapshot do documento (hub+blocos+glossario) para o historico flat, antes
+# de editar/apagar. blocks/jargon vao agregados (mesma logica de "problems"
+# em SNAPSHOT_JOIN, so que dois agregados em vez de um).
+DOC_SNAPSHOT_JOIN = """
+INSERT INTO documents_history
+(change_type, original_id, created_at, transcription_id, engine, profile, title, objective, blocks, jargon, host)
+SELECT %s, d.id, d.created_at, d.transcription_id, e.code, d.profile, d.title, d.objective,
+ (SELECT jsonb_agg(jsonb_build_object('block_key', b.block_key, 'type', b.block_type,
+    'heading', b.heading, 'content', b.content, 'speaker', b.speaker, 'timestamp', b.block_timestamp)
+    ORDER BY b.position) FROM document_blocks b WHERE b.document_id = d.id),
+ (SELECT jsonb_agg(jsonb_build_object('term', g.term, 'meaning', g.meaning) ORDER BY g.id)
+    FROM document_glossary g WHERE g.document_id = d.id),
+ d.host
+FROM structured_documents d
+LEFT JOIN engines e ON e.id = d.engine_id
+WHERE d.id = %s
+"""
+
+# Variante SQLite: sem jsonb_build_object/jsonb_agg — monta um JSON de texto
+# simples (json_group_array + json_object) equivalente.
+DOC_SNAPSHOT_JOIN_SQLITE = """
+INSERT INTO documents_history
+(change_type, original_id, created_at, transcription_id, engine, profile, title, objective, blocks, jargon, host)
+SELECT %s, d.id, d.created_at, d.transcription_id, e.code, d.profile, d.title, d.objective,
+ (SELECT json_group_array(json_object('block_key', block_key, 'type', block_type,
+    'heading', heading, 'content', content, 'speaker', speaker, 'timestamp', block_timestamp)) FROM (
+    SELECT * FROM document_blocks WHERE document_id = d.id ORDER BY position)),
+ (SELECT json_group_array(json_object('term', term, 'meaning', meaning)) FROM (
+    SELECT * FROM document_glossary WHERE document_id = d.id ORDER BY id)),
+ d.host
+FROM structured_documents d
+LEFT JOIN engines e ON e.id = d.engine_id
+WHERE d.id = %s
+"""
+
+
 def _snapshot_sql():
     return SNAPSHOT_JOIN_SQLITE if storage_mode() == "local" else SNAPSHOT_JOIN
+
+
+def _doc_snapshot_sql():
+    return DOC_SNAPSHOT_JOIN_SQLITE if storage_mode() == "local" else DOC_SNAPSHOT_JOIN
 
 
 def _iso(v):
@@ -547,12 +661,17 @@ def _has_column(cur, table, column):
 def _ensure_owner_column(conn):
     """Migrações idempotentes de colunas em bases pré-existentes:
     - user_id no hub (isolamento por utilizador, 2026-07-19);
-    - trio de datas (padrão de dados, 2026-07-19) onde falta."""
+    - trio de datas (padrão de dados, 2026-07-19) onde falta;
+    - kind em engines (ADF-01, 06/08/2026): distingue motor de transcrição
+      (áudio->texto) de motor de formatação (clean->documento), na MESMA
+      tabela dimensão — so' um lookup code/label, nao justifica duplicar."""
     with conn.cursor() as cur:
         if not _has_column(cur, "transcriptions", "user_id"):
             cur.execute("ALTER TABLE transcriptions ADD COLUMN user_id bigint REFERENCES users(id)")
         if not _has_column(cur, "users", "deleted_at"):
             cur.execute("ALTER TABLE users ADD COLUMN deleted_at timestamptz")
+        if not _has_column(cur, "engines", "kind"):
+            cur.execute("ALTER TABLE engines ADD COLUMN kind text NOT NULL DEFAULT 'transcription'")
 
 
 _ensured_modes = set()
@@ -573,9 +692,15 @@ def ensure_schema(conn):
     with conn.cursor() as cur:
         for code, label, primary in ENGINE_SEED:
             cur.execute(
-                "INSERT INTO engines (code, label, is_primary) VALUES (%s,%s,%s) "
+                "INSERT INTO engines (code, label, is_primary, kind) VALUES (%s,%s,%s,'transcription') "
                 "ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label, is_primary = EXCLUDED.is_primary",
                 (code, label, primary),
+            )
+        for code, label in FORMAT_ENGINE_SEED:
+            cur.execute(
+                "INSERT INTO engines (code, label, is_primary, kind) VALUES (%s,%s,false,'formatting') "
+                "ON CONFLICT (code) DO UPDATE SET label = EXCLUDED.label, kind = EXCLUDED.kind",
+                (code, label),
             )
         for code, label in SERVICE_TYPE_SEED:
             cur.execute(
@@ -1030,6 +1155,153 @@ def insert_transcription(record, log=print):
     except Exception as e:  # noqa: BLE001 - best-effort, reportar e seguir
         log(f"DB: não gravou na base ({e}) — ficheiro local está seguro; sincroniza depois.")
         return None
+    finally:
+        close_connection(conn)
+
+
+# --------------------------------------------------------------------------
+# ADF-01 — documento estruturado (clean -> blocos). Mesmo padrao de dono/
+# admin de transcriptions (_actor), soft-delete + snapshot em documents_history.
+# --------------------------------------------------------------------------
+
+def get_transcript_raw_clean(transcription_id, user_id=None, admin_verified=False):
+    """Fonte para o gate raw<->clean + formatacao: texto raw/clean de uma
+    transcricao existente (fluxo de formatacao retroativa, Library/edicao).
+    Devolve None se nao existir ou nao pertencer ao utilizador."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            cur.execute(
+                "SELECT t.source_filename, t.language, x.raw_text, x.clean_text "
+                "FROM transcriptions t LEFT JOIN transcript_texts x ON x.transcription_id = t.id "
+                f"WHERE t.id = %s AND t.deleted_at IS NULL{own_sql}",
+                [int(transcription_id)] + own_params,
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {"source_filename": row[0], "language": row[1], "raw_text": row[2], "clean_text": row[3]}
+    finally:
+        close_connection(conn)
+
+
+def insert_document(record, log=print):
+    """Persiste um documento estruturado gerado (hub + blocos + glossario +
+    metricas). best-effort: devolve o id inserido ou None; nunca levanta.
+    record = {transcription_id, user_id, engine, profile, title, objective,
+              raw_clean_check_ok, blocks: [...], jargon: [...],
+              processing_s, input_tokens, output_tokens}"""
+    conn = None
+    try:
+        conn = connect()
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            eng_id = _engine_id(cur, record.get("engine"))
+            tid = record.get("transcription_id")
+            owner = record.get("user_id")
+            cur.execute(
+                "INSERT INTO structured_documents "
+                "(transcription_id, user_id, engine_id, profile, title, objective, raw_clean_check_ok, host) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                (int(tid) if tid is not None else None, int(owner) if owner is not None else None,
+                 eng_id, record.get("profile") or "detalhado", record.get("title"),
+                 record.get("objective"), record.get("raw_clean_check_ok"),
+                 record.get("host") or socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+            for i, block in enumerate(record.get("blocks") or []):
+                content = block.get("content")
+                if isinstance(content, (list, dict)):
+                    content = json.dumps(content, ensure_ascii=False)
+                cur.execute(
+                    "INSERT INTO document_blocks "
+                    "(document_id, block_key, position, block_type, heading, content, speaker, block_timestamp) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (new_id, block.get("id") or f"b{i + 1}", i, block.get("type") or "section",
+                     block.get("heading"), content, block.get("speaker"), block.get("timestamp")),
+                )
+            for jg in (record.get("jargon") or []):
+                cur.execute(
+                    "INSERT INTO document_glossary (document_id, term, meaning) VALUES (%s,%s,%s)",
+                    (new_id, jg.get("term"), jg.get("meaning")),
+                )
+            cur.execute(
+                "INSERT INTO document_metrics (document_id, processing_s, input_tokens, output_tokens) "
+                "VALUES (%s,%s,%s,%s)",
+                (new_id, record.get("processing_s"), record.get("input_tokens"), record.get("output_tokens")),
+            )
+        conn.commit()
+        where = "na base local (SQLite)" if storage_mode() == "local" else "no Postgres da VPS"
+        log(f"DB: documento #{new_id} gravado {where}.")
+        return new_id
+    except Exception as e:  # noqa: BLE001 - best-effort, reportar e seguir
+        log(f"DB: não gravou o documento ({e}).")
+        return None
+    finally:
+        close_connection(conn)
+
+
+def document_item(doc_id, user_id=None, admin_verified=False):
+    """Um documento completo (hub + blocos ordenados + glossario + metricas).
+    Mesmo isolamento por dono/admin que library_item."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            # _actor filtra por "t.user_id" (pensado p/ transcriptions); aqui a
+            # tabela e' "d" — troca o prefixo do filtro pra bater com o alias.
+            own_sql_d = own_sql.replace("t.user_id", "d.user_id")
+            cur.execute(
+                "SELECT d.id, d.created_at, d.edited_at, d.transcription_id, e.code AS engine, "
+                "d.profile, d.title, d.objective, d.raw_clean_check_ok, "
+                "m.processing_s, m.input_tokens, m.output_tokens "
+                "FROM structured_documents d "
+                "LEFT JOIN engines e ON e.id = d.engine_id "
+                "LEFT JOIN document_metrics m ON m.document_id = d.id "
+                f"WHERE d.id = %s AND d.deleted_at IS NULL{own_sql_d}",
+                [int(doc_id)] + own_params,
+            )
+            rows = _rows_to_dicts(cur)
+            if not rows:
+                return None
+            doc = rows[0]
+            cur.execute(
+                "SELECT block_key, block_type, heading, content, speaker, block_timestamp "
+                "FROM document_blocks WHERE document_id = %s ORDER BY position",
+                (int(doc_id),),
+            )
+            doc["blocks"] = _rows_to_dicts(cur)
+            cur.execute(
+                "SELECT term, meaning FROM document_glossary WHERE document_id = %s ORDER BY id",
+                (int(doc_id),),
+            )
+            doc["jargon"] = _rows_to_dicts(cur)
+        doc["created_at"] = _iso(doc["created_at"])
+        doc["edited_at"] = _iso(doc["edited_at"])
+        return doc
+    finally:
+        close_connection(conn)
+
+
+def delete_document(doc_id, user_id=None, admin_verified=False):
+    """Soft-delete: snapshot em documents_history + deleted_at. Só o dono ou admin."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_d = own_sql.replace("t.user_id", "d.user_id")
+            cur.execute(f"SELECT 1 FROM structured_documents d WHERE d.id = %s AND d.deleted_at IS NULL{own_sql_d}",
+                        [int(doc_id)] + own_params)
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(_doc_snapshot_sql(), ("delete", int(doc_id)))
+            cur.execute("UPDATE structured_documents SET deleted_at = now() WHERE id = %s", (int(doc_id),))
+        conn.commit()
+        return {"ok": True}
     finally:
         close_connection(conn)
 

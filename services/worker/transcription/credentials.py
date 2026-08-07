@@ -8,7 +8,30 @@ import keyring
 
 SERVICE_NAME = "UpexNote"
 
-KNOWN_KEYS = ["ASSEMBLYAI_API_KEY", "OPENAI_API_KEY", "DEEPGRAM_API_KEY", "UPEXNOTE_PG_PASSWORD", "UPEXNOTE_SUPPORT_CLIENT_SECRET"]
+KNOWN_KEYS = [
+    "ASSEMBLYAI_API_KEY", "OPENAI_API_KEY", "DEEPGRAM_API_KEY",
+    "DEEPSEEK_API_KEY", "GROK_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+    "UPEXNOTE_PG_PASSWORD", "UPEXNOTE_SUPPORT_CLIENT_SECRET",
+]
+
+# Categorizacao por finalidade (decisao de arquitetura 06/08/2026,
+# FEATURE_VALIDATION_AND_ROADMAP.md, ADF-01): a tela de chaves deve mostrar
+# pra que serve cada uma, nao so o fornecedor. Um fornecedor pode aparecer
+# nas duas listas se suportar as duas funcoes (nenhum caso ainda hoje).
+# Chaves fora deste dict (ex.: UPEXNOTE_PG_PASSWORD) nao sao motor de IA.
+KEY_PURPOSES = {
+    "ASSEMBLYAI_API_KEY": ["transcription"],
+    "DEEPGRAM_API_KEY": ["transcription"],
+    "OPENAI_API_KEY": ["transcription", "formatting"],
+    "DEEPSEEK_API_KEY": ["formatting"],
+    "GROK_API_KEY": ["formatting"],
+    "ANTHROPIC_API_KEY": ["formatting"],
+    "GEMINI_API_KEY": ["formatting"],
+}
+
+
+def key_purposes(name: str) -> list:
+    return KEY_PURPOSES.get(name, [])
 
 
 def get_key(name: str) -> str:
