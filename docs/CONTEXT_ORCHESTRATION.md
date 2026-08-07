@@ -333,6 +333,35 @@ Durante a implementação:
 - validar técnica, visual e funcionalmente conforme a natureza da frente;
 - não promover uma feature antes de comprová-la.
 
+### 9.1. Protocolo obrigatório de renderização documental
+
+Sempre que a tarefa envolver ler visualmente, revisar, criar ou editar `DOCX`, `PDF` ou outro documento paginado, a extração de texto não substitui a renderização. A IA deve validar o artefato final como páginas visuais e não pode afirmar que leu ou revisou integralmente o documento quando apenas extraiu seu texto, recebeu snippets ou não conseguiu processar as imagens incorporadas.
+
+Fluxo obrigatório:
+
+1. verificar as ferramentas realmente disponíveis no ambiente antes de escolher o pipeline;
+2. para `DOCX`, priorizar LibreOffice em modo headless para produzir PDF;
+3. para PDF, usar Poppler ou ferramenta equivalente para gerar uma imagem por página;
+4. conferir se a quantidade de páginas renderizadas corresponde à quantidade esperada;
+5. inspecionar visualmente todas as páginas, em lotes quando necessário, incluindo imagens, tabelas, diagramas, cabeçalhos, rodapés, cortes, sobreposições e páginas em branco inesperadas;
+6. depois de qualquer edição, repetir a conversão e a revisão visual completa;
+7. se uma etapa falhar, diagnosticar executável, `PATH`, permissões, diretório temporário, URI do perfil, fontes e imagens antes de trocar silenciosamente por leitura textual;
+8. quando o ambiente não possuir capacidade de renderização, declarar a limitação de forma explícita e não certificar fidelidade visual nem leitura integral das imagens.
+
+Configuração local conhecida nesta máquina Windows:
+
+```text
+LibreOffice/soffice:
+C:\Users\cunha\AppData\Local\Programs\LibreOfficeCodex\program\soffice.exe
+
+Poppler (pdfinfo/pdftoppm):
+C:\Users\cunha\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\poppler\Library\bin
+```
+
+Esses caminhos devem ser verificados, não presumidos em outros ambientes. Se `soffice` ou as ferramentas do Poppler não forem resolvidos pelo `PATH`, adicionar os diretórios acima ao `PATH` do processo atual antes de renderizar. Em ambientes cloud, localizar os equivalentes instalados; se não existirem, registrar a ausência e usar uma alternativa capaz de preservar páginas e imagens, sem reduzir a validação a texto extraído.
+
+No Windows, o perfil temporário do LibreOffice deve ser passado como URI de arquivo válida, por exemplo `file:///C:/caminho/perfil`. Não concatenar `file://` diretamente com um caminho nativo como `C:\...`; converter o caminho com mecanismo equivalente a `Path(...).resolve().as_uri()`.
+
 ---
 
 ## 10. Caminho de retorno documental
@@ -410,6 +439,7 @@ Quando os documentos pessoais forem anexados diretamente à conversa, a mesma or
 - [ ] Divergências registradas.
 - [ ] Estado entregue separado de backlog e exploração.
 - [ ] Escopo e autorização confirmados.
+- [ ] Para tarefas documentais, capacidade de renderização visual e caminhos de LibreOffice/Poppler verificados.
 
 ---
 
@@ -424,6 +454,7 @@ Quando os documentos pessoais forem anexados diretamente à conversa, a mesma or
 - [ ] Nenhum conteúdo pessoal ou sensível copiado indevidamente para o repositório.
 - [ ] Próxima sessão consegue identificar quais versões contextuais foram usadas.
 - [ ] Próxima sessão consegue retomar pelo mesmo ponto único de entrada.
+- [ ] Documentos paginados alterados foram renderizados novamente e todas as páginas foram revisadas visualmente.
 
 ---
 
