@@ -1036,8 +1036,25 @@ def library_item(item_id, user_id=None, admin_verified=False):
                 (int(item_id),),
             )
             it["problems"] = [r[0] for r in cur.fetchall()]
+            # Documentos estruturados ja gerados a partir deste transcript
+            # (ADF-01). Pendurado aqui, como os "problems", em vez de um
+            # comando proprio: a tela de detalhe ja chama library_item, entao
+            # o botao "Formatar" sabe na hora se ha documento para abrir sem
+            # pagar uma segunda ida ao worker pelo tunel. Aditivo — quem lia
+            # library_item antes continua a funcionar.
+            cur.execute(
+                "SELECT d.id, d.profile, d.title, d.created_at, e.code AS engine "
+                "FROM documents.structured_documents d "
+                "LEFT JOIN engines e ON e.id = d.engine_id "
+                "WHERE d.transcription_id = %s AND d.deleted_at IS NULL "
+                "ORDER BY d.id DESC",
+                (int(item_id),),
+            )
+            it["documents"] = _rows_to_dicts(cur)
         it["created_at"] = _iso(it["created_at"])
         it["edited_at"] = _iso(it["edited_at"])
+        for d in it.get("documents") or []:
+            d["created_at"] = _iso(d["created_at"])
         for k in ("duration_s", "cost_usd", "processing_s"):
             it[k] = float(it[k]) if it[k] is not None else None
         return it
