@@ -24,7 +24,8 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 8 de agosto de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versão desktop é **v0.29.0**. Instalador local: `UpexNote_0.29.0_x64-setup.exe` (57.791.920 bytes; SHA-256 `1B2E6B95C6CC7768A71BCBDF42A6D7C6DC84D039F0EE8055EDE7D525A3C7F4AB`).
+- A versão desktop é **v0.29.0**. Instalador válido: `UpexNote_0.29.0_x64-setup.exe` (58.410.023 bytes; SHA-256 `A0F52AA1D589959EFBE2186CD6E04328E2EE8C6ED0AC370A80A38E4CF7465023`), gerado em 08/08/2026 às 14:33 **depois** de reempacotar o worker.
+- ⚠ Um primeiro instalador de 0.29.0 (57.791.920 bytes; SHA-256 `1B2E6B95…F4AB`) foi gerado sem reempacotar o worker e **não deve ser usado**: levava dentro o `upexnote-worker.exe` de 25/07, sem o backend do ADF-01 e sem o campo `documents` do `library_item`. Ver a regra de build no Registro 2026-08-08.
 - A v0.29.0 é a primeira versão com superfície visual do ADF-01: a ponte Rust para os comandos de documento e o leitor de documento estruturado em só leitura. A geração pela interface (botão `Formatar`) ainda não existe — ver Registro 2026-08-08 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
@@ -444,7 +445,17 @@ Ao trabalhar neste projeto, uma IA deve:
 - `cargo check` aprovado na máquina do utilizador em 56,47s, sem erros nem avisos.
 - `tsc --noEmit` exit 0 e `vite build` verdes. Como o `i18n.ts` é tipado, o `tsc` é a prova de que nenhuma das 29 chaves novas falta em PT, EN ou ES.
 - Build final: `npm.cmd run tauri build` com 2102 módulos transformados, Rust release em 1m33s e NSIS concluído. Único aviso é o do linker (`upexnote_lib.dll.lib`), benigno e já conhecido.
-- Instalador `UpexNote_0.29.0_x64-setup.exe`: 57.791.920 bytes; SHA-256 `1B2E6B95C6CC7768A71BCBDF42A6D7C6DC84D039F0EE8055EDE7D525A3C7F4AB`.
+- Instalador válido `UpexNote_0.29.0_x64-setup.exe`: 58.410.023 bytes; SHA-256 `A0F52AA1D589959EFBE2186CD6E04328E2EE8C6ED0AC370A80A38E4CF7465023`. Worker empacotado de 08/08/2026 14:27, 14.113.892 bytes.
+- **⚠ REGRA DE BUILD, aprendida a duro em 08/08/2026:** `npm run tauri build` **não** reempacota o worker Python. O `tauri.conf.json` inclui a pasta `worker` como resource, mas quem a gera é o `services/worker/build_worker.ps1` (PyInstaller). O primeiro build da 0.29.0 saiu com o worker de 25/07 e a funcionalidade simplesmente não aparecia na app — **o sintoma é silencioso: nada falha, nada dá erro, a feature apenas não existe**. Toda fatia que toque em `services/worker/` exige, nesta ordem:
+
+```powershell
+cd services\worker
+powershell -ExecutionPolicy Bypass -File .\build_worker.ps1
+cd ..\..\apps\desktop
+npm.cmd run tauri build
+```
+
+  Verificação rápida antes de instalar: a data de `apps/desktop/src-tauri/worker/upexnote-worker.exe` tem de ser do próprio build, não anterior. (`npm.cmd` e `-ExecutionPolicy Bypass -File` são necessários porque a política de execução do PowerShell bloqueia `.ps1`; nenhum dos dois altera configuração do sistema.)
 
 ### Decisão
 - O leitor nasce em só leitura de propósito: é o menor passo que entrega valor e valida o contrato de blocos na prática, antes de investir no editor da ADF-02, que cresce por cima desta vista e não ao lado dela.
@@ -456,9 +467,12 @@ Ao trabalhar neste projeto, uma IA deve:
 - Nenhuma chamada paga: o leitor apenas lê o que já foi gerado e persistido. Nenhum conteúdo sai da máquina.
 - O documento continua a ser camada derivada; o raw permanece intocado, conforme o princípio §4.1.
 
-### Próximo passo
-- **Validação visual pendente.** Instalar a v0.29.0, abrir um transcript com documento gerado nos testes de 07/08 e confirmar a faixa e o desenho dos blocos contra `docs/UX_PRODUCT_STANDARD.md`. Até lá a frente fica `Delivered`, não `Validated`.
-- **Risco conhecido a confirmar nessa validação:** o contrato foi provado em SQLite; contra o Postgres falta confirmar o join entre schemas de `documents.structured_documents` com `engines`, que ficou em `public`. Se a faixa não aparecer estando em modo VPS, o problema é esse join e não o leitor.
+### Próximo passo — PENDENTE, ler antes de continuar
+- **Validação visual por fazer.** Instalar o instalador VÁLIDO (58.410.023 bytes) e abrir a Biblioteca no transcript **#23**, que tem o documento **#9** ("Onboarding e Orientação da Comunidade Classe A"). Confirmar que a faixa `Documentos gerados` aparece abaixo dos badges e que o leitor desenha blocos e glossário. Validar contra `docs/UX_PRODUCT_STANDARD.md`. Até lá a frente é `Delivered`, **não** `Validated`.
+- **Já confirmado contra o Postgres real (08/08/2026, via Data Studio):** `documents.structured_documents` tem 9 linhas — documentos 1 a 8 no transcript #21 e documento 9 no #23. Portanto o schema e os dados estão lá e a dúvida sobre o join entre schemas deixa de ser a hipótese principal. Nota: os contadores do Explorer do Data Studio mostravam `structured_documents` a 0 — são estimativas do Postgres, não contagens; não confiar neles.
+- **Se a faixa continuar a não aparecer** com o instalador válido, aí sim o suspeito é a query nova dentro de `db.library_item` contra o Postgres, e não o leitor.
+- **Também pendente:** escrever no `docs/UX_PRODUCT_STANDARD.md` os dois padrões novos que esta fatia criou e que ele ainda não descreve — o nível de navegação `detalhe → artefacto derivado`, com voltar para a origem, e os componentes da faixa de chips e dos pares campo/valor que empilham em janela estreita. Deliberadamente não escrito antes da validação visual, para não canonizar um layout por confirmar.
+- Depois: pontos 2 e 4 do passo 2 — botão `Formatar` com os perfis, eventos de progresso, e motor padrão em Configurações com popup de primeira vez.
 - Depois: pontos 2 e 4 do passo 2 — botão `Formatar` com os perfis, eventos de progresso, e motor padrão em Configurações com popup de primeira vez.
 
 

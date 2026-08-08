@@ -451,6 +451,8 @@ Todos os seis extraíram corretamente a história principal (tabela de taxas, pr
 
 **Pendente antes de codar (RESOLVIDO 07/08/2026):** a preocupação com limite/quota por execução deixou de se aplicar — decisão fechada de não fazer chunking/fragmentação nesta etapa; transcripts reais testados (~5 a ~20 min) ficam muito abaixo da janela de contexto de qualquer um dos 6 provedores. Sem chunking, sem necessidade de checar rate limit por enquanto.
 
+**Disciplina de build (08/08/2026):** `npm run tauri build` NÃO reempacota o worker Python. Se a fatia tocar em `services/worker/`, correr primeiro `powershell -ExecutionPolicy Bypass -File services\worker\build_worker.ps1` e só depois `npm.cmd run tauri build`. Esquecer produz um instalador com backend antigo cujo sintoma é silencioso: nada falha, a funcionalidade apenas não aparece na app. Conferir a data de `apps/desktop/src-tauri/worker/upexnote-worker.exe` antes de instalar.
+
 **Disciplina de entrega:** implementar em fatias pequenas — uma ou duas funcionalidades complementares por vez, build, versão nova, commit e push, seguindo o mesmo padrão incremental já visível no histórico do `PROJECT_CONTEXT.md`. Não acumular funcionalidades grandes numa única versão não lançada.
 
 **Passo 1 entregue (07/08/2026) — backend do worker, commit `0929d66`:**
