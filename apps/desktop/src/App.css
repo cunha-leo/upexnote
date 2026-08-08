@@ -1709,3 +1709,91 @@ input[type="range"] {
 @media (max-width: 980px) { .ds-layout { grid-template-columns: 210px minmax(0, 1fr); } .ds-filterbar { grid-template-columns: auto 1fr 1fr; } .ds-filterbar input { grid-column: 2 / 4; } .ds-filterbar button { grid-column: 3; } }
 @media (max-width: 1100px) { .ds-join-row, .ds-condition-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ds-join-row > button, .ds-condition-row > button { justify-self: end; } }
 @media (max-width: 700px) { .ds-layout { grid-template-columns: 1fr; } .ds-explorer { max-height: 270px; border-right: 0; border-bottom: 1px solid var(--border); } }
+
+/* ==========================================================================
+   Leitor de documento estruturado (ADF-01, passo 2) — só leitura.
+   Usa apenas tokens já existentes: o leitor herda os 12 temas, a densidade,
+   a tipografia e o zoom sem definir cor própria nenhuma.
+   ========================================================================== */
+
+/* Faixa no detalhe do transcript com os documentos já gerados */
+.doc-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 10px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm, 7px);
+  background: var(--accent-soft);
+}
+.doc-strip-label {
+  font-size: .78em; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); font-weight: 600;
+}
+.doc-chip { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Cabeçalho do leitor */
+.doc-reader .doc-title {
+  margin: 0; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Objetivo em destaque */
+.doc-objective {
+  display: flex; gap: 10px; align-items: flex-start;
+  margin-top: 14px; padding: 12px 14px;
+  border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm, 7px); background: var(--accent-soft);
+}
+.doc-objective-label {
+  font-size: .78em; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); font-weight: 600; margin-bottom: 2px;
+}
+
+/* Corpo: blocos */
+.doc-body { margin-top: 16px; display: flex; flex-direction: column; gap: 14px; }
+.doc-empty { padding: 24px 0; text-align: center; }
+
+.doc-block {
+  border: 1px solid var(--border); border-radius: var(--radius-sm, 7px);
+  padding: 12px 14px;
+}
+.doc-block-head { display: flex; align-items: center; gap: 8px; }
+.doc-block-head h3 { margin: 0; font-size: 1em; flex: 1; min-width: 0; }
+.doc-type-tag {
+  font-size: .72em; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 8px; white-space: nowrap;
+}
+.doc-block-meta {
+  display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px;
+  font-size: .82em; color: var(--muted);
+}
+.doc-block-meta span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Tipos com leitura própria, sem sair da paleta do tema */
+.doc-block-risk { border-left: 3px solid var(--danger); }
+.doc-block-decision { border-left: 3px solid var(--accent); }
+.doc-block-action { border-left: 3px solid var(--accent); }
+.doc-block-excerpt { border-left: 3px solid var(--border); background: var(--accent-soft); }
+.doc-block-excerpt .doc-para { font-style: italic; }
+
+.doc-para { margin: 8px 0 0; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.doc-list { margin: 8px 0 0; padding-left: 20px; }
+.doc-list li { margin: 3px 0; line-height: 1.5; }
+.doc-cards { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+
+/* Pares campo/valor — usado por blocos de conteúdo estruturado e pelo glossário */
+.doc-fields { margin: 8px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.doc-field { display: grid; grid-template-columns: minmax(90px, 22%) 1fr; gap: 10px; }
+.doc-field dt { font-weight: 600; color: var(--muted); word-break: break-word; }
+.doc-field dd { margin: 0; word-break: break-word; }
+
+/* Glossário */
+.doc-glossary { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.doc-glossary h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 1em; }
+
+.doc-foot { margin-top: 18px; font-size: .84em; }
+
+/* Janela estreita: os pares passam a empilhar em vez de espremer a coluna */
+@media (max-width: 820px) {
+  .doc-field { grid-template-columns: 1fr; gap: 2px; }
+  .doc-chip { max-width: 200px; }
+}

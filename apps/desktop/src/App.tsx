@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import ErDiagram, { type ErScope } from "./ErDiagram";
+import DocumentReader, { type DocDetail, type DocRef } from "./DocumentReader";
 import FONTS from "./fonts.json";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./App.css";
@@ -418,7 +419,12 @@ type LibSummary = {
   last_at: string | null;
   by_engine: LibEngine[];
 };
-type LibDetail = LibItem & { source_path: string | null; problems: string[]; clean_text: string; edited_at: string | null };
+type LibDetail = LibItem & {
+  source_path: string | null; problems: string[]; clean_text: string; edited_at: string | null;
+  // ADF-01: documentos estruturados ja gerados a partir deste transcript.
+  // Vem de library_item (aditivo) — instalacoes antigas podem nao trazer.
+  documents?: DocRef[];
+};
 
 const ENGINE_LABELS: Record<string, string> = {
   assemblyai: "AssemblyAI",
@@ -667,6 +673,8 @@ function LibraryView({ active }: { active: boolean }) {
   const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<LibDetail | null>(null);
   const [openingId, setOpeningId] = useState<number | null>(null);
+  const [docDetail, setDocDetail] = useState<DocDetail | null>(null);
+  const [openingDocId, setOpeningDocId] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -740,7 +748,29 @@ function LibraryView({ active }: { active: boolean }) {
     setActionMsg("");
   }
 
+  /** Abre um documento estruturado ja gerado (so leitura, ADF-01 passo 2). */
+  async function openDocument(id: number) {
+    setOpeningDocId(id);
+    setActionMsg("");
+    try {
+      const raw = await invoke<string>("document_item", {
+        id, user: getSession()?.id ?? null, ...adminProof(),
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "document_item") {
+        setDocDetail(obj.item as DocDetail);
+      } else {
+        setError(obj.message || t("docOpenFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setOpeningDocId(null);
+    }
+  }
+
   async function openItem(id: number) {
+    setDocDetail(null);
     setOpeningId(id);
     setActionMsg("");
     try {
@@ -849,6 +879,21 @@ function LibraryView({ active }: { active: boolean }) {
     });
   }
 
+  // Vista do documento estruturado (so leitura) — tem precedencia sobre o
+  // detalhe do transcript, e o "voltar" dela devolve ao transcript de origem.
+  if (detail && docDetail) {
+    return (
+      <DocumentReader
+        doc={docDetail}
+        t={t}
+        locale={locale}
+        onBack={() => setDocDetail(null)}
+        engineLabel={engLabel}
+        fmtDate={fmtDate}
+      />
+    );
+  }
+
   // Vista de detalhe (uma transcrição, com texto)
   if (detail) {
     return (
@@ -914,6 +959,22 @@ function LibraryView({ active }: { active: boolean }) {
             </span>
           )}
         </div>
+        {detail.documents && detail.documents.length > 0 && (
+          <div className="doc-strip">
+            <span className="doc-strip-label">{t("docsOnTranscript")}</span>
+            {detail.documents.map((d) => (
+              <button
+                key={d.id}
+                className="secondary doc-chip"
+                onClick={() => openDocument(d.id)}
+                disabled={openingDocId !== null}
+                title={d.title || undefined}
+              >
+                {openingDocId === d.id ? t("docOpening") : (d.title || t("docTitleFallback", { id: d.id }))}
+              </button>
+            ))}
+          </div>
+        )}
         {!detail.validation_ok && showWarnings && (
           <div className="warnings-panel">
             {detail.problems && detail.problems.length > 0 ? (
