@@ -467,13 +467,20 @@ Todos os seis extraíram corretamente a história principal (tabela de taxas, pr
 **Passo 2 — próxima fatia (planeada 07/08/2026, ainda não iniciada).** Objetivo: tornar visível na app o que o passo 1 já produz no banco. Ordem proposta, mantendo a disciplina de fatias pequenas:
 
 1. **Ponte Rust → worker.** `apps/desktop/src-tauri/src/main.rs` já embrulha os comandos `library*` do worker; falta o mesmo para `format-engines`, `document-generate`, `document-item` e `document-delete`. Mesmo padrão dos existentes: `async` via `spawn_blocking` (ver Correção v0.5.1 no `PROJECT_CONTEXT.md` — comando síncrono congela a janela inteira).
-2. **Botões de entrada.** Na Biblioteca (detalhe do transcript) e no fim da tela de Transcribe: "Documento formatado" e "Estudo", cada um com a frase de incentivo por baixo (decisão de 05/08/2026; espírito visual do aviso de Drive/OneDrive). Ícones Lucide, nunca emojis. Textos nos três idiomas em `i18n.ts` (dicionário tipado — falta de chave é erro de compilação).
+2. **Botão de entrada.** Na Biblioteca (detalhe do transcript) e no fim da tela de Transcribe: um único botão **"Formatar"**, com os perfis dentro dele (ver decisão fechada em 08/08/2026 abaixo). "Estudo" é um dos perfis, não um botão irmão. Frase de incentivo por baixo do botão (decisão de 05/08/2026; espírito visual do aviso de Drive/OneDrive). Ícones Lucide, nunca emojis. Textos nos três idiomas em `i18n.ts` (dicionário tipado — falta de chave é erro de compilação).
 3. **Leitor do documento (só leitura, antes de editar).** Nova vista que consome `document-item` e desenha os blocos por `block_type`, mais o glossário. É o menor passo que já entrega valor e valida o contrato de blocos na prática, antes de investir no editor. Vistas ficam montadas e escondidas por CSS (padrão do item 11 do backlog), e carregam na primeira abertura, não no arranque (item 12).
 4. **Motor padrão em Configurações** + popup de primeira vez, fechando as decisões de 06/08/2026 sobre fricção zero.
 
 Só depois disto o ADF-02 (edição) começa — o leitor do ponto 3 é a base sobre a qual o editor cresce. Esta fatia termina com build, versão nova e instalador.
 
-**Decisão em aberto para o utilizador (não bloqueia começar pelos pontos 1-3):** se "Documento formatado" e "Estudo" são dois botões separados ou um botão "Formatar" com os perfis dentro. As decisões de 06/08/2026 registam as duas formulações em momentos diferentes e não convergem.
+**Decisão fechada (08/08/2026) — um botão "Formatar" com os perfis dentro.** As decisões de 05 e 06/08/2026 registavam duas formulações que não convergiam: dois botões separados ("Documento formatado" e "Estudo") ou um botão único de ação. Leonardo fechou na segunda. Consequências para a implementação:
+
+- a superfície de entrada é **um** botão, rotulado com o verbo de ação `Formatar`, presente no detalhe do transcript na Biblioteca e no fim da tela de Transcribe quando a transcrição correu sem formatação;
+- os perfis ficam **dentro** dele — `Documento formatado` e `Estudo` são dois itens da mesma lista, não dois botões irmãos;
+- a lista de perfis é extensível por decisão de 05/08/2026 (resumo técnico, versão detalhada, formatação de estudo, e o que vier depois). Foi esse o critério decisivo: dois botões fixos não acomodam o terceiro perfil sem redesenhar a tela;
+- a frase de incentivo acompanha o botão, não cada perfil;
+- mantém-se a fricção zero decidida em 06/08/2026: com motor padrão já configurado, escolher o perfil executa na hora, sem repedir chave ou motor;
+- o popup explicativo continua a aparecer só na primeiríssima vez, quando ainda não há motor padrão configurado.
 
 ---
 
