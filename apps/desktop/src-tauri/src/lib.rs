@@ -592,6 +592,114 @@ async fn library_ack(
     run_cli_stdin_async(args, admin_proof_json(admin_email, admin_token, None)).await
 }
 
+/// Motores de FORMATAÇÃO (clean → documento estruturado, ADF-01), com modelo,
+/// custo estimado por hora de transcript e se a chave já está configurada.
+/// Deliberadamente separado de `list_engines` (áudio → texto): são etapas
+/// diferentes do pipeline, com chaves categorizadas por finalidade, e a UI
+/// mostra-as em secções próprias. Sem motor padrão, por decisão de 06/08/2026.
+#[tauri::command]
+async fn format_engines() -> Result<String, String> {
+    run_cli_async(vec!["format-engines".into()]).await
+}
+
+/// Um documento estruturado completo — hub, blocos, glossário e métricas —
+/// para o leitor do passo 2. Espelha `library_item`: mesma prova de MFA, mesmo
+/// isolamento por utilizador. `async` para não congelar a janela enquanto o
+/// worker consulta a base pelo túnel.
+#[tauri::command]
+async fn document_item(
+    id: i64, user: Option<i64>, admin_email: Option<String>, admin_token: Option<String>
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["document-item".into(), "--json-stdin".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_stdin_async(args, admin_proof_json(admin_email, admin_token, None)).await
+}
+
+/// Apaga um documento estruturado. É soft-delete com snapshot em
+/// `documents_history` (feito pelo worker); o transcript de origem fica
+/// intacto, porque o documento é uma camada derivada dele.
+#[tauri::command]
+async fn document_delete(
+    id: i64, user: Option<i64>, admin_email: Option<String>, admin_token: Option<String>
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["document-delete".into(), "--json-stdin".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_stdin_async(args, admin_proof_json(admin_email, admin_token, None)).await
+}
+
+/// Formatação retroativa (o botão "Formatar" na Biblioteca e no fim do
+/// Transcribe): parte de uma transcrição já existente, corre o gate raw↔clean
+/// e persiste o documento estruturado.
+///
+/// Ao contrário dos três acima, este NÃO devolve um JSON de uma vez: o worker
+/// emite NDJSON progressivo (`start` → `progress`* → `validation` →
+/// `format_result` ou `error`), porque a chamada ao motor demora. Segue por
+/// isso o modelo do `transcribe` — thread própria e eventos — e não
+/// `run_cli_async`, que só devolveria no fim.
+///
+/// Usa canal próprio (`document://event`/`document://done`) em vez do
+/// `worker://` do `transcribe`: os dois podem estar vivos ao mesmo tempo e os
+/// eventos não se podem misturar na janela.
+#[tauri::command]
+fn document_generate(
+    app: AppHandle,
+    transcription_id: i64,
+    engine: String,
+    profile: Option<String>,
+    user: Option<i64>,
+) -> Result<(), String> {
+    std::thread::spawn(move || {
+        // Donos das strings antes de emprestar para o vetor de argumentos.
+        let id_s = transcription_id.to_string();
+        let profile_s = profile.unwrap_or_default();
+        let user_s = user.map(|u| u.to_string()).unwrap_or_default();
+
+        let mut args: Vec<&str> = vec![
+            "document-generate",
+            "--transcription-id",
+            &id_s,
+            "--engine",
+            &engine,
+        ];
+        if !profile_s.trim().is_empty() {
+            args.push("--profile");
+            args.push(&profile_s);
+        }
+        if !user_s.is_empty() {
+            args.push("--user");
+            args.push(&user_s);
+        }
+
+        let mut cmd = worker_command(&args);
+        cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+        with_no_window(&mut cmd);
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = app.emit(
+                    "document://event",
+                    format!("{{\"type\":\"error\",\"message\":\"Falha ao iniciar o worker Python: {e}\"}}"),
+                );
+                let _ = app.emit("document://done", ());
+                return;
+            }
+        };
+
+        if let Some(stdout) = child.stdout.take() {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                if !line.trim().is_empty() {
+                    let _ = app.emit("document://event", line);
+                }
+            }
+        }
+        let _ = child.wait();
+        let _ = app.emit("document://done", ());
+    });
+    Ok(())
+}
+
 /// Definições de armazenamento em vigor (pasta padrão + organização).
 #[tauri::command]
 async fn get_settings() -> Result<String, String> {
@@ -712,6 +820,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
+            format_engines, document_item, document_delete, document_generate,
             list_system_fonts, db_check, db_check_secret, account, api_reset, api_admin_factor,
             account_suggest, admin, oauth_start, oauth_google, telemetry_event, telemetry_overview, support, transcribe
         ])
