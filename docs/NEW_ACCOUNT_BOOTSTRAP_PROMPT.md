@@ -9,12 +9,12 @@ Não proponha, edite, execute deploy nem altere configurações ainda.
 
 Primeiro, leia integralmente `docs/CONTEXT_ORCHESTRATION.md` e siga todas as coordenadas de leitura, verificação de atualidade, precedência e retorno documental.
 
-A sequência obrigatória começa pela camada humana e decisória:
+A sequência obrigatória começa pelo ponto de entrada LIFE e UpexNote:
 
-1. localizar no Google Drive, em `My Drive/Documentos Desktop/Life`, o arquivo `Dossie_Leonardo_Cunha_LIFE_v1.0.docx`;
-2. lê-lo integralmente;
-3. depois localizar e ler `Contexto_Vivo_Decisao_Portugal_Brasil_Leonardo_v2.3.docx`;
-4. verificar se esses documentos foram atualizados desde a última sessão;
+1. localizar e ler integralmente `G:\My Drive\DocumentsDesktop\03-Life\01-Prompt Start\PROMPT_START_UPEXNOTE.md`;
+2. executar todo o bootstrap obrigatório definido ali, inclusive a descoberta das versões canônicas mais recentes, sem substituir documentos por resumos, memória ou snippets;
+3. respeitar a ordem Dossiê LIFE → Contexto Vivo → Fio Condutor → camada temática UpexNote;
+4. quando o protocolo exigir documentos `DOCX`/`PDF`, executar também a renderização e revisão visual integral;
 5. se o ambiente não tiver acesso, declarar a limitação sem fingir leitura nem inventar conteúdo.
 
 Depois, desça para o repositório conforme o orquestrador:
@@ -25,7 +25,7 @@ Depois, desça para o repositório conforme o orquestrador:
 4. docs/UX_PRODUCT_STANDARD.md quando houver qualquer impacto de UI/UX
 5. README.md
 6. docs/ARCHITECTURE.md
-7. os documentos específicos relacionados à próxima tarefa
+7. os documentos específicos relacionados à próxima tarefa (`docs/NOTEBOOK_ARCHITECTURE.md` é obrigatório para qualquer trabalho em Prévia/Caderno)
 8. quaisquer AGENTS.md mais próximos das pastas afetadas
 
 Depois confira, sem modificar:
@@ -61,6 +61,8 @@ Regras permanentes:
 - O transcript bruto é imutável; conteúdo limpo, formatado ou estudado é derivado.
 - Novos domínios usam schema PostgreSQL separado e em inglês.
 - UI/UX é requisito arquitetural e segue docs/UX_PRODUCT_STANDARD.md.
+- Leonardo Cunha possui capacidade demonstrada para conceber e construir sistemas de ponta a ponta. Não escolher `Developer` como rótulo profissional principal é uma decisão de posicionamento e direção, não incapacidade técnica.
+- Preserve a distinção entre capacidade, identidade profissional, direção de carreira, modelo de execução com IA e autoria/responsabilidade. A IA amplia pesquisa, produção e implementação sob a arquitetura, correção e aceite de Leonardo; não o reduza a solicitante, aprovador, “dono da ideia” ou fonte de feedback.
 - Administração usa menu lateral hierárquico, não abas horizontais como navegação principal.
 - Uma interface visual só está concluída quando a funcionalidade opera de ponta a ponta.
 - Não faça ações externas ou destrutivas sem autorização específica.

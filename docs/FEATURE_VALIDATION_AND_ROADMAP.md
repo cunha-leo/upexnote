@@ -152,6 +152,22 @@ Uma funcionalidade com interface não pode ser marcada como concluída sem valid
 
 **Atualizar quando:** testes, fornecedores, capacidades, decisões de privacidade ou dependências desse domínio mudarem.
 
+### `docs/NOTEBOOK_ARCHITECTURE.md`
+
+**Papel:** autoridade do domínio `notebooks`, da arquitetura de prateleiras aplicada ao Caderno e da passagem `transcript → prévia → nota editável`.
+
+**Consulta obrigatória quando houver:**
+
+- hierarquia de projetos, pastas, cadernos, seções ou notas;
+- passagem de uma prévia em `documents` para conteúdo editável;
+- editor rico, formatação, histórico ou recuperação de notas;
+- comentários, balões, referências, palavras-chave, glossário ou dicionário no Caderno;
+- chat ancorado, exportação ou pacote de contexto para outra IA;
+- schema, tabelas, permissões, contratos ou navegação da prateleira `Notebooks`;
+- alteração da fronteira entre `transcriptions`, `documents` e `notebooks`.
+
+**Atualizar quando:** a direção, o DDL, os contratos, a hierarquia, as fatias ou os critérios de aceite do Caderno mudarem.
+
 ### `docs/SUPPORT_ARCHITECTURE.md`
 
 **Papel:** autoridade do domínio de suporte e de seu schema PostgreSQL isolado.
@@ -329,9 +345,29 @@ Uma frente só pode chegar a `Ready` quando possuir:
 
 ## 8. Approved Delivery Front
 
+### North Star — arquitetura de prateleiras e Caderno
+
+O UpexNote cresce como monólito modular organizado por prateleiras. **Leonardo Cunha atua como arquiteto principal, construtor sistêmico e responsável intelectual pelo produto:** possui capacidade demonstrada para conceber e construir sistemas de ponta a ponta e conduziu conscientemente a arquitetura de domínios, informação, dados, UX, código, segurança, operação, responsabilidades e evolução registrada nesta frente. A IA amplia pesquisa, formalização, produção, implementação e validação sob sua governança; não é autora autônoma da arquitetura e não deve reduzir Leonardo a solicitante, aprovador ou fonte de feedback.
+
+Não adotar `Developer` como rótulo profissional principal é uma decisão de identidade e direção de carreira, não uma limitação de capacidade. A evolução para Product/UX/Discovery/Service Design parte de profundidade técnico-funcional já consolidada e procura deslocar o centro do trabalho para a concepção anterior à execução.
+
+A jornada canônica é:
+
+```text
+transcript → prévia estruturada em documents → nota editável em notebooks → exportação/pacote para IA
+```
+
+- `documents` possui transformação, gate, blocos, glossário gerado e prévia em só leitura;
+- `notebooks` possuirá hierarquia, edição, marcações, balões, referências, glossário pessoal, chats, histórico e exportação;
+- salvar no Caderno copia o conteúdo inicial e registra linhagem; não cria vínculo vivo que permita sobrescrever edições;
+- `Transcriptions`, `Notebooks`, `Settings` e `Administration` são pais de navegação expansíveis; a árvore de objetos pessoais fica dentro do workspace, não no menu global;
+- o contrato completo está em `docs/NOTEBOOK_ARCHITECTURE.md`.
+
+Esta direção está `Approved`, mas não significa que o schema ou a UI de Cadernos já existam.
+
 ### ADF-01 — Structured Document Generation
 
-**Status:** `In progress` — passo 1 (backend do worker) entregue em 07/08/2026; passo 2 pontos 1 e 3 (ponte Rust e leitor em só leitura) validados em 08/08/2026 na v0.29.1; pontos 2 e 4 (botão `Formatar` e motor padrão em Configurações) por fazer.
+**Status:** `In progress` — passo 1 (backend do worker) entregue em 07/08/2026; passo 2 pontos 1 e 3 (ponte Rust e prévia em só leitura) validados em 08/08/2026 na v0.29.1; ponto 2 (entrada/painel da prévia) e ponto 4 (configuração do motor) por fazer. O Caderno começa no ADF-02 e no futuro schema `notebooks`.
 
 **Prioridade:** máxima na evolução atual do produto.
 
@@ -346,7 +382,8 @@ Uma frente só pode chegar a `Ready` quando possuir:
   → transcript raw imutável
   → transcript clean validado
   → validação de integridade raw ↔ clean (checagem de que nenhum contexto se perdeu na limpeza)
-  → documento estruturado derivado
+  → prévia estruturada derivada em documents
+  → nota editável e hierárquica em notebooks
   → workspace de edição e estudo
   → salvamento, exportação e uso posterior
 ```
@@ -370,7 +407,8 @@ Uma frente só pode chegar a `Ready` quando possuir:
 
 - o raw permanece imutável;
 - o clean permanece uma camada derivada separada;
-- o documento estruturado é uma nova camada derivada, editável e versionada;
+- a prévia estruturada é uma nova camada derivada em `documents`, versionável e em só leitura na experiência atual;
+- a nota editável é outra camada derivada em `notebooks`, com ciclo de vida independente e linhagem para a origem;
 - reorganização não pode inventar fatos nem apagar silenciosamente conteúdo importante;
 - conteúdo gerado deve identificar motor, data, origem e tipo de processamento;
 - chamadas cloud exigem ação explícita, fornecedor visível e custo compreensível;
@@ -383,24 +421,26 @@ Uma frente só pode chegar a `Ready` quando possuir:
 - `UX_PRODUCT_STANDARD.md`;
 - `ARCHITECTURE.md`;
 - `PRODUCT.md`;
-- `AI_MEDIA_EVOLUTION.md`.
+- `AI_MEDIA_EVOLUTION.md`;
+- `NOTEBOOK_ARCHITECTURE.md`.
 
 **Decisões fechadas (05/08/2026):**
 
-- **Modelo interno do documento:** o usuário nunca vê Markdown cru. A interface é um editor rico, tipo "bloco de notas inteligente" (estilo Word), renderizado a partir de um modelo estruturado (blocos/seções com dados persistidos, não texto solto).
-- **Formato de persistência:** não é apenas uma tabela nova — é um esquema novo, tratado como submódulo próprio (mesmo padrão de submenus expansíveis da Administration). SQLite local recebe o schema para o usuário pessoal; o Postgres central recebe o schema equivalente para o lado administrativo/multiusuário. Modelo hub-and-spoke por ID: uma tabela matriz de documento, com comentários, referências e glossário pendurados nela por ID, com exclusão em cascata ou soft-delete seguindo o padrão já usado no resto do sistema.
-- **Entrada na UI:** na tela de Transcribe/Library, botões novos (ex.: "Documento formatado", "Estudo") levam à área de edição. Cada botão precisa de uma frase de incentivo/microcopy abaixo, no mesmo espírito visual do aviso de salvar no Google Drive/OneDrive — convidativa, não só funcional (ver `UX_PRODUCT_STANDARD.md` no desenho da tela).
+- **Modelo interno da prévia:** o usuário nunca vê Markdown cru. `documents` renderiza blocos/seções estruturados numa experiência de leitura rápida. O editor rico pertence ao domínio posterior `notebooks` e apresenta documento contínuo, sem contêineres técnicos visíveis.
+- **Formato de persistência:** `documents` já é o schema da transformação e da prévia. O Caderno não será satélite desse schema: recebe schema inglês próprio `notebooks`, com hierarquia, notas, conteúdo, fontes, cores, marcações, comentários, referências, palavras-chave, glossário pessoal, chats, histórico e exportações. SQLite mantém equivalência lógica isolada.
+- **Entrada na UI:** a jornada distingue intenção de compreender e intenção de trabalhar. Transcribe/Library oferecem `Criar/Ver prévia`; uma prévia pronta oferece `Salvar no Caderno`; uma nota existente oferece `Abrir no Caderno`. A microcopy explica as camadas e a possibilidade de continuar depois pela Library.
 - **Etapa de validação raw ↔ clean:** antes de qualquer geração de documento formatado, o sistema cruza raw e clean para confirmar que nenhum contexto foi perdido na limpeza. Só depois dessa validação passar o clean segue para a formatação.
 - **Perfis iniciais de transformação:** a base sempre nasce do clean (nunca do raw). A partir daí, variantes via botão — resumo técnico, versão detalhada, formatação de estudo — lista extensível, não fechada nesta fase.
-- **Contrato entre clean, documento e referências:** referência por bloco. Cada seção do documento é um container editável com ID de bloco estável, ponto de ancoragem para comentários, balões e futuras funcionalidades (adicionar, remover, etc.). Preferido a âncora por palavra (frágil a texto repetido e a edição) ou por busca textual.
+- **Contrato entre clean, prévia, nota e referências:** a prévia mantém blocos estáveis em `documents`. Ao salvar, `notebooks` copia o estado inicial, registra a linhagem e passa a possuir a edição. A UI permite selecionar palavra, expressão, frase, parágrafo ou seção; a persistência usa âncora híbrida (ID estável + offsets + texto/fingerprint + contexto), preservando ou sinalizando referências quebradas.
 - **Motor inicial e benchmark:** este é um benchmark novo, distinto do benchmark de transcrição áudio→texto já feito — aqui o motor recebe texto (clean) e produz documento estruturado. Candidatos comparados: AssemblyAI e Deepgram (versões/modelos novos, inclusive os de voz), GPT, Claude, Gemini, DeepSeek, Grok. Critério: baixo custo e velocidade, com o mesmo rigor usado quando o motor de transcrição principal foi escolhido.
 - **Comportamento diante de conteúdo ambíguo ou incompleto:** o clean já trata ruído, tempo morto e repetição preservando contexto — isso não muda. A camada nova é de reorganização temática: título, objetivo em uma frase, quebra por seção/tema (não necessariamente cronológica — a mesma ideia pode reaparecer espalhada ao longo da reunião e precisa ser agrupada), sinalizando densidade de jargão técnico, sem perder a essência do conteúdo original.
 - **Transparência de custo na UI:** na tela onde o usuário escolhe o motor — tanto na etapa de transcrição (áudio→texto) quanto na etapa de formatação (clean→documento estruturado) — cada opção deve mostrar nome do modelo e custo médio estimado por hora de transcript processado (R$/hora), não só o nome do fornecedor. Objetivo: o usuário decide com fidelidade e custo visíveis lado a lado, sem precisar ir até a tela de configuração de chaves de API pra entender o que está escolhendo.
-- **Fluxo de execução na tela de Transcribe (06/08/2026):** a escolha do motor de formatação acontece no mesmo momento em que o usuário escolhe o motor de transcrição, não depois. A tela de Transcribe ganha uma segunda seção, logo abaixo da seção de seleção de motor de transcrição, para seleção de motor de formatação. Ao executar, o sistema já roda as duas etapas em sequência (transcrição → validação raw↔clean → formatação) e entrega o documento estruturado pronto de uma vez, sem uma segunda ida do usuário à tela.
-  - **Opção "somente transcrição":** a seção de formatação precisa ter uma opção explícita de pular a formatação (ex.: toggle "Formatar depois" ou motor "Nenhum"), pra quem só quer o transcript limpo agora e decide formatar depois.
-  - **Formatação retroativa (tela de edição/biblioteca, não a tela de Transcribe):** cenário separado — usuário tem um transcript já existente (gerado antes, ou que ficou sem formatação) e quer só rodar a etapa de formatação nele. Isso não acontece na tela de Transcribe; é uma ação na tela de edição/biblioteca, permitindo selecionar/subir um transcript existente e escolher o motor de formatação sobre ele, reaproveitando os mesmos botões "Documento formatado"/"Estudo" já decididos para essa tela.
+- **Fluxo de execução na tela de Transcribe (refinado em 08/08/2026):** gerar prévia continua opcional e nunca ocorre com custo oculto. Depois da transcrição, o painel oferece `Ver transcript`, `Criar prévia` e `Criar prévia e trabalhar no Caderno`. Na primeira vez explica as camadas; depois fica compacto. Se o utilizador adiar, informa que pode continuar pela Library.
+  - **Somente transcrição:** nenhuma chamada de formatação. O transcript permanece disponível e a Library oferece `Criar prévia` depois.
+  - **Prévia retroativa:** no detalhe da Library, `Criar prévia` processa aquele transcript específico; se já existir, `Ver prévia` abre o leitor validado.
+  - **Passagem ao Caderno:** `Salvar no Caderno` só aparece quando há prévia, pede/confirmar destino hierárquico e cria nota editável com linhagem. Se já existe nota ligada, a ação vira `Abrir no Caderno`.
   - **Motor padrão de formatação e fricção zero (06/08/2026):** o motor/chave de formatação é configurado uma única vez em Configurações (categorizado por finalidade, ver decisão de arquitetura acima). A partir daí, qualquer ação de formatar em qualquer lugar do app (pós-transcrição ou retroativa) executa direto, sem pedir chave/engine de novo a cada clique.
-  - **Botão pós-transcrição quando "só transcrição" foi escolhida:** ao terminar de transcrever sem formatação, aparece um botão fixo (não popup) — "Formatar" como verbo de ação, com "Estudo" como um dos perfis/destinos dentro dele (reaproveitando os perfis "Documento formatado"/"Estudo" já decididos). Clicar executa na hora com o motor padrão já configurado.
+  - **Ação pós-transcrição:** o verbo depende do estado e da intenção: `Criar prévia`, `Ver prévia`, `Salvar no Caderno` ou `Abrir no Caderno`. `Formatar` deixa de ser o único rótulo de entrada porque misturava compreensão rápida com trabalho editável.
   - **Popup só na primeira vez:** um modal explicativo (o que é cada perfil, qual motor, custo estimado, opção de marcar como padrão) só aparece na primeiríssima vez que o usuário aciona formatação sem ter um motor padrão configurado ainda. Depois disso, nunca mais — vira automático.
 
 **Resultados do benchmark de formatação (06/08/2026), transcript de teste com ~5,3 min de áudio (voz única):**
@@ -464,14 +504,14 @@ Todos os seis extraíram corretamente a história principal (tabela de taxas, pr
   - **⚠ Desvio de arquitetura encontrado e CORRIGIDO (07/08/2026, commit `3f341fc`; migração executada no mesmo dia):** a decisão de 05/08/2026 acima diz explicitamente "é um esquema novo" (Postgres) para este submódulo, no mesmo espírito de `support`/`data_studio`. As tabelas tinham nascido em `public`; o utilizador autorizou a migração. `db.py` agora cria/referencia `documents.structured_documents` + satélites (SQLite local sem mudança — sem conceito de schema). Função idempotente `migrate_documents_schema()` + comando `db-migrate-documents-schema` movem (`ALTER TABLE ... SET SCHEMA`) as tabelas já existentes sem perder dados. **Executado e validado na VPS real:** 5 tabelas movidas, segunda execução confirmou idempotência, documento #1 lido de volta intacto (21 blocos, 30 termos de glossário, métricas). A dimensão `engines` fica em `public`, partilhada com a transcrição — join entre schemas validado.
 - **CLI (`transcription/cli.py`):** `format-engines` (lista motores), `format --engine --profile` (chama um motor isolado, sem persistir), `document-generate --transcription-id --engine --profile` (formatação retroativa — carrega raw/clean já existentes, valida, formata, salva; é o mecanismo por trás do botão retroativo da Biblioteca decidido acima), `transcribe --format-engine --format-profile` (encadeia transcrição + validação + formatação numa só chamada — é o mecanismo por trás do fluxo decidido em 06/08/2026 para a tela de Transcribe). Novo evento NDJSON `format_error`: uma falha na formatação nunca desfaz/invalida a transcrição já gravada com sucesso.
 - **Evidência/teste:** os 6 motores testados pelo utilizador na própria máquina, com chaves e transcripts reais (não sintéticos) — um vídeo técnico de ~18 min (lógica de negócio de emissão de passagens) e uma aula de curso próprio de ~12 min. Sem alucinação detectada em nenhum motor. Achado real durante o teste: `gpt-5-mini` rejeita `temperature` custom (só aceita o default 1) — corrigido tornando `temperature` opcional em `_run_openai_compatible`. Também confirmado nos testes reais de 07/08/2026 que `grok-4-fast` e `deepseek-chat` continuam ativos (contrariando o risco de descontinuação anotado antes). Fluxo encadeado `transcribe --format-engine` testado ponta a ponta com áudio real, documento salvo no Postgres da VPS.
-- **Fora deste passo (próximo trabalho):** UI (botões "Documento formatado"/"Estudo" na Biblioteca e na tela de Transcribe), popup de primeira vez, tela de Configurações para motor padrão de formatação por finalidade. O backend de leitura que a UI vai consumir já existe (`document-item`/`document-delete`, commit `57e518e`).
+- **Fora deste passo (próximo trabalho):** UI de `Criar/Ver prévia`, painel pós-transcrição, microcopy de educação inicial e Configurações para motor de formatação por finalidade. A passagem `Salvar no Caderno` pertence à fundação de `notebooks`. O backend de leitura que a prévia consome já existe (`document-item`/`document-delete`, commit `57e518e`).
 
 **Passo 2 — em curso.** Objetivo: tornar visível na app o que o passo 1 já produz no banco. Pontos 1 e 3 entregues na v0.29.0 e validados em 08/08/2026 na v0.29.1; pontos 2 e 4 por fazer. Ordem, mantendo a disciplina de fatias pequenas:
 
 1. ~~**Ponte Rust → worker.**~~ **VALIDADA em 08/08/2026 na v0.29.1; entrega original no commit `2314418`.** Correção: os comandos vivem em `apps/desktop/src-tauri/src/lib.rs`, não em `main.rs`, que tem 6 linhas e é só o ponto de entrada. `format_engines`, `document_item` e `document_delete` seguem o padrão dos `library*`; `document_generate` segue o do `transcribe`, com thread e eventos, porque o worker emite NDJSON progressivo — e usa canal próprio `document://event`/`document://done` para não misturar eventos com uma transcrição a decorrer. `cargo check` aprovado. A leitura real do documento #9 confirmou a travessia React → Rust → worker → Postgres.
 
    O texto original deste ponto dizia: `main.rs` já embrulha os comandos `library*` do worker; falta o mesmo para `format-engines`, `document-generate`, `document-item` e `document-delete`. Mesmo padrão dos existentes: `async` via `spawn_blocking` (ver Correção v0.5.1 no `PROJECT_CONTEXT.md` — comando síncrono congela a janela inteira).
-2. **Botão de entrada.** Na Biblioteca (detalhe do transcript) e no fim da tela de Transcribe: um único botão **"Formatar"**, com os perfis dentro dele (ver decisão fechada em 08/08/2026 abaixo). "Estudo" é um dos perfis, não um botão irmão. Frase de incentivo por baixo do botão (decisão de 05/08/2026; espírito visual do aviso de Drive/OneDrive). Ícones Lucide, nunca emojis. Textos nos três idiomas em `i18n.ts` (dicionário tipado — falta de chave é erro de compilação).
+2. **Entrada e linguagem da prévia.** Na Biblioteca e no fim de Transcribe, as ações refletem estado e intenção: `Criar prévia`, `Ver prévia`, `Salvar no Caderno` ou `Abrir no Caderno`. A primeira utilização explica transcript, prévia e Caderno; depois o painel fica compacto. Perfis de transformação continuam dentro da criação de prévia, sem virarem botões irmãos. Frase de incentivo única, ícones Lucide e textos nos três idiomas em `i18n.ts`.
 3. ~~**Leitor do documento (só leitura, antes de editar).**~~ **VALIDADO em 08/08/2026 na v0.29.1; entrega original no commit `bca80d3`, v0.29.0.** `DocumentReader.tsx`, componente próprio no padrão do `ErDiagram.tsx`. Desenha os 10 `block_type` com ícone Lucide e rótulo traduzido, mais o glossário; risco, decisão e ação com barra lateral; trecho em bloco citado com falante e timestamp. Copiar leva o documento em texto portável. 29 chaves novas nos 3 idiomas, garantidas pelo `tsc`. A validação real abriu o transcript #23 e o documento #9, confirmou faixa/chip, título e metadados, 30 blocos, 34 termos de glossário, leitura em início/meio/fim e retorno à origem. Janela normal e estreita ficaram sem cortes, sobreposições, textos truncados ou estados vazios incorretos.
 
    **Dependência descoberta e resolvida no caminho (commit `1772b78`):** não havia como a UI descobrir que um documento existe — `document-item` exige o id e não há `document-list`. `library_item` passou a devolver os documentos gerados do transcript, no padrão do campo `problems`. Sem isto o leitor seria código morto e o botão do ponto 2 não saberia se deve dizer `Formatar` ou `Abrir documento`.
@@ -483,20 +523,20 @@ Todos os seis extraíram corretamente a história principal (tabela de taxas, pr
 
 **Correção que fechou a validação (v0.29.1):** o primeiro teste da v0.29.0 encontrou falha real no worker empacotado: o `stdout` do Windows tentou codificar o caractere `→` na página de código local e lançou `charmap`, fazendo o chip ficar em `Abrindo...` e regressar sem abrir. O protocolo NDJSON passou a serializar Unicode como escapes ASCII (`ensure_ascii=True`), preservando o valor após `JSON.parse`; há teste de regressão com `Orientação` e `→`. O detalhe também passou a exibir a falha em contexto. Títulos, chips, badges, campos e glossário receberam comportamento responsivo validado a 800 × 1000. Nenhum documento foi regenerado e nenhuma API paga foi chamada durante a validação.
 
-Só depois disto o ADF-02 (edição) começa — o leitor do ponto 3 é a base sobre a qual o editor cresce. Esta fatia termina com build, versão nova e instalador.
+O ponto 2 fecha a compreensão e criação da prévia. A passagem ao Caderno começa na fundação do ADF-02, porque exige hierarquia, destino, ownership e persistência do schema `notebooks`; não deve ser simulada dentro de `documents`.
 
-**Decisão fechada (08/08/2026) — um botão "Formatar" com os perfis dentro.** As decisões de 05 e 06/08/2026 registavam duas formulações que não convergiam: dois botões separados ("Documento formatado" e "Estudo") ou um botão único de ação. Leonardo fechou na segunda. Consequências para a implementação:
+**Decisão refinada (08/08/2026) — prévia e Caderno representam intenções diferentes.** A formulação anterior de um único botão `Formatar` foi superada pelo desenho arquitetural posterior conduzido por Leonardo:
 
-- a superfície de entrada é **um** botão, rotulado com o verbo de ação `Formatar`, presente no detalhe do transcript na Biblioteca e no fim da tela de Transcribe quando a transcrição correu sem formatação;
-- os perfis ficam **dentro** dele — `Documento formatado` e `Estudo` são dois itens da mesma lista, não dois botões irmãos;
-- a lista de perfis é extensível por decisão de 05/08/2026 (resumo técnico, versão detalhada, formatação de estudo, e o que vier depois). Foi esse o critério decisivo: dois botões fixos não acomodam o terceiro perfil sem redesenhar a tela;
-- a frase de incentivo acompanha o botão, não cada perfil;
-- mantém-se a fricção zero decidida em 06/08/2026: com motor padrão já configurado, escolher o perfil executa na hora, sem repedir chave ou motor;
-- o popup explicativo continua a aparecer só na primeiríssima vez, quando ainda não há motor padrão configurado.
+- compreender rapidamente: `Criar prévia` ou `Ver prévia`;
+- trabalhar no material: `Salvar no Caderno` ou `Abrir no Caderno`;
+- perfis como detalhado, estudo ou resumo continuam opções da geração da prévia, não destinos de navegação paralelos;
+- a microcopy acompanha o conjunto de ações e explica que o trabalho pode ser adiado e retomado pela Library;
+- com configuração válida, a execução mantém fricção baixa, mas nunca oculta fornecedor ou custo de chamada paga;
+- a explicação extensa aparece apenas na primeira utilização; o painel operacional permanece depois.
 
 ---
 
-### ADF-02 — Rich Study Workspace
+### ADF-02 — Notebooks / Rich Study Workspace
 
 **Status:** `Approved` (precisa de especificação para chegar a `Ready` — as capacidades abaixo são a lista aprovada, não um plano de implementação; o leitor do passo 2 do ADF-01 é o degrau anterior natural)
 
@@ -504,9 +544,11 @@ Só depois disto o ADF-02 (edição) começa — o leitor do ponto 3 é a base s
 
 **Problema:** gerar um documento bonito sem permitir trabalho humano dentro dele mantém a fricção de exportar, editar e estudar em outras ferramentas.
 
-**Objetivo:** criar uma superfície visual de leitura, edição, anotação e estudo, com experiência próxima de um editor moderno e formato portável por baixo.
+**Objetivo:** criar a prateleira `Notebooks`, com schema inglês próprio, hierarquia e uma superfície visual de leitura, edição, anotação e estudo próxima de um editor moderno, mantendo formato portável por baixo.
 
-**Direção de interface:** editor rico estruturado, não whiteboard espacial livre. Pode usar Markdown ou representação estruturada equivalente como base, desde que a experiência visual não exponha complexidade desnecessária.
+**Direção de interface:** editor rico estruturado e visualmente contínuo, não whiteboard espacial livre. Pode usar representação estruturada ou Markdown como formato intermediário, desde que a experiência não exponha Markdown cru, IDs ou contêineres técnicos. O contrato integral está em `NOTEBOOK_ARCHITECTURE.md`.
+
+**Fronteira e hierarquia:** `documents` continua proprietário da prévia. `Salvar no Caderno` cria nota independente em `notebooks`, registra linhagem e pede/confirmar destino. O workspace admite árvore `projeto/pasta → caderno → seção opcional → nota`; o menu global mostra a prateleira, e a árvore vive dentro dela.
 
 **Capacidades aprovadas para refinamento:**
 
@@ -516,6 +558,9 @@ Só depois disto o ADF-02 (edição) começa — o leitor do ponto 3 é a base s
 - criação, remoção e reorganização de seções;
 - edição do conteúdo derivado;
 - notas pessoais;
+- criação de nota vazia sem transcript;
+- pastas/projetos, cadernos, seções e movimento explícito de notas;
+- importação controlada de uma prévia com linhagem;
 - salvamento local no destino escolhido;
 - histórico e versionamento;
 - retorno ou comparação com o transcript de origem;
@@ -529,7 +574,9 @@ Só depois disto o ADF-02 (edição) começa — o leitor do ponto 3 é a base s
 - suportar teclado, foco, seleção, temas, zoom e densidade;
 - evitar poluir o menu principal;
 - manter o fluxo coerente com Library e detalhe do transcript;
-- permitir acesso após a conclusão da transcrição e a partir de materiais existentes.
+- permitir acesso após a conclusão da transcrição e a partir de materiais existentes;
+- manter invisíveis os contêineres técnicos do modelo rico;
+- não listar no Caderno qualquer transcript que não tenha sido salvo explicitamente nele.
 
 **Documentos obrigatórios:**
 
@@ -537,7 +584,8 @@ Só depois disto o ADF-02 (edição) começa — o leitor do ponto 3 é a base s
 - `UX_PRODUCT_STANDARD.md`;
 - `ARCHITECTURE.md`;
 - `PRODUCT.md`;
-- `AI_MEDIA_EVOLUTION.md`.
+- `AI_MEDIA_EVOLUTION.md`;
+- `NOTEBOOK_ARCHITECTURE.md`.
 
 ---
 
@@ -546,6 +594,8 @@ Só depois disto o ADF-02 (edição) começa — o leitor do ponto 3 é a base s
 **Status:** `Approved`
 
 **Prioridade:** alta dentro do Rich Study Workspace.
+
+**Autoridade arquitetural:** `NOTEBOOK_ARCHITECTURE.md`; comentários e referências pertencem ao schema `notebooks` enquanto forem ancorados a notas.
 
 **Objetivo:** permitir que o usuário selecione palavra, termo, frase, parágrafo ou seção e associe uma anotação persistente ao trecho.
 
@@ -586,6 +636,8 @@ Comentários e referências não precisam poluir o corpo principal. Podem ser in
 
 **Prioridade:** alta, depois da base de seleção, âncoras e comentários.
 
+**Autoridade arquitetural:** `NOTEBOOK_ARCHITECTURE.md`; definições aceitas e glossário pessoal pertencem ao Caderno. Cache lexical transversal só ganha domínio próprio quando possuir uso e ciclo de vida independentes.
+
 **Objetivo:** oferecer definição lexical e construção de glossário sem tornar cada interação dependente de IA.
 
 **Fluxo previsto:**
@@ -623,6 +675,8 @@ Comentários e referências não precisam poluir o corpo principal. Podem ser in
 **Status:** `Approved`
 
 **Prioridade:** necessária para concluir o primeiro ciclo de valor.
+
+**Autoridade arquitetural:** `NOTEBOOK_ARCHITECTURE.md`; persistência, versões e pacotes de contexto pertencem ao schema `notebooks`, preservando linhagem para `documents` e transcriptions.
 
 **Objetivo:** garantir que documento, edições, comentários, referências e glossário formem um ativo durável e portável.
 

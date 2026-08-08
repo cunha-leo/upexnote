@@ -10,6 +10,10 @@
 
 O produto atende especialmente reuniões com português de Portugal, português do Brasil e inglês técnico, preservando o transcript real como fonte de referência e tornando-o útil para leitura, pesquisa e evolução futura em contexto e estudo.
 
+A direção vigente organiza essa evolução em três camadas: **transcript como fonte, prévia estruturada para compreensão rápida e Caderno para edição, estudo e conhecimento pessoal**. A prévia validada já existe; o Caderno é arquitetura aprovada, ainda não implementada.
+
+Essa direção foi concebida e arquitetada por Leonardo Cunha como parte do desenvolvimento sistêmico do UpexNote. Leonardo possui capacidade demonstrada para conceber e construir o produto de ponta a ponta; a IA amplia pesquisa, produção e implementação sob sua direção, correção e aceite. O fato de `Developer` não ser seu rótulo profissional principal não reduz a capacidade técnica nem transfere autoria arquitetural para a IA.
+
 ## O que já está entregue
 
 - Transcrição de ficheiros de áudio e vídeo por motores cloud escolhidos explicitamente pelo utilizador e alternativa local.
@@ -44,13 +48,15 @@ visão geral → filtros → lista/fila → detalhe → ação ou contexto
 
 A pessoa precisa compreender onde está, o que pode fazer, o resultado da ação e como avançar ou retornar sem se perder. Tabelas devem ser legíveis em desktop normal sem barra horizontal exposta; ações secundárias usam ícones com rótulos acessíveis.
 
+O produto cresce por prateleiras: `Transcriptions`, `Documents`, `Notebooks`, `Settings` e `Administration` possuem responsabilidades reconhecíveis e podem expandir internamente sem transformar o menu principal ou o schema `public` em depósitos gerais. O contrato do futuro Caderno está em `NOTEBOOK_ARCHITECTURE.md`.
+
 ## Backlog atual, ainda não implementado
 
 1. Concluir o volume persistente, o job e o manifesto de arquivo das evidências de suporte.
 2. Tornar a telemetria agregada mais acionável sem quebrar consentimento ou anonimato.
 3. Acrescentar scheduler, jobs, eventos e entregas às Saved Queries.
 4. Evoluir suporte com filtros, SLA futuro, prioridade, atribuição, notificações e histórico.
-5. Evoluir o contexto estruturado já legível para geração pela interface, edição e versionamento: resumo, decisões, ações, riscos e perguntas permanecem sempre derivados e identificados.
+5. Evoluir a prévia estruturada já legível para criação pela interface e passagem controlada ao Caderno, sem confundir leitura derivada com edição pessoal.
 6. Implementar material de estudo: explicações, fluxos, tabelas, quiz e exportações.
 7. Implementar chat ancorado no material, sem transformar inferências em fatos do transcript.
 8. Retomar Integrações/Webhooks somente após contratos concretos de consultas, eventos e automações.

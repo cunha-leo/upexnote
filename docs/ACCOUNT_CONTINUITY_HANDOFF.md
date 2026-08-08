@@ -39,7 +39,7 @@ O objetivo não é criar funcionalidades por moda. O produto resolve dores concr
 
 O UpexNote pode continuar como ferramenta pessoal excelente e preservar a possibilidade de produto comercial. Possibilidades comerciais são hipóteses, não obrigação.
 
-Para reconstruir com fidelidade como Leonardo pensa, trabalha e decide, consultar primeiro os documentos pessoais coordenados por `CONTEXT_ORCHESTRATION.md`, na ordem Dossiê e depois Contexto Vivo. Este resumo não substitui esses arquivos vivos.
+Para reconstruir com fidelidade como Leonardo pensa, trabalha e decide, consultar primeiro os documentos pessoais coordenados por `CONTEXT_ORCHESTRATION.md`, na ordem Dossiê e depois Contexto Vivo. Este resumo não substitui esses arquivos vivos. Em 08/08/2026, a versão canônica mais recente do Dossiê passou a ser a v1.3, cuja Adenda H registra capacidade, identidade profissional, direção, modelo de construção com IA, autoria e a arquitetura de prateleiras/Notebooks; a descoberta de versão do protocolo LIFE continua obrigatória.
 
 ## 3. Estado consolidado no momento da transição
 
@@ -101,6 +101,8 @@ VPS / EasyPanel
 
 Princípio arquitetural: a interface pode ser moderna e conectada, mas o material bruto permanece sob controle local. Integrações externas são explícitas e delimitadas.
 
+Desde 08/08/2026, a direção arquitetural organiza o produto como monólito modular por prateleiras/bounded contexts. `documents` possui transformação e prévia estruturada; o futuro `notebooks` possuirá hierarquia e conhecimento pessoal editável. A autoridade é `docs/NOTEBOOK_ARCHITECTURE.md`. Leonardo Cunha é o arquiteto principal, construtor sistêmico e responsável intelectual pelo produto. Ele possui capacidade demonstrada para conceber e construir software de ponta a ponta; não escolher `Developer` como rótulo profissional principal é posicionamento, não incapacidade. IAs ampliam pesquisa, produção, formalização, implementação e validação sob sua governança e não devem atribuir a si a autoria da arquitetura nem reduzi-lo a solicitante ou fonte de feedback.
+
 ## 5. Fonte de verdade e sequência de retomada
 
 A porta de entrada é `docs/CONTEXT_ORCHESTRATION.md`.
@@ -112,7 +114,7 @@ A sequência mínima coordenada por ele é:
 3. `AGENTS.md` aplicável;
 4. `docs/PROJECT_CONTEXT.md`;
 5. `docs/FEATURE_VALIDATION_AND_ROADMAP.md`;
-6. documentos especializados exigidos pela tarefa;
+6. documentos especializados exigidos pela tarefa — `docs/NOTEBOOK_ARCHITECTURE.md` é obrigatório para Prévia/Caderno;
 7. código, Git e comportamento executável;
 8. este dossiê quando houver troca de conta, agente ou ambiente;
 9. chats exportados apenas como material histórico complementar.
@@ -159,6 +161,8 @@ Para determinar o que realmente existe, prevalecem comportamento validado, códi
 
 - fala de forma natural, exploratória e direta;
 - ideias podem surgir durante a validação e ganhar forma por conversa;
+- essa forma conversacional não torna a concepção casual: Leonardo está arquitetando, separando responsabilidades, testando coerência e refinando o sistema enquanto fala;
+- não interpretar uso extensivo de IA nem rejeição do rótulo profissional `Developer` como ausência de entendimento técnico ou incapacidade de construir aplicações;
 - espera que o agente investigue o repositório antes de responder;
 - não gosta de receber propostas de coisas que já existem;
 - prefere autonomia e continuidade a interrupções constantes;

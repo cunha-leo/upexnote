@@ -68,7 +68,7 @@ Ler nesta ordem antes de alterar o projeto:
 1. código e estado real do Git;
 2. [`AGENTS.md`](AGENTS.md);
 3. [`docs/PROJECT_CONTEXT.md`](docs/PROJECT_CONTEXT.md);
-4. documentos arquiteturais específicos;
+4. documentos arquiteturais específicos — para Cadernos, [`docs/NOTEBOOK_ARCHITECTURE.md`](docs/NOTEBOOK_ARCHITECTURE.md);
 5. [`docs/UX_PRODUCT_STANDARD.md`](docs/UX_PRODUCT_STANDARD.md);
 6. [`docs/FUTURE_PRODUCT_IDEAS.md`](docs/FUTURE_PRODUCT_IDEAS.md) e [`docs/AI_MEDIA_EVOLUTION.md`](docs/AI_MEDIA_EVOLUTION.md) apenas como possibilidades futuras.
 

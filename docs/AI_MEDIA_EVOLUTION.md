@@ -27,17 +27,20 @@ O utilizador deverá poder:
 áudio ou vídeo
   → transcript bruto imutável
   → transcript limpo validado
-  → conteúdo formatado derivado
-  → leitura e edição
+  → prévia estruturada derivada em documents
+  → nota editável e hierárquica em notebooks
+  → leitura, edição e estudo
   → reprodução do áudio original ou síntese de voz
   → estudo, ações, quiz e chat ancorado
 ```
 
 Cada camada permanece identificável. Uma formatação, resumo ou correção nunca substitui silenciosamente o material de origem.
 
-## 3. Formatação e Estudo
+## 3. Prévia, Caderno, Formatação e Estudo
 
-A futura superfície deve funcionar como editor e leitor do mesmo material.
+A prévia e o Caderno são superfícies relacionadas, mas não idênticas. A prévia estruturada em `documents` serve à compreensão rápida e permanece em só leitura; `Salvar no Caderno` cria material editável no domínio `notebooks`, preservando a linhagem sem alterar a origem. O editor e leitor do Caderno trabalham sobre a nota pessoal.
+
+O contrato arquitetural, a hierarquia e a separação de responsabilidades estão em `NOTEBOOK_ARCHITECTURE.md`, cuja leitura é obrigatória para qualquer implementação deste fluxo.
 
 ### Capacidades mínimas
 

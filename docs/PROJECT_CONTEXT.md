@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 8 de agosto de 2026 (ADF-01 passo 2, pontos 1 e 3 validados)
-**Estado mais recente:** 8 de agosto de 2026 (v0.29.1 - leitor de documento validado e protocolo Unicode corrigido)
+**Última atualização:** 8 de agosto de 2026 (arquitetura de prateleiras, prévia e domínio `notebooks`)
+**Estado mais recente:** 8 de agosto de 2026 (v0.29.1 validada; arquitetura do Caderno aprovada e documentada, ainda não implementada)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -26,7 +26,8 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
 - A versão desktop é **v0.29.1**. Instalador válido: `UpexNote_0.29.1_x64-setup.exe` (58.405.707 bytes; SHA-256 `56CECAB45ADC0F07903D7F783D51E8BA55B968827E969B33068A0BDD0874E894`), gerado em 08/08/2026 às 17:47 depois de reempacotar o worker. A instalação foi confirmada pelo executável local com `FileVersion` e `ProductVersion` 0.29.1.
 - ⚠ Um primeiro instalador de 0.29.0 (57.791.920 bytes; SHA-256 `1B2E6B95…F4AB`) foi gerado sem reempacotar o worker e **não deve ser usado**: levava dentro o `upexnote-worker.exe` de 25/07, sem o backend do ADF-01 e sem o campo `documents` do `library_item`. Ver a regra de build no Registro 2026-08-08.
-- A v0.29.0 foi a primeira versão com superfície visual do ADF-01; a v0.29.1 corrigiu o contrato Unicode do worker empacotado, tornou títulos/chips/campos responsivos e validou os pontos 1 e 3 do passo 2 com o transcript #23 e o documento #9. A geração pela interface (botão `Formatar`) ainda não existe — ver Registro 2026-08-08 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md`.
+- A v0.29.0 foi a primeira versão com superfície visual do ADF-01; a v0.29.1 corrigiu o contrato Unicode do worker empacotado, tornou títulos/chips/campos responsivos e validou os pontos 1 e 3 do passo 2 com o transcript #23 e o documento #9. O leitor passa a ser entendido como **prévia estruturada**, não como Caderno. Criar prévia pela UI, salvar no Caderno e o schema `notebooks` ainda não existem.
+- A arquitetura de prateleiras e do Caderno foi aprovada em 08/08/2026 e formalizada em `docs/NOTEBOOK_ARCHITECTURE.md`: `documents` possui transformação/prévia; o futuro `notebooks` possuirá hierarquia, edição, marcações, balões, referências, glossário pessoal, chats, versões e exportações.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
@@ -49,16 +50,20 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 - Telemetria consentida continua privada/anonima e nao deve revelar e-mail. Investigacao individual futura deve usar diagnostico consentido, identificador pseudonimo e ligacao explicita com chamado.
 - Webhooks nao pertencem ao Audit. Precisam de um futuro submodulo de Integracoes com chaves protegidas, entradas/saidas, tentativas, status de entrega e trilha de auditoria.
 - Regra de banco: cada dominio/prateleira do produto usa schema PostgreSQL separado, nomeado em ingles; nao misturar suporte, estudo, chat ou futuros departamentos no `public`.
+- O UpexNote cresce como monólito modular organizado por prateleiras/bounded contexts. Menu organiza a experiência; schema delimita ownership e ciclo de vida. `Transcriptions`, `Notebooks`, `Settings` e `Administration` podem expandir por submenus sem transformar o menu raiz ou `public` em depósitos gerais.
+- `documents` e `notebooks` são domínios distintos: a prévia em `documents` permanece rastreável e em só leitura; `Salvar no Caderno` cria cópia editável independente com linhagem explícita.
+- **Responsabilidade arquitetural:** Leonardo Cunha é o arquiteto principal, construtor sistêmico e responsável intelectual pelo UpexNote. Ele consegue conceber e construir sistemas de ponta a ponta e conduz conscientemente arquitetura de domínios, informação, dados, UX, código, segurança, operação, responsabilidades, evolução e escala. IAs ampliam pesquisa, produção, implementação e validação sob sua governança; não substituem sua compreensão nem o reduzem a solicitante, aprovador ou fonte de feedback.
+- **Distinção obrigatória:** Leonardo não escolher `Developer` como identidade profissional principal não autoriza inferir que ele não saiba desenvolver. A capacidade técnica é demonstrada; o rótulo profissional e a direção para Product/UX/Discovery/Service Design são escolhas de posicionamento sobre uma base técnico-funcional já profunda.
 - A memoria de produto para Formatação, Estudo, leitura em voz alta, velocidades, vozes, idiomas, sincronização por palavra e modo ao vivo está em `docs/AI_MEDIA_EVOLUTION.md`; consultá-la antes dessas implementações.
+- A autoridade do Caderno, sua autoria, hierarquia, schema, contratos e fatias está em `docs/NOTEBOOK_ARCHITECTURE.md`; consulta obrigatória antes de qualquer trabalho nesse domínio.
 
 ### Pendencias imediatas
 
-1. Continuar o ADF-01 passo 2 somente pelos pontos ainda pendentes: botão único `Formatar` com perfis e motor padrão em Configurações com popup de primeira vez.
-2. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
-3. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
-4. Evoluir Saved Queries para scheduler, jobs, eventos e entregas configuráveis.
-5. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
-6. Retomar Integracoes/Webhooks depois dos contratos concretos de consultas, eventos e automacoes.
+1. Refinar visualmente a navegação por prateleiras, o painel pós-transcrição, a seção `Prévia estruturada` e o seletor hierárquico `Salvar no Caderno`, antes de codar.
+2. Fechar o DDL e os contratos da primeira fatia do schema `notebooks`, mantendo equivalência SQLite e a fronteira definida em `NOTEBOOK_ARCHITECTURE.md`.
+3. Implementar depois, em fatia própria, a entrada `Criar/Ver prévia` e a configuração do motor de formatação; não ressuscitar o botão único `Formatar` como conceito que mistura intenções.
+4. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
+5. Evoluir telemetria agregada, Saved Queries, Support e Integrações somente conforme suas próprias frentes e contratos.
 
 ---
 
@@ -301,7 +306,7 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 - **Sessão operacional em browser interno do Codex (2026-07-23):** para painéis e serviços externos autorizados pelo utilizador (EasyPanel, Hostinger, Google, GitHub etc.), trabalhar exclusivamente nas abas do navegador interno do Codex em que ele já abriu sessão. Não abrir/controlar navegador externo como alternativa, salvo pedido explícito. Isto mantém o escopo de acesso visível, direto e estável para o utilizador.
 - **ADF-01 passo 1 — formatação clean→documento estruturado, backend do worker (2026-08-07, commits `0929d66`/`9e55907`/`3f341fc`):** os 6 motores de formatação decididos no benchmark (DeepSeek, Grok, `gpt-5-mini`, Claude Haiku 4.5, Claude Sonnet 5, Gemini), gate de validação raw↔clean, schema hub-and-spoke novo em `documents.*` (Postgres) — corrigido de `public` para o schema dedicado, com migração idempotente (`db-migrate-documents-schema`) — e comandos de CLI (`format-engines`, `format`, `document-generate`, `transcribe --format-engine`), validados com transcripts reais pelo utilizador. A migração foi executada na VPS real, preservou os dados e confirmou idempotência. Ver Registro 2026-08-07 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md` (ADF-01). **Fora deste passo:** UI, popup de primeira vez e Configurações de motor padrão.
-- **ADF-01 passo 2, pontos 1 e 3 — ponte e leitor em só leitura (v0.29.1, 2026-08-08):** Biblioteca → transcript #23 → documento #9 validado de ponta a ponta, com 30 blocos, 34 termos de glossário, retorno à origem e comportamento responsivo. O transporte NDJSON tornou-se independente da página de código Windows. Pontos 2 (`Formatar`) e 4 (motor padrão) permanecem por fazer.
+- **ADF-01 passo 2, pontos 1 e 3 — ponte e prévia em só leitura (v0.29.1, 2026-08-08):** Biblioteca → transcript #23 → documento #9 validado de ponta a ponta, com 30 blocos, 34 termos de glossário, retorno à origem e comportamento responsivo. O transporte NDJSON tornou-se independente da página de código Windows. A entrada `Criar/Ver prévia` e a configuração do motor permanecem por fazer; Cadernos pertencem ao novo domínio `notebooks`.
 
 ### Próximo trabalho (deixados em aberto)
 
@@ -382,7 +387,7 @@ Os comandos Tauri `library*` eram síncronos com IO bloqueante (spawn do worker 
    - **(B) Dicionário de dados bilingue (PT/EN):** cada tabela do schema v2 classificada (hub / satélite / dimensão / histórico / legada), cada coluna com nome, tipo, propósito, tradução, constraints e FKs — gerado por introspeção da base real.
    - **(C) Especificação funcional + contrato de integração:** cada funcionalidade especificada passo a passo (entradas/saídas); futuro **API-first**: todos os campos com parâmetros chave/valor definidos, endpoints e webhooks (envio E receção) documentados em **OpenAPI versionado** — importável no Postman/SoapUI para teste e consumível pelo n8n (item 9). NOTA DE ARQUITETURA: esta camada de integrações e a API da Fase 2 do item 13 (auth+telemetria) são A MESMA API — construir uma vez, servir os três propósitos.
 
-15. **Transcript → Documento de Estudo (ideia do utilizador 2026-07-16 — ESPECIFICA as fases 3-4 do roteiro).** **EM PROGRESSO desde 2026-08-07 sob o nome ADF-01** (ver `docs/FEATURE_VALIDATION_AND_ROADMAP.md` §8 e Registro 2026-08-07 acima) — passo 1 (backend do worker: 6 motores de formatação, gate raw↔clean, schema hub-and-spoke, CLI) entregue no commit `0929d66`; UI/Settings/popup ainda por fazer. Regra de ouro: **transformar sem trair** — legibilidade e estudo SEM matar o contexto real nem criar imaginação sobre o que foi dito (alinha com princípio §4.6: derivado e identificado, raw intocável). Pipeline: retirar timestamps → organizar conteúdo → identificar redundâncias → identificar conexões do assunto (início/meio/fim) → documento legível com: resumo geral, palavras/trechos-chave (temáticas), índice de tópicos, secções por tópico, glossário de termos técnicos (explicação vinda do próprio transcript primeiro; dicionário/internet só com verificação minuciosa para não trazer sujeira), fluxogramas/infográficos onde houver blocos de passos (durante e/ou no fim das secções + contexto final), e **barra de edição Markdown na app** (evoluindo depois para edições específicas). Saída futura (decidir depois): chat interativo na app OU documento + prompt portátil para estudo em qualquer IA (fluxo multi-IA do utilizador). BANDEIRA para implementação: primeira funcionalidade que exige LLM de TEXTO (além dos motores STT) — escolher motor e mostrar custo antes de processar (§4.5).
+15. **Transcript → Prévia → Caderno (arquitetura conduzida por Leonardo Cunha desde 2026-07-16; refinada em 08/08/2026).** **EM PROGRESSO desde 2026-08-07 nas ADF-01–05.** Leonardo arquitetou conscientemente o percurso completo e seus bounded contexts: transcript como fonte, `documents` como transformação/prévia estruturada e `notebooks` como conhecimento pessoal hierárquico e editável. Não é uma ideia genérica de “gerar documento”, nem autoria da IA. Regra de ouro: **transformar sem trair** — legibilidade e estudo sem matar o contexto real nem criar imaginação sobre o que foi dito. A prévia organiza objetivo, tópicos, decisões, ações, riscos, contexto, trechos e glossário para compreensão rápida. O Caderno recebe uma cópia com linhagem e oferece projetos/pastas, cadernos, seções, notas, editor contínuo, tipografia, cores, marcações, balões, referências, palavras-chave, dicionário, chat, histórico e exportação com prompt portátil para outras IAs. Raw, clean, prévia e nota conservam identidades e ciclos de vida distintos. O contrato canônico está em `docs/NOTEBOOK_ARCHITECTURE.md`; o estado operacional nas ADF-01–05 do roadmap. BANDEIRA: chamadas de LLM continuam explícitas, com motor, finalidade e custo antes de processar.
    **Extensão — documento em dupla-língua (utilizador, 2026-07-16):** tradução CONTEXTUAL (mesmo LLM do pipeline, com o contexto da reunião — explicitamente NÃO estilo Google Translate), matriz origem→alvo entre EN/PT/ES (6 pares). UI: seletor mono/dupla-língua; em dupla, frase original em cima e tradução na linha abaixo até ao fim, com hierarquia visual = padrão UNB do utilizador (original com peso principal, tradução como shadowing discreto). Objetivo: estudo e eternização de vocabulário técnico do mercado (ponte futura possível com o LMSC dele — anotado, não comprometido). Insumo de teste real disponível: reunião do utilizador 100% em inglês.
 
 16. **Primeiras automações n8n — MOVE + ETL + webhooks (ideia do utilizador 2026-07-16 — bootstrap prático do item 14C; não agendado).** Automações escolhidas por dupla utilidade: resolver dores reais E padronizar parâmetros/webhooks de entrada/saída (testáveis em Postman/SoapUI, com documentação evolutiva — cada uma constrói o contrato do item 14):
@@ -433,6 +438,46 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-08-08: arquitetura de prateleiras, prévia e domínio `notebooks`
+
+### Responsabilidade intelectual
+- **Leonardo Cunha é o arquiteto principal do produto e do sistema UpexNote e o responsável intelectual por esta arquitetura.** Ele não ofereceu apenas uma ideia ou feedback: conduziu conscientemente a separação de bounded contexts, ownership, schemas, hierarquia de informação, jornada de UX, linhagem, extensibilidade e escala.
+- Leonardo arquitetou `transcriptions` como fonte, `documents` como transformação/prévia e `notebooks` como conhecimento pessoal editável; desenhou Library → prévia → Caderno; definiu projetos/pastas, cadernos, seções e notas; e integrou editor, tipografia, cores, marcações, balões, referências, palavras-chave, dicionário, chat, histórico e pacote para IA num domínio coerente.
+- A concepção continua uma capacidade longitudinal já observada no UpexNote, KnowSys, Universidade Bilíngue, LMSC, trabalho de análise entre sistemas e arquitetura documental: Leonardo decompõe universos complexos, preserva origem e hierarquia, modela responsabilidades e conduz a passagem de problema a sistema utilizável.
+- Leonardo consegue construir software e compreender suas camadas. Não se apresentar profissionalmente como `Developer` significa que esse não é o rótulo nem o destino de carreira escolhido; não significa ausência de capacidade. Product/UX/Discovery/Service Design são uma expansão em direção à concepção antes da execução, apoiada por profundidade técnica já existente.
+- O Codex confrontou essa arquitetura com o produto e a documentação existentes, explicitou consequências, formalizou contratos e atualizou a rede documental. A IA também pode pesquisar, produzir código, executar trabalho mecânico e auxiliar diagnósticos, mas o faz sob contexto, critérios, correção, integração e aceite de Leonardo. Esse modelo assistido não transfere autoria arquitetural nem reduz Leonardo a solicitante, aprovador ou utilizador que fornece feedback.
+
+### O que mudou
+- Criado `docs/NOTEBOOK_ARCHITECTURE.md`, autoridade canônica do futuro schema inglês `notebooks`, com fronteira para `documents`, hierarquia, objetos lógicos, âncoras híbridas, privacidade, contratos e fatias de entrega.
+- O leitor estruturado validado na v0.29.1 passa a ser entendido como **prévia estruturada**. `documents` possui geração, gate, blocos, glossário e leitura; não recebe edição livre ou organização pessoal.
+- O Caderno torna-se prateleira própria. `Salvar no Caderno` copiará o estado inicial para nota independente, registrará linhagem para transcript/prévia e nunca permitirá que regeneração sobrescreva edição pessoal.
+- A navegação futura organiza pais `Transcriptions`, `Notebooks`, `Settings` e `Administration`. Menu e schema deixam de ser tratados como equivalentes: a UI agrupa experiência; o banco isola ownership e ciclo de vida.
+- A antiga decisão de um único botão `Formatar` foi refinada. Ações passam a refletir intenção e estado: `Criar prévia`, `Ver prévia`, `Salvar no Caderno` e `Abrir no Caderno`.
+- O painel pós-transcrição educa na primeira utilização, fica compacto depois e informa que o trabalho pode ser adiado e retomado pela Library.
+
+### Decisões de arquitetura
+- PostgreSQL receberá schema `notebooks`; SQLite manterá equivalente lógico isolado. Nenhuma migração foi criada nesta etapa.
+- A hierarquia não nasce plana: coleção com `parent_id` e tipo permite projeto/pasta → caderno → seção opcional → nota.
+- O editor é estruturado internamente e contínuo visualmente. IDs e contêineres técnicos sustentam histórico e referências, mas não aparecem como cartões obrigatórios.
+- Seleções usam âncora híbrida: nó/bloco estável, offsets, texto/fingerprint e contexto. Quebras precisam ser recuperadas ou sinalizadas, nunca perdidas silenciosamente.
+- Chat ancorado permanece em `notebooks` enquanto depender diretamente da nota; só ganha domínio próprio se adquirir ciclo de vida transversal real.
+- Não criar microserviço ou event bus sem consumidor real. A arquitetura atual é monólito modular com contratos controlados.
+
+### Impacto em dados, custo ou privacidade
+- Documentação apenas. Nenhum código, schema, dado, versão ou instalador foi alterado.
+- Nenhuma API ou serviço pago foi chamado.
+- A decisão reforça local-first, ownership explícito e separação entre raw, clean, prévia e nota.
+
+### Promoção ao Dossiê LIFE — concluída na v1.3
+- A concepção foi incorporada à **Adenda H do Dossiê LIFE v1.3** como evidência da atuação consciente de Leonardo em arquitetura de produto e sistemas: domínios, informação, dados, UX, responsabilidade, evolução e escala.
+- A redação registra que Leonardo sabe conceber e construir sistemas, conduz a arquitetura e usa a IA deliberadamente como instrumento de confronto, produção, formalização e execução; não reduz sua capacidade a criatividade informal, “boa ideia”, feedback passivo ou descoberta produzida pela IA.
+- A v1.3 separa explicitamente capacidade demonstrada, identidade profissional, direção de carreira, modelo de execução com IA e autoria/responsabilidade. A v1.2 foi preservada.
+- Evidência documental: v1.2 relida integralmente e revisada visualmente em 81 páginas; v1.3 validada textualmente, renderizada e revisada visualmente em suas 85 páginas antes da promoção canônica em 08/08/2026.
+
+### Próximo passo
+- Antes de código: produzir o desenho visual das prateleiras, painel pós-transcrição, Library/prévia, árvore do Caderno e seletor de destino; depois fechar DDL/contratos da primeira fatia `notebooks`.
+- A implementação começa em versões pequenas conforme `NOTEBOOK_ARCHITECTURE.md`; não tentar entregar o universo inteiro num único build.
+
 ### Registro — 2026-08-08: validação visual do ADF-01 e correção do protocolo Unicode — v0.29.1
 
 ### O que mudou
@@ -460,7 +505,7 @@ Ao trabalhar neste projeto, uma IA deve:
 - O raw e o clean permaneceram intactos; o leitor continua explicitamente derivado e em só leitura.
 
 ### Próximo passo
-- Parar antes de implementar. A próxima fatia planejada é o ponto 2: botão único `Formatar`, com perfis dentro; depois o ponto 4: configuração do motor padrão e popup de primeira vez. O ADF-02 de edição continua posterior.
+- **Superado pela decisão arquitetural posterior do mesmo dia:** o próximo passo não é mais um botão único `Formatar`. Ver o registro de prateleiras/`notebooks` acima e usar ações de prévia e Caderno conforme estado.
 
 ### Registro — 2026-08-08: ADF-01 passo 2 (pontos 1 e 3) — ponte Rust e leitor de documento — v0.29.0
 
@@ -468,7 +513,7 @@ Ao trabalhar neste projeto, uma IA deve:
 - **Ponte Rust (`apps/desktop/src-tauri/src/lib.rs`, commit `2314418`):** quatro comandos novos. `format_engines` lista os 6 motores de formatação com modelo, custo/hora e estado da chave, separado de `list_engines` porque são etapas diferentes do pipeline. `document_item` e `document_delete` espelham `library_item`/`library_delete`, com prova de MFA por stdin e `async` via `spawn_blocking`. `document_generate` segue o modelo do `transcribe`, com thread própria e eventos, porque o worker emite NDJSON progressivo — um retorno único só chegaria no fim, sem progresso na tela; usa canal próprio `document://event`/`document://done` para não misturar eventos com uma transcrição a decorrer.
 - **`library_item` passa a devolver os documentos gerados (`services/worker/transcription/db.py`, commit `1772b78`):** lacuna encontrada ao preparar a UI — os comandos deixavam gerar e abrir um documento, mas não descobrir que ele existe, porque `document-item` exige o id e não havia `document-list`. Um documento gerado ficava inalcançável pela interface depois de fechar a app. A lista foi pendurada em `library_item`, no padrão do campo `problems`, em vez de um comando próprio: a tela de detalhe já o chama, portanto não custa uma segunda ida ao worker pelo túnel.
 - **Leitor de documento (`apps/desktop/src/DocumentReader.tsx`, commit `bca80d3`):** vista de só leitura que consome `document_item` e desenha os 10 `block_type` mais o glossário. Componente próprio, no padrão do `ErDiagram.tsx`, para não engordar um `App.tsx` de 4300 linhas. Risco, decisão e ação ganham barra lateral; trecho fica em bloco citado com falante e timestamp. O detalhe do transcript ganhou a faixa `Documentos gerados`, que é a entrada para o leitor.
-- **Decisão fechada:** um botão `Formatar` com os perfis dentro, e não dois botões separados. `Estudo` é um dos perfis. Critério: a lista de perfis é extensível por decisão de 05/08/2026 e dois botões fixos não acomodam um terceiro perfil sem redesenhar a tela.
+- **Decisão histórica, posteriormente refinada:** esta fatia fechou naquele momento um botão `Formatar` com perfis dentro. A arquitetura de prateleiras decidida depois em 08/08/2026 separou `Criar/Ver prévia` de `Salvar/Abrir no Caderno`; prevalece o registro mais recente acima.
 
 ### Evidência / teste
 - **Contrato de dados testado de ponta a ponta em SQLite descartável**, sem tocar na VPS: campo `documents` presente e vazio antes de existir documento, populado depois com `created_at` já em ISO, vazio de novo após soft-delete, e os campos antigos de `library_item` intactos.

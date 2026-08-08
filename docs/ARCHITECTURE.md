@@ -33,6 +33,36 @@ PostgreSQL no EasyPanel
 
 O Data Studio administrativo explora o catálogo e oferece um construtor visual PostgreSQL protegido, SQL Editor manual, Saved Queries parametrizadas e diagramas ER, conforme `DATA_STUDIO_ARCHITECTURE.md`. Valores são parametrizados; mutações exigem plano confirmado, transação e auditoria. Scheduler, jobs, eventos, entregas e integrações externas permanecem posteriores à v0.28.
 
+## Prateleiras e domínios
+
+O UpexNote evolui como **monólito modular organizado por prateleiras**. Uma prateleira é um bounded context de produto: possui responsabilidade, navegação, contratos, permissões e ciclo de vida próprios. Isso não obriga processo, serviço ou schema exclusivo quando o domínio não precisa de persistência central.
+
+```mermaid
+flowchart LR
+  T["Transcriptions\nTranscribe + Library"] --> D["Documents\nPrévia estruturada"]
+  D --> N["Notebooks\nCadernos e notas editáveis"]
+  T --> N
+  S["Settings\nPreferências e configuração"] -. "configura" .-> T
+  S -. "configura" .-> D
+  S -. "configura" .-> N
+  A["Administration\nGovernança e operação"] -. "administra por contratos" .-> T
+  A -. "administra por contratos" .-> N
+```
+
+| Prateleira | Limite | Persistência |
+| --- | --- | --- |
+| Transcriptions | ingestão, raw, clean, métricas, problemas e catálogo da Library | domínio existente de transcrição |
+| Documents | transformação do clean, gate raw↔clean, perfis, blocos e prévias estruturadas | schema PostgreSQL `documents` |
+| Notebooks | hierarquia, edição, notas, marcações, referências, chats e exportação | futuro schema PostgreSQL `notebooks` |
+| Settings | aparência, tipografia, layout, paths, motores, credenciais, privacidade e segurança | local por padrão; central apenas quando necessário |
+| Administration | identidade administrativa, auditoria, telemetria, Support e Data Studio | schemas proprietários dos respetivos domínios |
+
+Menu e schema não têm relação obrigatória de um para um. `Administration`, por exemplo, agrega `support` e `data_studio` sem misturá-los. O mesmo princípio permite que `Settings` organize várias preferências sem criar um schema artificial.
+
+A direção aprovada de navegação agrupa `Transcribe` e `Library` sob o pai `Transcriptions`, cria `Notebooks` como prateleira principal e transforma `Settings` num pai com destinos estáveis para Appearance, Typography, Layout, Storage, Engines, Privacy, Account e Security. A árvore de projetos/cadernos/notas pertence ao workspace interno de `Notebooks`, não ao menu global.
+
+O contrato completo de Cadernos, incluindo hierarquia, fronteira com `documents`, objetos lógicos, linhagem, âncoras e fatias, vive em `NOTEBOOK_ARCHITECTURE.md`. A direção está aprovada, mas não foi implementada na v0.29.1.
+
 ## Aplicação desktop
 
 - **UI:** React 19, TypeScript e Vite, empacotados em Tauri 2 para Windows.
@@ -71,6 +101,8 @@ O suporte segue hub-and-spoke: `support.tickets` é a matriz e satélites preser
 O ADF-01 segue a mesma regra desde 2026-08-07 (commits `3f341fc`/`57e518e`): `documents.structured_documents` é a matriz e os satélites `document_blocks`, `document_glossary`, `document_metrics` e `documents_history` penduram-se nela. As tabelas tinham nascido em `public` por engano e foram movidas com a migração idempotente `db-migrate-documents-schema`, executada e validada na VPS real (dados preservados). A dimensão `engines` permanece em `public`, partilhada entre transcrição e formatação (coluna `kind`) — o join entre schemas é normal e está validado.
 
 Desde a v0.29.1, a Biblioteca expõe os documentos derivados do transcript e abre um leitor estruturado em só leitura. O percurso completo UI → Rust → worker → `documents.*` foi validado com dados reais; geração na interface, edição e motor padrão continuam fora desta fatia.
+
+O leitor passa a ser compreendido como **prévia estruturada**, não como Caderno. O futuro schema `notebooks` possuirá o conteúdo editável e sua hierarquia. `Salvar no Caderno` copiará o estado inicial e registrará a linhagem para transcript/documento, sem criar vínculo vivo que permita uma regeneração sobrescrever edições pessoais.
 
 ## Operação
 
