@@ -1,6 +1,6 @@
 # Produto UpexNote
 
-> Estado alinhado à versão desktop `0.29.0`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.29.1`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
 
 ## Marca e propósito
 
@@ -22,6 +22,7 @@ O produto atende especialmente reuniões com português de Portugal, português 
 - Suporte com casos, conversas, estados, atribuição e evidências sem armazenar binários no banco.
 - Perfil completo no rodapé com identidade, papel, informações da conta e preparação para avatar futuro.
 - Data Studio com catálogo por schema, construtor visual, SQL Editor, Saved Queries e diagramas ER por schema, tabela ou consulta.
+- Documentos estruturados derivados acessíveis pela Biblioteca: faixa no transcript, leitor em só leitura, blocos semânticos, campos, glossário, cópia e retorno à origem; ADF-01 passo 2, pontos 1 e 3, validados na v0.29.1.
 
 ## Princípios de produto
 
@@ -49,7 +50,7 @@ A pessoa precisa compreender onde está, o que pode fazer, o resultado da ação
 2. Tornar a telemetria agregada mais acionável sem quebrar consentimento ou anonimato.
 3. Acrescentar scheduler, jobs, eventos e entregas às Saved Queries.
 4. Evoluir suporte com filtros, SLA futuro, prioridade, atribuição, notificações e histórico.
-5. Implementar contexto estruturado: resumo, decisões, ações, riscos e perguntas, sempre derivado e identificado.
+5. Evoluir o contexto estruturado já legível para geração pela interface, edição e versionamento: resumo, decisões, ações, riscos e perguntas permanecem sempre derivados e identificados.
 6. Implementar material de estudo: explicações, fluxos, tabelas, quiz e exportações.
 7. Implementar chat ancorado no material, sem transformar inferências em fatos do transcript.
 8. Retomar Integrações/Webhooks somente após contratos concretos de consultas, eventos e automações.

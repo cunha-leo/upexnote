@@ -74,13 +74,9 @@ import secrets
 from pathlib import Path
 
 from . import paths
+from .protocol import emit as _emit
 from .registry import ENGINES, FORMAT_ENGINES
 from .credentials import get_key, set_key, clear_key, KNOWN_KEYS, key_purposes
-
-
-def _emit(stream, event):
-    stream.write(json.dumps(event, ensure_ascii=False) + "\n")
-    stream.flush()
 
 
 def _jsonable(value):

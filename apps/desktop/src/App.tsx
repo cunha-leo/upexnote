@@ -900,7 +900,7 @@ function LibraryView({ active }: { active: boolean }) {
       <section className="card">
         <div className="detail-head">
           <button className="secondary" onClick={closeDetail} disabled={saving}>{t("back")}</button>
-          <h2 style={{ margin: 0, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <h2 className="detail-title" title={detail.source_filename || undefined}>
             {detail.source_filename || t("libItemN", { id: detail.id })}
           </h2>
           {!editing && (
@@ -925,6 +925,11 @@ function LibraryView({ active }: { active: boolean }) {
             </>
           )}
         </div>
+        {error && (
+          <div className="key-warn" role="alert">
+            {t("libReadFail", { err: error })}
+          </div>
+        )}
         <div className="result-head">
           <span
             className="badge badge-id"

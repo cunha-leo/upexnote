@@ -1018,6 +1018,12 @@ button.secondary:hover:not(:disabled) { border-color: var(--accent); background:
   font-size: var(--fs-base);
   color: var(--text);
 }
+.detail-title {
+  margin: 0;
+  flex: 1;
+  min-width: 180px;
+  overflow-wrap: anywhere;
+}
 
 textarea.edit-area {
   display: block;
@@ -1727,12 +1733,18 @@ input[type="range"] {
   font-size: .78em; text-transform: uppercase; letter-spacing: .04em;
   color: var(--muted); font-weight: 600;
 }
-.doc-chip { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-chip {
+  max-width: min(100%, 560px);
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
 
 /* Cabeçalho do leitor */
 .doc-reader .doc-title {
   margin: 0; flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  white-space: normal; overflow-wrap: anywhere;
 }
 
 /* Objetivo em destaque */
@@ -1795,5 +1807,24 @@ input[type="range"] {
 /* Janela estreita: os pares passam a empilhar em vez de espremer a coluna */
 @media (max-width: 820px) {
   .doc-field { grid-template-columns: 1fr; gap: 2px; }
-  .doc-chip { max-width: 200px; }
+  .doc-strip { align-items: stretch; }
+  .doc-strip-label { flex-basis: 100%; }
+  .doc-chip { width: 100%; max-width: none; }
+  .doc-reader .doc-title { order: 2; flex-basis: 100%; }
+
+  /* O menu aberto consumia quase metade da janela minima. Em viewport
+     estreito ele assume visualmente o mesmo estado compacto já existente,
+     preservando os ícones e devolvendo espaço útil ao conteúdo. */
+  .sidebar { width: 58px; padding-inline: 6px; }
+  .sidebar .sidebar-brand { display: flex; justify-content: center; padding: 6px 0 10px; }
+  .sidebar .brand-row { display: block; }
+  .sidebar .brand-row > :not(.brand-mark),
+  .sidebar .nav-item > :not(.nav-ico),
+  .sidebar .admin-subnav,
+  .sidebar .side-profile .sp-main,
+  .sidebar .side-profile > .tb-btn,
+  .sidebar .sidebar-meta { display: none; }
+  .sidebar .nav-item { justify-content: center; padding: 7px 0; }
+  .sidebar .side-profile { justify-content: center; padding: 8px 0 4px; }
+  .sidebar .side-profile .profile-trigger { flex: 0 0 auto; padding: 4px; }
 }

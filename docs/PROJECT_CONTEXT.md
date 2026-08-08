@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 8 de agosto de 2026 (ADF-01 passo 2, pontos 1 e 3)
-**Estado mais recente:** 8 de agosto de 2026 (v0.29.0 - ADF-01 passo 2: ponte Rust e leitor de documento)
+**Última atualização:** 8 de agosto de 2026 (ADF-01 passo 2, pontos 1 e 3 validados)
+**Estado mais recente:** 8 de agosto de 2026 (v0.29.1 - leitor de documento validado e protocolo Unicode corrigido)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,9 +24,9 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 8 de agosto de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versão desktop é **v0.29.0**. Instalador válido: `UpexNote_0.29.0_x64-setup.exe` (58.410.023 bytes; SHA-256 `A0F52AA1D589959EFBE2186CD6E04328E2EE8C6ED0AC370A80A38E4CF7465023`), gerado em 08/08/2026 às 14:33 **depois** de reempacotar o worker.
+- A versão desktop é **v0.29.1**. Instalador válido: `UpexNote_0.29.1_x64-setup.exe` (58.405.707 bytes; SHA-256 `56CECAB45ADC0F07903D7F783D51E8BA55B968827E969B33068A0BDD0874E894`), gerado em 08/08/2026 às 17:47 depois de reempacotar o worker. A instalação foi confirmada pelo executável local com `FileVersion` e `ProductVersion` 0.29.1.
 - ⚠ Um primeiro instalador de 0.29.0 (57.791.920 bytes; SHA-256 `1B2E6B95…F4AB`) foi gerado sem reempacotar o worker e **não deve ser usado**: levava dentro o `upexnote-worker.exe` de 25/07, sem o backend do ADF-01 e sem o campo `documents` do `library_item`. Ver a regra de build no Registro 2026-08-08.
-- A v0.29.0 é a primeira versão com superfície visual do ADF-01: a ponte Rust para os comandos de documento e o leitor de documento estruturado em só leitura. A geração pela interface (botão `Formatar`) ainda não existe — ver Registro 2026-08-08 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md`.
+- A v0.29.0 foi a primeira versão com superfície visual do ADF-01; a v0.29.1 corrigiu o contrato Unicode do worker empacotado, tornou títulos/chips/campos responsivos e validou os pontos 1 e 3 do passo 2 com o transcript #23 e o documento #9. A geração pela interface (botão `Formatar`) ainda não existe — ver Registro 2026-08-08 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
@@ -53,11 +53,12 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 
 ### Pendencias imediatas
 
-1. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
-2. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
-3. Evoluir Saved Queries para scheduler, jobs, eventos e entregas configuráveis.
-4. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
-5. Retomar Integracoes/Webhooks depois dos contratos concretos de consultas, eventos e automacoes.
+1. Continuar o ADF-01 passo 2 somente pelos pontos ainda pendentes: botão único `Formatar` com perfis e motor padrão em Configurações com popup de primeira vez.
+2. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
+3. Evoluir telemetria agregada para diagnostico acionavel sem quebrar consentimento ou anonimato.
+4. Evoluir Saved Queries para scheduler, jobs, eventos e entregas configuráveis.
+5. Continuar o suporte como gestor de atendimento completo: filtros, SLA futuro, atribuicao, prioridade, notificacoes e historico.
+6. Retomar Integracoes/Webhooks depois dos contratos concretos de consultas, eventos e automacoes.
 
 ---
 
@@ -299,7 +300,8 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 - **Consentimento inicial de telemetria publicado (v0.22.0 / 2026-07-23):** após o login, quem ainda não decidiu vê uma tela inicial clara e não bloqueante: pode ajudar a melhorar o UpexNote (opt-in explícito), usar somente o necessário (recusa explícita) ou abrir as configurações para personalizar. Não há caixas pré-marcadas; a decisão é persistente e revogável nas Definições. O worker distingue a primeira utilização de uma recusa, portanto não repete o pedido após escolha. Textos PT/EN/ES explicam valor prático, limites de dados e caminho para revogar. Instalador `UpexNote_0.22.0_x64-setup.exe` instalado e copiado para o Desktop.
 
 - **Sessão operacional em browser interno do Codex (2026-07-23):** para painéis e serviços externos autorizados pelo utilizador (EasyPanel, Hostinger, Google, GitHub etc.), trabalhar exclusivamente nas abas do navegador interno do Codex em que ele já abriu sessão. Não abrir/controlar navegador externo como alternativa, salvo pedido explícito. Isto mantém o escopo de acesso visível, direto e estável para o utilizador.
-- **ADF-01 passo 1 — formatação clean→documento estruturado, backend do worker (2026-08-07, commits `0929d66`/`9e55907`/`3f341fc`):** os 6 motores de formatação decididos no benchmark (DeepSeek, Grok, `gpt-5-mini`, Claude Haiku 4.5, Claude Sonnet 5, Gemini), gate de validação raw↔clean, schema hub-and-spoke novo em `documents.*` (Postgres) — corrigido de `public` para o schema dedicado, com migração idempotente (`db-migrate-documents-schema`) — e comandos de CLI (`format-engines`, `format`, `document-generate`, `transcribe --format-engine`), validados com transcripts reais pelo utilizador. Ver Registro 2026-08-07 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md` (ADF-01). Detalhe do item 15 abaixo. **Fora deste passo:** UI, popup de primeira vez, Configurações de motor padrão. **Pendência operacional:** utilizador ainda precisa rodar `db-migrate-documents-schema` uma vez contra a VPS real (código pronto e testado localmente, mas essa IA não tem acesso de rede à VPS).
+- **ADF-01 passo 1 — formatação clean→documento estruturado, backend do worker (2026-08-07, commits `0929d66`/`9e55907`/`3f341fc`):** os 6 motores de formatação decididos no benchmark (DeepSeek, Grok, `gpt-5-mini`, Claude Haiku 4.5, Claude Sonnet 5, Gemini), gate de validação raw↔clean, schema hub-and-spoke novo em `documents.*` (Postgres) — corrigido de `public` para o schema dedicado, com migração idempotente (`db-migrate-documents-schema`) — e comandos de CLI (`format-engines`, `format`, `document-generate`, `transcribe --format-engine`), validados com transcripts reais pelo utilizador. A migração foi executada na VPS real, preservou os dados e confirmou idempotência. Ver Registro 2026-08-07 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md` (ADF-01). **Fora deste passo:** UI, popup de primeira vez e Configurações de motor padrão.
+- **ADF-01 passo 2, pontos 1 e 3 — ponte e leitor em só leitura (v0.29.1, 2026-08-08):** Biblioteca → transcript #23 → documento #9 validado de ponta a ponta, com 30 blocos, 34 termos de glossário, retorno à origem e comportamento responsivo. O transporte NDJSON tornou-se independente da página de código Windows. Pontos 2 (`Formatar`) e 4 (motor padrão) permanecem por fazer.
 
 ### Próximo trabalho (deixados em aberto)
 
@@ -431,6 +433,35 @@ Ao trabalhar neste projeto, uma IA deve:
 
 ## 12. Registro de atualizações
 
+### Registro — 2026-08-08: validação visual do ADF-01 e correção do protocolo Unicode — v0.29.1
+
+### O que mudou
+- **Protocolo NDJSON independente da página de código (`services/worker/transcription/protocol.py`):** todos os eventos do worker passam por um emissor que usa `json.dumps(..., ensure_ascii=True)`. Caracteres como `→` viajam como escapes ASCII e voltam ao Unicode original no `JSON.parse`, sem depender do `stdout` configurado pelo Windows.
+- **Erro visível no detalhe do transcript (`apps/desktop/src/App.tsx`):** se a abertura de um documento falhar, o estado de erro permanece no contexto de origem em vez de o chip regressar silenciosamente ao estado inicial.
+- **Responsividade do ADF-01 (`apps/desktop/src/App.tsx` e `App.css`):** título do transcript, título do documento, chips, badges, campos e glossário quebram ou empilham em espaço estreito. O menu lateral compacta para ícones sem retirar o contexto principal.
+- **Versão 0.29.1:** worker reempacotado antes do build Tauri, instalador NSIS gerado, instalado e aberto na máquina real.
+
+### Evidência / teste
+- A validação inicial da v0.29.0 reproduziu a falha real: o documento #9 continha `→`; o worker PyInstaller tentou escrevê-lo na página de código local e lançou erro `charmap`. O título também denunciou caracteres mal decodificados. A causa foi tratada no contrato, não nos dados.
+- Teste de regressão automatizado prova ida e volta de `Orientação` e `→`, mantendo a linha NDJSON ASCII-safe. A bateria específica do protocolo e cliente passou com 5 testes; `npm.cmd run build`, `cargo check`, `git diff --check` e o build Tauri/NSIS passaram.
+- O worker empacotado foi chamado diretamente contra os dados reais, sem geração: documento #9 do transcript #23 devolveu o título `Onboarding e Orientação da Comunidade Classe A`, `raw_clean_check_ok=true`, 30 blocos e 34 termos de glossário.
+- Na aplicação instalada, a Biblioteca abriu o transcript #23, mostrou a faixa `Documentos gerados` e o chip completo do documento #9. O leitor abriu em só leitura, renderizou cabeçalho, metadados, objetivo, todos os blocos, campos/listas, glossário e nota derivada; o retorno reconduziu ao transcript #23 com a faixa preservada.
+- Capturas em janela normal e em 800 × 1000 cobriram início, meio, final e glossário. Não foram encontrados cortes, sobreposições, textos truncados nem estados vazios incorretos. A árvore de automação confirmou zero campos editáveis no leitor.
+- Instalador `UpexNote_0.29.1_x64-setup.exe`: 58.405.707 bytes; SHA-256 `56CECAB45ADC0F07903D7F783D51E8BA55B968827E969B33068A0BDD0874E894`. Worker empacotado: 14.114.411 bytes, 08/08/2026 17:41.
+
+### Decisão
+- **Resultado final: `Validated`.** Os pontos 1 (ponte) e 3 (leitor em só leitura) do passo 2 do ADF-01 deixam de ser apenas `Delivered`.
+- O padrão `detalhe do transcript → artefacto derivado → voltar à origem`, a faixa de chips e o empilhamento responsivo passam a integrar `docs/UX_PRODUCT_STANDARD.md`.
+- A correção mantém o Unicode real no modelo de dados e no frontend; apenas torna o transporte NDJSON compatível com qualquer página de código do console.
+
+### Impacto em dados, custo ou privacidade
+- Nenhuma migração e nenhuma alteração de dados. O documento existente foi apenas lido.
+- Nenhum documento foi regenerado e nenhuma API paga foi chamada.
+- O raw e o clean permaneceram intactos; o leitor continua explicitamente derivado e em só leitura.
+
+### Próximo passo
+- Parar antes de implementar. A próxima fatia planejada é o ponto 2: botão único `Formatar`, com perfis dentro; depois o ponto 4: configuração do motor padrão e popup de primeira vez. O ADF-02 de edição continua posterior.
+
 ### Registro — 2026-08-08: ADF-01 passo 2 (pontos 1 e 3) — ponte Rust e leitor de documento — v0.29.0
 
 ### O que mudou
@@ -467,12 +498,10 @@ npm.cmd run tauri build
 - Nenhuma chamada paga: o leitor apenas lê o que já foi gerado e persistido. Nenhum conteúdo sai da máquina.
 - O documento continua a ser camada derivada; o raw permanece intocado, conforme o princípio §4.1.
 
-### Próximo passo — PENDENTE, ler antes de continuar
-- **Validação visual por fazer.** Instalar o instalador VÁLIDO (58.410.023 bytes) e abrir a Biblioteca no transcript **#23**, que tem o documento **#9** ("Onboarding e Orientação da Comunidade Classe A"). Confirmar que a faixa `Documentos gerados` aparece abaixo dos badges e que o leitor desenha blocos e glossário. Validar contra `docs/UX_PRODUCT_STANDARD.md`. Até lá a frente é `Delivered`, **não** `Validated`.
+### Próximo passo — concluído na v0.29.1
+- **Validação visual concluída em 08/08/2026.** O transcript #23 e o documento #9 foram validados contra `docs/UX_PRODUCT_STANDARD.md`; os pontos 1 e 3 passaram de `Delivered` para `Validated`. Ver o registro da v0.29.1 imediatamente acima.
 - **Já confirmado contra o Postgres real (08/08/2026, via Data Studio):** `documents.structured_documents` tem 9 linhas — documentos 1 a 8 no transcript #21 e documento 9 no #23. Portanto o schema e os dados estão lá e a dúvida sobre o join entre schemas deixa de ser a hipótese principal. Nota: os contadores do Explorer do Data Studio mostravam `structured_documents` a 0 — são estimativas do Postgres, não contagens; não confiar neles.
-- **Se a faixa continuar a não aparecer** com o instalador válido, aí sim o suspeito é a query nova dentro de `db.library_item` contra o Postgres, e não o leitor.
-- **Também pendente:** escrever no `docs/UX_PRODUCT_STANDARD.md` os dois padrões novos que esta fatia criou e que ele ainda não descreve — o nível de navegação `detalhe → artefacto derivado`, com voltar para a origem, e os componentes da faixa de chips e dos pares campo/valor que empilham em janela estreita. Deliberadamente não escrito antes da validação visual, para não canonizar um layout por confirmar.
-- Depois: pontos 2 e 4 do passo 2 — botão `Formatar` com os perfis, eventos de progresso, e motor padrão em Configurações com popup de primeira vez.
+- **Padrão atualizado:** `docs/UX_PRODUCT_STANDARD.md` agora descreve o nível `detalhe → artefacto derivado`, o retorno à origem, a faixa de chips, o leitor em só leitura e o empilhamento responsivo.
 - Depois: pontos 2 e 4 do passo 2 — botão `Formatar` com os perfis, eventos de progresso, e motor padrão em Configurações com popup de primeira vez.
 
 

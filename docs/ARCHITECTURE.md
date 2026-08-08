@@ -1,6 +1,6 @@
 # Arquitetura do UpexNote
 
-> Estado alinhado à versão desktop `0.29.0`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.29.1`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
 
 ## Visão geral
 
@@ -37,7 +37,7 @@ O Data Studio administrativo explora o catálogo e oferece um construtor visual 
 
 - **UI:** React 19, TypeScript e Vite, empacotados em Tauri 2 para Windows.
 - **Shell nativo:** Rust expõe comandos assíncronos para o worker, evita bloquear a janela e mantém o túnel SSH persistente quando aplicável.
-- **Worker:** Python empacotado com PyInstaller como sidecar; comunica progresso e resultado por NDJSON, sem servidor HTTP local, portas ou CORS.
+- **Worker:** Python empacotado com PyInstaller como sidecar; comunica progresso e resultado por NDJSON, sem servidor HTTP local, portas ou CORS. O protocolo serializa Unicode com escapes ASCII para não depender da página de código do console Windows; o consumidor recupera os caracteres originais ao decodificar o JSON.
 - **Persistência local:** cada instalação pode usar SQLite embutido; a instalação administrativa também pode usar PostgreSQL pela ligação protegida já configurada.
 - **Identidade:** e-mail/senha, Google OAuth e GitHub Device Flow; administração exige elevação MFA por TOTP ou código por e-mail.
 
@@ -69,6 +69,8 @@ Novos domínios usam schemas PostgreSQL separados e nomeados em inglês. Não se
 O suporte segue hub-and-spoke: `support.tickets` é a matriz e satélites preservam descrição, comentários, anexos, status, atribuições, notificações e auditoria. Anexos não são BLOBs no banco.
 
 O ADF-01 segue a mesma regra desde 2026-08-07 (commits `3f341fc`/`57e518e`): `documents.structured_documents` é a matriz e os satélites `document_blocks`, `document_glossary`, `document_metrics` e `documents_history` penduram-se nela. As tabelas tinham nascido em `public` por engano e foram movidas com a migração idempotente `db-migrate-documents-schema`, executada e validada na VPS real (dados preservados). A dimensão `engines` permanece em `public`, partilhada entre transcrição e formatação (coluna `kind`) — o join entre schemas é normal e está validado.
+
+Desde a v0.29.1, a Biblioteca expõe os documentos derivados do transcript e abre um leitor estruturado em só leitura. O percurso completo UI → Rust → worker → `documents.*` foi validado com dados reais; geração na interface, edição e motor padrão continuam fora desta fatia.
 
 ## Operação
 

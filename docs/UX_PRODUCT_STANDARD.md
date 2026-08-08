@@ -38,6 +38,24 @@ Todo modulo com dados operacionais segue, quando aplicavel:
 - Estados de hover, foco, selecao, vazio, carregamento, erro e sucesso precisam ser visiveis e coerentes em todos os temas.
 - Scroll e parte do aplicativo: discreto, com a cor do tema, e nunca usado para compensar uma tabela ou layout mal dimensionado.
 
+## Artefactos derivados do transcript
+
+- O detalhe do transcript pode aprofundar a jornada em `detalhe -> artefacto derivado`, sem perder a origem. O artefacto sempre oferece uma acao clara para voltar ao transcript que o gerou.
+- Quando existirem documentos derivados, a faixa `Documentos gerados` aparece no detalhe do transcript, imediatamente depois dos seus badges e antes do conteudo principal.
+- Cada documento e representado por um chip acionavel. O titulo completo deve permanecer legivel: em espaco reduzido, quebra em mais de uma linha em vez de usar reticencias ou cortar informacao. `title` pode complementar, mas nao substituir o texto visivel.
+- Um transcript pode ter varios documentos derivados; a faixa precisa acomodar essa relacao sem transformar os chips em navegacao principal do aplicativo.
+- O leitor estruturado abre com retorno para a origem, titulo completo, metadados relevantes e a acao secundaria `Copiar`. Enquanto o ADF-01 permanecer em leitura, nao exibe campos editaveis nem affordances de edicao.
+- A ordem do documento e: cabecalho e metadados, objetivo, blocos estruturados na sequencia persistida, glossario e identificacao final de que o material e derivado.
+- Blocos mantem rotulo semantico e conteudo legivel. Risco, decisao e acao recebem diferenciacao visual; trechos preservam falante e timestamp quando disponiveis; listas e pares campo/valor sao renderizados como estrutura, nunca como JSON cru.
+- Em janela estreita, menu lateral pode compactar para icones; titulos, badges, chips e cartoes quebram linha; pares campo/valor e glossario empilham. Nao pode haver sobreposicao, truncamento de rotulos ou overflow horizontal da pagina.
+- Falha ao carregar um documento precisa permanecer visivel no contexto do transcript, com estado de erro explicito; nunca retornar silenciosamente como se o clique nao tivesse funcionado.
+
+### Validacao de referencia — ADF-01
+
+- Validado na v0.29.1 em 08/08/2026 com o transcript #23 e o documento #9, em janela normal e estreita.
+- Evidencia cobriu faixa e chip de documentos, cabecalho, objetivo, inicio/meio/fim dos 30 blocos, 34 entradas de glossario e retorno ao transcript de origem.
+- O leitor permaneceu em so leitura, sem cortes, sobreposicoes, truncamentos ou estados vazios incorretos.
+
 ## Privacidade e administracao
 
 - Audit apresenta eventos semanticamente e filtra segredos, tokens, hashes, provider scopes e identificadores tecnicos desnecessarios.
