@@ -331,7 +331,7 @@ Uma frente só pode chegar a `Ready` quando possuir:
 
 ### ADF-01 — Structured Document Generation
 
-**Status:** `In progress` (passo 1 — backend do worker — entregue em 07/08/2026, commit `0929d66`; UI/Settings/popup ainda fora deste passo, ver "Passo 1 entregue" abaixo).
+**Status:** `In progress` — passo 1 (backend do worker) entregue em 07/08/2026; passo 2 pontos 1 e 3 (ponte Rust e leitor em só leitura) entregues em 08/08/2026 na v0.29.0, aguardando validação visual; pontos 2 e 4 (botão `Formatar` e motor padrão em Configurações) por fazer.
 
 **Prioridade:** máxima na evolução atual do produto.
 
@@ -464,11 +464,19 @@ Todos os seis extraíram corretamente a história principal (tabela de taxas, pr
 - **Evidência/teste:** os 6 motores testados pelo utilizador na própria máquina, com chaves e transcripts reais (não sintéticos) — um vídeo técnico de ~18 min (lógica de negócio de emissão de passagens) e uma aula de curso próprio de ~12 min. Sem alucinação detectada em nenhum motor. Achado real durante o teste: `gpt-5-mini` rejeita `temperature` custom (só aceita o default 1) — corrigido tornando `temperature` opcional em `_run_openai_compatible`. Também confirmado nos testes reais de 07/08/2026 que `grok-4-fast` e `deepseek-chat` continuam ativos (contrariando o risco de descontinuação anotado antes). Fluxo encadeado `transcribe --format-engine` testado ponta a ponta com áudio real, documento salvo no Postgres da VPS.
 - **Fora deste passo (próximo trabalho):** UI (botões "Documento formatado"/"Estudo" na Biblioteca e na tela de Transcribe), popup de primeira vez, tela de Configurações para motor padrão de formatação por finalidade. O backend de leitura que a UI vai consumir já existe (`document-item`/`document-delete`, commit `57e518e`).
 
-**Passo 2 — próxima fatia (planeada 07/08/2026, ainda não iniciada).** Objetivo: tornar visível na app o que o passo 1 já produz no banco. Ordem proposta, mantendo a disciplina de fatias pequenas:
+**Passo 2 — em curso.** Objetivo: tornar visível na app o que o passo 1 já produz no banco. Pontos 1 e 3 entregues em 08/08/2026 (v0.29.0); pontos 2 e 4 por fazer. Ordem, mantendo a disciplina de fatias pequenas:
 
-1. **Ponte Rust → worker.** `apps/desktop/src-tauri/src/main.rs` já embrulha os comandos `library*` do worker; falta o mesmo para `format-engines`, `document-generate`, `document-item` e `document-delete`. Mesmo padrão dos existentes: `async` via `spawn_blocking` (ver Correção v0.5.1 no `PROJECT_CONTEXT.md` — comando síncrono congela a janela inteira).
+1. ~~**Ponte Rust → worker.**~~ **ENTREGUE em 08/08/2026, commit `2314418`.** Correção: os comandos vivem em `apps/desktop/src-tauri/src/lib.rs`, não em `main.rs`, que tem 6 linhas e é só o ponto de entrada. `format_engines`, `document_item` e `document_delete` seguem o padrão dos `library*`; `document_generate` segue o do `transcribe`, com thread e eventos, porque o worker emite NDJSON progressivo — e usa canal próprio `document://event`/`document://done` para não misturar eventos com uma transcrição a decorrer. `cargo check` aprovado.
+
+   O texto original deste ponto dizia: `main.rs` já embrulha os comandos `library*` do worker; falta o mesmo para `format-engines`, `document-generate`, `document-item` e `document-delete`. Mesmo padrão dos existentes: `async` via `spawn_blocking` (ver Correção v0.5.1 no `PROJECT_CONTEXT.md` — comando síncrono congela a janela inteira).
 2. **Botão de entrada.** Na Biblioteca (detalhe do transcript) e no fim da tela de Transcribe: um único botão **"Formatar"**, com os perfis dentro dele (ver decisão fechada em 08/08/2026 abaixo). "Estudo" é um dos perfis, não um botão irmão. Frase de incentivo por baixo do botão (decisão de 05/08/2026; espírito visual do aviso de Drive/OneDrive). Ícones Lucide, nunca emojis. Textos nos três idiomas em `i18n.ts` (dicionário tipado — falta de chave é erro de compilação).
-3. **Leitor do documento (só leitura, antes de editar).** Nova vista que consome `document-item` e desenha os blocos por `block_type`, mais o glossário. É o menor passo que já entrega valor e valida o contrato de blocos na prática, antes de investir no editor. Vistas ficam montadas e escondidas por CSS (padrão do item 11 do backlog), e carregam na primeira abertura, não no arranque (item 12).
+3. ~~**Leitor do documento (só leitura, antes de editar).**~~ **ENTREGUE em 08/08/2026, commit `bca80d3`, v0.29.0.** `DocumentReader.tsx`, componente próprio no padrão do `ErDiagram.tsx`. Desenha os 10 `block_type` com ícone Lucide e rótulo traduzido, mais o glossário; risco, decisão e ação com barra lateral; trecho em bloco citado com falante e timestamp. Copiar leva o documento em texto portável. 29 chaves novas nos 3 idiomas, garantidas pelo `tsc`. **Aguarda validação visual contra o `UX_PRODUCT_STANDARD.md` — até lá é `Delivered`, não `Validated`.**
+
+   **Dependência descoberta e resolvida no caminho (commit `1772b78`):** não havia como a UI descobrir que um documento existe — `document-item` exige o id e não há `document-list`. `library_item` passou a devolver os documentos gerados do transcript, no padrão do campo `problems`. Sem isto o leitor seria código morto e o botão do ponto 2 não saberia se deve dizer `Formatar` ou `Abrir documento`.
+
+   **Armadilha do contrato, tratada:** `content` é guardado como TEXT, portanto blocos cujo conteúdo é lista ou dicionário voltam como string JSON. O leitor faz `JSON.parse` com fallback para texto; sem isso a tela mostraria JSON cru.
+
+   O texto original deste ponto dizia: nova vista que consome `document-item` e desenha os blocos por `block_type`, mais o glossário. É o menor passo que já entrega valor e valida o contrato de blocos na prática, antes de investir no editor. Vistas ficam montadas e escondidas por CSS (padrão do item 11 do backlog), e carregam na primeira abertura, não no arranque (item 12).
 4. **Motor padrão em Configurações** + popup de primeira vez, fechando as decisões de 06/08/2026 sobre fricção zero.
 
 Só depois disto o ADF-02 (edição) começa — o leitor do ponto 3 é a base sobre a qual o editor cresce. Esta fatia termina com build, versão nova e instalador.

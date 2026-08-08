@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 29 de julho de 2026 (regra durável para abrir o ambiente de trabalho)
-**Estado mais recente:** 25 de julho de 2026 (v0.28.0 - ER Diagram implementado e validado)
+**Última atualização:** 8 de agosto de 2026 (ADF-01 passo 2, pontos 1 e 3)
+**Estado mais recente:** 8 de agosto de 2026 (v0.29.0 - ADF-01 passo 2: ponte Rust e leitor de documento)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -21,10 +21,11 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 
 ---
 
-## 1.1. Estado atual - 25 de julho de 2026
+## 1.1. Estado atual - 8 de agosto de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versão desktop instalada é **v0.28.0**. Instalador local: `UpexNote_0.28.0_x64-setup.exe`.
+- A versão desktop é **v0.29.0**. Instalador local: `UpexNote_0.29.0_x64-setup.exe` (57.791.920 bytes; SHA-256 `1B2E6B95C6CC7768A71BCBDF42A6D7C6DC84D039F0EE8055EDE7D525A3C7F4AB`).
+- A v0.29.0 é a primeira versão com superfície visual do ADF-01: a ponte Rust para os comandos de documento e o leitor de documento estruturado em só leitura. A geração pela interface (botão `Formatar`) ainda não existe — ver Registro 2026-08-08 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md`.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
 - A Administracao usa navegacao hierarquica no menu esquerdo: Users, Activity, Audit, Telemetry, Support e Data Studio.
@@ -428,6 +429,38 @@ Ao trabalhar neste projeto, uma IA deve:
 ---
 
 ## 12. Registro de atualizações
+
+### Registro — 2026-08-08: ADF-01 passo 2 (pontos 1 e 3) — ponte Rust e leitor de documento — v0.29.0
+
+### O que mudou
+- **Ponte Rust (`apps/desktop/src-tauri/src/lib.rs`, commit `2314418`):** quatro comandos novos. `format_engines` lista os 6 motores de formatação com modelo, custo/hora e estado da chave, separado de `list_engines` porque são etapas diferentes do pipeline. `document_item` e `document_delete` espelham `library_item`/`library_delete`, com prova de MFA por stdin e `async` via `spawn_blocking`. `document_generate` segue o modelo do `transcribe`, com thread própria e eventos, porque o worker emite NDJSON progressivo — um retorno único só chegaria no fim, sem progresso na tela; usa canal próprio `document://event`/`document://done` para não misturar eventos com uma transcrição a decorrer.
+- **`library_item` passa a devolver os documentos gerados (`services/worker/transcription/db.py`, commit `1772b78`):** lacuna encontrada ao preparar a UI — os comandos deixavam gerar e abrir um documento, mas não descobrir que ele existe, porque `document-item` exige o id e não havia `document-list`. Um documento gerado ficava inalcançável pela interface depois de fechar a app. A lista foi pendurada em `library_item`, no padrão do campo `problems`, em vez de um comando próprio: a tela de detalhe já o chama, portanto não custa uma segunda ida ao worker pelo túnel.
+- **Leitor de documento (`apps/desktop/src/DocumentReader.tsx`, commit `bca80d3`):** vista de só leitura que consome `document_item` e desenha os 10 `block_type` mais o glossário. Componente próprio, no padrão do `ErDiagram.tsx`, para não engordar um `App.tsx` de 4300 linhas. Risco, decisão e ação ganham barra lateral; trecho fica em bloco citado com falante e timestamp. O detalhe do transcript ganhou a faixa `Documentos gerados`, que é a entrada para o leitor.
+- **Decisão fechada:** um botão `Formatar` com os perfis dentro, e não dois botões separados. `Estudo` é um dos perfis. Critério: a lista de perfis é extensível por decisão de 05/08/2026 e dois botões fixos não acomodam um terceiro perfil sem redesenhar a tela.
+
+### Evidência / teste
+- **Contrato de dados testado de ponta a ponta em SQLite descartável**, sem tocar na VPS: campo `documents` presente e vazio antes de existir documento, populado depois com `created_at` já em ISO, vazio de novo após soft-delete, e os campos antigos de `library_item` intactos.
+- **Achado do teste, tratado no leitor:** `content` é guardado como TEXT, portanto blocos cujo conteúdo é lista ou dicionário voltam como string JSON. Sem `JSON.parse` com fallback, a tela mostraria JSON cru em vez de uma lista de ações.
+- `cargo check` aprovado na máquina do utilizador em 56,47s, sem erros nem avisos.
+- `tsc --noEmit` exit 0 e `vite build` verdes. Como o `i18n.ts` é tipado, o `tsc` é a prova de que nenhuma das 29 chaves novas falta em PT, EN ou ES.
+- Build final: `npm.cmd run tauri build` com 2102 módulos transformados, Rust release em 1m33s e NSIS concluído. Único aviso é o do linker (`upexnote_lib.dll.lib`), benigno e já conhecido.
+- Instalador `UpexNote_0.29.0_x64-setup.exe`: 57.791.920 bytes; SHA-256 `1B2E6B95C6CC7768A71BCBDF42A6D7C6DC84D039F0EE8055EDE7D525A3C7F4AB`.
+
+### Decisão
+- O leitor nasce em só leitura de propósito: é o menor passo que entrega valor e valida o contrato de blocos na prática, antes de investir no editor da ADF-02, que cresce por cima desta vista e não ao lado dela.
+- A descoberta de documentos foi acoplada ao `library_item` em vez de criar um `document-list`, para não pagar uma chamada extra pelo túnel a cada abertura de transcript.
+- Correção ao roadmap: o passo 2 mandava mexer em `src-tauri/src/main.rs`, mas os comandos vivem em `lib.rs`; o `main.rs` tem 6 linhas e é só o ponto de entrada.
+
+### Impacto em dados, custo ou privacidade
+- Nenhuma migração de schema. A alteração no worker é um `SELECT` adicional; as tabelas `documents.*` já existiam desde 07/08/2026. Aditivo: quem lia `library_item` antes continua a funcionar, e a chave `documents` vem sempre presente, vazia quando não há documento.
+- Nenhuma chamada paga: o leitor apenas lê o que já foi gerado e persistido. Nenhum conteúdo sai da máquina.
+- O documento continua a ser camada derivada; o raw permanece intocado, conforme o princípio §4.1.
+
+### Próximo passo
+- **Validação visual pendente.** Instalar a v0.29.0, abrir um transcript com documento gerado nos testes de 07/08 e confirmar a faixa e o desenho dos blocos contra `docs/UX_PRODUCT_STANDARD.md`. Até lá a frente fica `Delivered`, não `Validated`.
+- **Risco conhecido a confirmar nessa validação:** o contrato foi provado em SQLite; contra o Postgres falta confirmar o join entre schemas de `documents.structured_documents` com `engines`, que ficou em `public`. Se a faixa não aparecer estando em modo VPS, o problema é esse join e não o leitor.
+- Depois: pontos 2 e 4 do passo 2 — botão `Formatar` com os perfis, eventos de progresso, e motor padrão em Configurações com popup de primeira vez.
+
 
 ### Registro — 2026-08-07: ADF-01 passo 1 — formatação clean→documento estruturado (backend do worker)
 
