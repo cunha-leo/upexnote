@@ -47,29 +47,36 @@ CONTEXT_ORCHESTRATION.md
 
 Não iniciar pelo código isoladamente, por uma conversa antiga ou por um único documento técnico quando esta porta de entrada estiver disponível.
 
+**Regra de confronto obrigatória (08/08/2026):** um arquivo lido do disco local não é automaticamente a versão canônica. Antes de declarar leitura integral de qualquer documento deste repositório, rodar `git status --short`, `git log --oneline -20` e `git branch -vv`. Se a branch estiver `behind`, ler as versões de `origin/main` (`git show origin/main:<caminho>`) e registrar a divergência, em vez de assumir o conteúdo local. Esta regra existe porque em 08/08/2026 o worktree estava dois commits atrás de `origin/main` e o `AGENTS.md` da raiz havia sido sobrescrito por uma cópia antiga do AGENTS.md do LIFE — exatamente as seções de validação visual que este documento e o `AGENTS.md` passaram a exigir.
+
 ---
 
 ## 3. Camada humana e decisória — Google Drive
 
-Os dois documentos vivos estão localizados em:
+Os documentos vivos estão localizados em:
 
 ```text
 Google Drive
 └─ My Drive
-   └─ Documentos Desktop
-      └─ Life
+   └─ DocumentsDesktop
+      └─ 03-Life
+         └─ 00- Manifesto&Decisions
 ```
 
 Ordem lógica obrigatória:
 
-1. `Dossie_Leonardo_Cunha_LIFE_v1.0.docx`
-2. `Contexto_Vivo_Decisao_Portugal_Brasil_Leonardo_v2.3.docx`
+1. `AGENTS.md` — protocolo de inicialização LIFE dessa pasta; é ele que manda descobrir a versão mais alta de cada família antes de assumir qualquer número fixo
+2. `Dossie_Leonardo_Cunha_LIFE_v<versão mais alta>.docx`
+3. `Contexto_Vivo_Decisao_Portugal_Brasil_Leonardo_v<versão mais alta>.docx`
+4. `Fio_Condutor_Objetivo_Central_v<versão mais alta>.md` — lente de interpretação, lida por último
+
+Os números citados abaixo são a linha de base observada em 08/08/2026, não valores fixos. Confirmar sempre na pasta canônica se existe versão superior antes de ler; a mesma pasta contém também `PROMPT_START_UPEXNOTE.md`, `PROMPT_START_MKD.md` e `PROMPT_START_CAREER_MOBILITY.md`, que compartilham este mesmo Bloco 1.
 
 A ordem permanece obrigatória quando houver leitura ou releitura. O Dossiê estabelece o método e a forma de colaboração; o Contexto Vivo aplica esse método às decisões humanas e profissionais atuais.
 
 ### 3.1. Dossiê Leonardo Cunha
 
-**Versão de referência na criação desta regra:** `v1.0`.
+**Linha de base observada em 08/08/2026:** `v1.2`.
 
 **Função:** explicar como Leonardo pensa, investiga, decide, trabalha, valida e colabora com IA.
 
@@ -84,7 +91,7 @@ A leitura deve preservar, entre outros pontos:
 
 ### 3.2. Contexto Vivo
 
-**Versão de referência na criação desta regra:** `v2.3`.
+**Linha de base observada em 08/08/2026:** `v2.9`.
 
 **Função:** atualizar as decisões humanas e profissionais que podem influenciar prioridades, disponibilidade, risco, direção comercial e critérios de escolha.
 
@@ -128,7 +135,7 @@ Nesse caso, a IA deve:
 Exemplo:
 
 ```text
-Dossiê v1.0 já lido e presente nesta sessão; versão atual permanece v1.0.
+Dossiê v1.2 já lido e presente nesta sessão; versão atual permanece v1.2.
 Reutilizar contexto existente e não reler integralmente.
 ```
 
@@ -148,8 +155,8 @@ Qualquer ponto abaixo for verdadeiro:
 Exemplos:
 
 ```text
-Sessão contém Dossiê v1.0; Drive contém v1.1.
-Ler integralmente v1.1 antes de continuar.
+Sessão contém Dossiê v1.1; Drive contém v1.2.
+Ler integralmente v1.2 antes de continuar.
 ```
 
 ```text
@@ -171,8 +178,8 @@ A releitura parcial deve ser suficiente para reconciliar o ponto afetado, sem co
 
 A versão do nome do arquivo é o primeiro indicador de atualização:
 
-- `v1.1` é posterior a `v1.0`;
-- `v2.4` é posterior a `v2.3`;
+- `v1.2` é posterior a `v1.1`;
+- `v2.9` é posterior a `v2.8`;
 - versões diferentes exigem leitura da mais recente;
 - versões iguais permitem reutilização somente se não houver outro indício de alteração.
 
@@ -183,8 +190,8 @@ A IA não deve assumir que o número no nome é garantia absoluta. Quando dispon
 Ao concluir a inicialização, a IA deve conseguir declarar algo equivalente a:
 
 ```text
-Contexto humano reutilizado: Dossiê v1.0 já presente na sessão.
-Contexto decisório atualizado: Contexto Vivo v2.4 relido porque superava v2.3.
+Contexto humano reutilizado: Dossiê v1.2 já presente na sessão.
+Contexto decisório atualizado: Contexto Vivo v2.9 relido porque superava v2.8.
 Contexto técnico: PROJECT_CONTEXT e roadmap verificados no estado atual do repositório.
 ```
 

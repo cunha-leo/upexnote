@@ -4,7 +4,7 @@
 
 Este arquivo é o ponto de continuidade para uma nova sessão de IA. Ele deve ser lido junto com:
 
-1. `UpexNote_Documentacao_Funcional_Visual_v0.1.docx`;
+1. `UpexNote_Documentacao_Funcional_Visual_v1.0_FINAL` (DOCX, sem extensão no nome do arquivo, na pasta `Product Strategy & Validation` do Drive) — confirmar sempre se existe versão superior na mesma pasta antes de ler;
 2. `docs/CONTEXT_ORCHESTRATION.md`, como porta de entrada e coordenador da ordem de leitura;
 3. `docs/PROJECT_CONTEXT.md`, como matriz consolidada do estado real do produto;
 4. `docs/FEATURE_VALIDATION_AND_ROADMAP.md`, como submatriz operacional que distribui a leitura para os documentos especializados e separa validação, execução, backlog e ideias futuras;
@@ -12,13 +12,15 @@ Este arquivo é o ponto de continuidade para uma nova sessão de IA. Ele deve se
 
 A versão DOCX é uma consolidação parcial. Não recomece a documentação do zero.
 
+> **Divergência conhecida (registrada em 08/08/2026):** o arquivo chama-se `v1.0_FINAL`, mas a capa e o rodapé internos declaram `Versão de trabalho v0.1 — captura parcial da aplicação v0.28.0`. O conteúdo é o que vale: é uma consolidação parcial, com lacunas de captura explicitamente listadas na própria seção 17 do DOCX. Não tratar `FINAL` no nome como aceite fechado de cobertura. A próxima revisão do DOCX deve reconciliar nome e versão interna.
+
 ## 2. Instrução mínima para a nova sessão
 
 > Leia integralmente este MD e o DOCX anexado. Para contexto técnico adicional, siga a hierarquia `CONTEXT_ORCHESTRATION.md` → `PROJECT_CONTEXT.md` → `FEATURE_VALIDATION_AND_ROADMAP.md` → documentos especializados aplicáveis. Considere o DOCX como o estado visual consolidado até agora. Continue a coleta e catalogação a partir das lacunas registradas, sem reconstruir telas já documentadas. Para cada nova captura, identifique fluxo, tela, perfil, objetivo, ações, dados, estados, regra de privacidade/segurança e evidência. Não invente funcionalidades. Preserve a separação entre implementado, backlog e ideia futura.
 
 ## 3. Estado consolidado
 
-A versão `v0.1` já documenta, com capturas:
+A versão atual do DOCX (arquivo `v1.0_FINAL`, versão interna `v0.1`) já documenta, com capturas:
 
 - abertura e login administrativo;
 - senha administrativa, Google OAuth e MFA;
