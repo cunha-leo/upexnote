@@ -381,6 +381,14 @@ Regra durável:
 - se uma tarefa parecer exigir excluir, reinstalar ou reconfigurar algo fora do próprio repositório do UpexNote, parar e confirmar com Leonardo antes de agir, explicando o motivo e o risco de quebrar a dependência de outra ferramenta;
 - essa cautela é permanente, não apenas para uma sessão específica: o objetivo é impedir que uma IA remova algo de que outra depende e trave silenciosamente o trabalho de Leonardo em outra ferramenta.
 
+**Caso registrado (motivo concreto desta regra):** um documento aparentemente órfão, ligado a uma conexão/connector do Composer do ChatGPT, foi identificado como "sujeira" e removido. Ele na verdade guardava caminho/estado de que um plugin dependia. A remoção quebrou a integração de forma silenciosa; reinstalar não resolveu, porque o problema não era o binário, era o caminho/registro perdido. Levou horas para diagnosticar e restaurar a funcionalidade, com risco real de perda de dados de aplicação. Este caso é a razão concreta da regra acima, não uma hipótese abstrata.
+
+Compromisso de comportamento para qualquer IA que ler este documento:
+
+1. nunca tratar "arquivo não relacionado a este repositório" como sinônimo de "seguro para apagar", mesmo que pareça temporário, duplicado, órfão ou cache;
+2. se uma tarefa parecer exigir limpar algo fora do próprio repositório do UpexNote (cache, config, dado de sessão ou conexão de outra ferramenta), parar e perguntar a Leonardo antes, explicando o que é e por que parece não estar em uso — nunca presumir;
+3. tratar erros que pareçam causados por "arquivo sujo" ou "cache corrompido" como sintoma a ser reportado, nunca como justificativa para apagar algo do ambiente compartilhado por conta própria.
+
 ---
 
 ## 10. Caminho de retorno documental
