@@ -1103,6 +1103,149 @@ def cmd_document_delete(args):
         return 1
 
 
+def cmd_notebook_ensure_default(args):
+    """Coleção padrão do utilizador (cria na primeira vez, idempotente)."""
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        cid = db.notebook_ensure_default_collection(getattr(args, "user", None))
+        _emit(sys.stdout, {"type": "ok", "id": cid})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a garantir a coleção padrão: {e}"})
+        return 1
+
+
+def cmd_notebook_tree(args):
+    """Árvore completa (coleções + notas) do utilizador."""
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        tree = db.notebook_tree(user_id=getattr(args, "user", None))
+        _emit(sys.stdout, {"type": "notebook_tree", **tree})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter a árvore do Caderno: {e}"})
+        return 1
+
+
+def cmd_notebook_collection_create(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_collection_create(getattr(args, "user", None), args.title,
+                                            parent_id=args.parent_id, kind=args.kind)
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": "Coleção-pai não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "id": res["id"]})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao criar a coleção: {e}"})
+        return 1
+
+
+def cmd_notebook_collection_delete(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_collection_delete(args.id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Coleção #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "message": "Coleção apagada (arquivada no histórico).", **res})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar a coleção: {e}"})
+        return 1
+
+
+def cmd_notebook_note_create(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_note_create(getattr(args, "user", None), args.collection_id, title=args.title)
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": "Coleção de destino não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "id": res["id"]})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao criar a nota: {e}"})
+        return 1
+
+
+def cmd_notebook_note_item(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        item = db.notebook_note_item(args.id, user_id=getattr(args, "user", None))
+        if item is None:
+            _emit(sys.stdout, {"type": "error", "message": f"Nota #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "notebook_note_item", "item": item})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter a nota: {e}"})
+        return 1
+
+
+def cmd_notebook_note_update(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        body = sys.stdin.read() if getattr(args, "stdin_body", False) else None
+        res = db.notebook_note_update(args.id, user_id=getattr(args, "user", None),
+                                      title=args.title, body=body)
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Nota #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "message": "Nota atualizada."})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao atualizar a nota: {e}"})
+        return 1
+
+
+def cmd_notebook_note_delete(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_note_delete(args.id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Nota #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "message": "Nota apagada (arquivada no histórico)."})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar a nota: {e}"})
+        return 1
+
+
 def cmd_get_settings(args):
     # Definicoes de armazenamento (para o ecra de Definicoes): pasta padrao
     # em vigor, se e personalizada, e a organizacao por dia/motor.
@@ -1257,6 +1400,41 @@ def build_parser():
     p_docd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
     p_docd.add_argument("--json-stdin", action="store_true", help="Prova MFA por stdin (uso da app).")
 
+    p_nbed = sub.add_parser("notebook-ensure-default", help="Garante (cria se preciso) a colecao padrao do Caderno do utilizador.")
+    p_nbed.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbt = sub.add_parser("notebook-tree", help="Arvore completa (colecoes + notas) do Caderno do utilizador (JSON).")
+    p_nbt.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbcc = sub.add_parser("notebook-collection-create", help="Cria pasta/projeto/caderno/seccao.")
+    p_nbcc.add_argument("--title", required=True, help="Titulo da colecao.")
+    p_nbcc.add_argument("--kind", choices=["folder", "project", "notebook", "section"], default="notebook")
+    p_nbcc.add_argument("--parent-id", type=int, dest="parent_id", help="Colecao-mae (omitir = raiz).")
+    p_nbcc.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbcd = sub.add_parser("notebook-collection-delete", help="Apaga uma colecao e as suas descendentes/notas (arquiva no historico).")
+    p_nbcd.add_argument("--id", type=int, required=True, help="ID da colecao.")
+    p_nbcd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbnc = sub.add_parser("notebook-note-create", help="Cria uma nota vazia numa colecao.")
+    p_nbnc.add_argument("--collection-id", type=int, required=True, dest="collection_id", help="Colecao de destino.")
+    p_nbnc.add_argument("--title", help="Titulo da nota (opcional).")
+    p_nbnc.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbni = sub.add_parser("notebook-note-item", help="Uma nota completa: titulo + corpo (JSON).")
+    p_nbni.add_argument("--id", type=int, required=True, help="ID da nota.")
+    p_nbni.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbnu = sub.add_parser("notebook-note-update", help="Edita titulo e/ou corpo de uma nota (corpo por stdin).")
+    p_nbnu.add_argument("--id", type=int, required=True, help="ID da nota.")
+    p_nbnu.add_argument("--title", help="Novo titulo (omitir = mantem).")
+    p_nbnu.add_argument("--stdin-body", action="store_true", help="Le o novo corpo por stdin (omitir = mantem o corpo).")
+    p_nbnu.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbnd = sub.add_parser("notebook-note-delete", help="Apaga uma nota (arquiva no historico).")
+    p_nbnd.add_argument("--id", type=int, required=True, help="ID da nota.")
+    p_nbnd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
     p_lack = sub.add_parser("library-ack", help="Marca/desmarca os avisos de validacao como revistos.")
     p_lack.add_argument("--id", type=int, required=True, help="ID da transcricao.")
     p_lack.add_argument("--reopen", action="store_true", help="Reabre o aviso (em vez de marcar como revisto).")
@@ -1327,6 +1505,14 @@ def main(argv=None):
         "library-delete": cmd_library_delete,
         "document-item": cmd_document_item,
         "document-delete": cmd_document_delete,
+        "notebook-ensure-default": cmd_notebook_ensure_default,
+        "notebook-tree": cmd_notebook_tree,
+        "notebook-collection-create": cmd_notebook_collection_create,
+        "notebook-collection-delete": cmd_notebook_collection_delete,
+        "notebook-note-create": cmd_notebook_note_create,
+        "notebook-note-item": cmd_notebook_note_item,
+        "notebook-note-update": cmd_notebook_note_update,
+        "notebook-note-delete": cmd_notebook_note_delete,
         "library-ack": cmd_library_ack,
         "tunnel-keep": cmd_tunnel_keep,
         "db-adopt-orphans": cmd_db_adopt_orphans,

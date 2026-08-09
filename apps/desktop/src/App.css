@@ -1895,3 +1895,108 @@ input[type="range"] {
   .sidebar .side-profile { justify-content: center; padding: 8px 0 4px; }
   .sidebar .side-profile .profile-trigger { flex: 0 0 auto; padding: 4px; }
 }
+
+/* Caderno (ADF-02, fatia 3 — fundação: árvore de coleções + nota vazia).
+   Layout de duas colunas simples, reutilizando as variáveis de tema já
+   existentes — sem editor rico ainda (fatia 5). */
+.nb-workspace {
+  display: flex;
+  gap: 16px;
+  min-height: 60vh;
+  align-items: stretch;
+}
+.nb-sidebar {
+  width: 280px;
+  flex: 0 0 280px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  padding: 12px;
+  overflow-y: auto;
+}
+.nb-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.nb-sidebar-header h3 { margin: 0; font-size: var(--fs-md, 14px); }
+.nb-editor {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+.nb-node { margin-bottom: 2px; }
+.nb-node-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-radius: 6px;
+}
+.nb-node-row:hover { background: var(--panel-2); }
+.nb-node-toggle {
+  background: none; border: none; padding: 2px; color: var(--text-dim); cursor: pointer;
+  display: flex; align-items: center;
+}
+.nb-node-title { flex: 1; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-node-kind { font-size: 11px; color: var(--text-dim); }
+.nb-node-actions { display: none; gap: 2px; }
+.nb-node-row:hover .nb-node-actions { display: flex; }
+.nb-icon-btn {
+  background: none; border: none; padding: 3px; color: var(--text-dim); cursor: pointer;
+  display: flex; align-items: center; border-radius: 4px;
+}
+.nb-icon-btn:hover { background: var(--panel-2); color: var(--text); }
+.nb-icon-danger:hover { color: var(--danger); }
+.nb-note-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 4px);
+  padding: 4px 6px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.nb-note-row:hover { background: var(--panel-2); }
+.nb-note-row.active { background: color-mix(in srgb, var(--accent) 14%, var(--panel-2)); }
+.nb-confirm { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text-dim); margin: 4px 0; }
+.nb-loading, .nb-error, .nb-empty { padding: 10px 4px; font-size: var(--fs-sm); color: var(--text-dim); }
+.nb-error { color: var(--danger); }
+.nb-editor-empty { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; }
+.nb-note-editor { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+.nb-note-title-input {
+  font-size: var(--fs-lg, 18px);
+  font-weight: 600;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 2px;
+  color: var(--text);
+}
+.nb-note-title-input:focus { outline: none; border-bottom-color: var(--accent); }
+.nb-note-body-input {
+  flex: 1;
+  min-height: 260px;
+  resize: vertical;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.nb-note-body-input:focus { outline: none; border-color: var(--accent); }
+.nb-note-editor-actions { display: flex; align-items: center; gap: 10px; }

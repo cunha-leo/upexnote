@@ -627,6 +627,104 @@ async fn document_delete(
     run_cli_stdin_async(args, admin_proof_json(admin_email, admin_token, None)).await
 }
 
+/// ADF-02 fatia 3 (fundação `notebooks`): coleção padrão, árvore, nota vazia.
+/// Domínio pessoal/dono-apenas nesta fatia (sem navegação admin entre
+/// utilizadores ainda) — por isso mais simples que library/document: sem
+/// `--json-stdin`/prova de MFA, só `--user` (mesmo espírito de `get_settings`).
+
+/// Garante (cria se preciso) a coleção padrão do Caderno do utilizador.
+#[tauri::command]
+async fn notebook_ensure_default(user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-ensure-default".into()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// Árvore completa (coleções + notas) do Caderno do utilizador.
+#[tauri::command]
+async fn notebook_tree(user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-tree".into()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// Cria pasta/projeto/caderno/seção.
+#[tauri::command]
+async fn notebook_collection_create(
+    title: String, kind: Option<String>, parent_id: Option<i64>, user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-collection-create".into(), "--title".into(), title];
+    args.push("--kind".into());
+    args.push(kind.unwrap_or_else(|| "notebook".into()));
+    if let Some(pid) = parent_id {
+        args.push("--parent-id".into());
+        args.push(pid.to_string());
+    }
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// Apaga uma coleção e as suas descendentes/notas (soft-delete em cascata).
+#[tauri::command]
+async fn notebook_collection_delete(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-collection-delete".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// Cria uma nota vazia numa coleção.
+#[tauri::command]
+async fn notebook_note_create(
+    collection_id: i64, title: Option<String>, user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec![
+        "notebook-note-create".into(), "--collection-id".into(), collection_id.to_string(),
+    ];
+    if let Some(t) = title {
+        args.push("--title".into());
+        args.push(t);
+    }
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// Uma nota completa (título + corpo).
+#[tauri::command]
+async fn notebook_note_item(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-note-item".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// Edita título e/ou corpo de uma nota. O corpo (potencialmente grande) vai
+/// por STDIN, nunca por argumento — mesmo cuidado de `library_update`.
+#[tauri::command]
+async fn notebook_note_update(
+    id: i64, title: Option<String>, body: Option<String>, user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-note-update".into(), "--id".into(), id.to_string()];
+    if let Some(t) = title {
+        args.push("--title".into());
+        args.push(t);
+    }
+    push_user(&mut args, user);
+    match body {
+        Some(b) => {
+            args.push("--stdin-body".into());
+            run_cli_stdin_async(args, b).await
+        }
+        None => run_cli_async(args).await,
+    }
+}
+
+/// Apaga uma nota (arquivada no histórico pelo worker).
+#[tauri::command]
+async fn notebook_note_delete(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-note-delete".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
 /// Formatação retroativa (o botão "Formatar" na Biblioteca e no fim do
 /// Transcribe): parte de uma transcrição já existente, corre o gate raw↔clean
 /// e persiste o documento estruturado.
@@ -821,6 +919,8 @@ pub fn run() {
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
             format_engines, document_item, document_delete, document_generate,
+            notebook_ensure_default, notebook_tree, notebook_collection_create, notebook_collection_delete,
+            notebook_note_create, notebook_note_item, notebook_note_update, notebook_note_delete,
             list_system_fonts, db_check, db_check_secret, account, api_reset, api_admin_factor,
             account_suggest, admin, oauth_start, oauth_google, telemetry_event, telemetry_overview, support, transcribe
         ])

@@ -17,7 +17,7 @@ import {
   Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight, Pencil, Archive, Trash2,
   Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw, UserRound,
   Database, Table2, Columns3, KeyRound, LockKeyhole, Filter, ChevronsLeft, ChevronsRight, Plus, Play, Code2,
-  Save, FolderOpen, ArchiveRestore, Clock3, Copy, Network,
+  Save, FolderOpen, ArchiveRestore, Clock3, Copy, Network, BookOpen,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import ErDiagram, { type ErScope } from "./ErDiagram";
@@ -182,7 +182,7 @@ type ResultData = {
   language: string | null;
 };
 
-type View = "transcribe" | "library" | "support" | "settings" | "admin";
+type View = "transcribe" | "library" | "notebooks" | "support" | "settings" | "admin";
 type AdminSection = "users" | "activity" | "audit" | "telemetry" | "support" | "data-studio";
 
 // ---------------------------------------------------------------------------
@@ -1420,6 +1420,337 @@ function LibraryView({
       </section>
     </div>
   );
+}
+
+// ADF-02 fatia 3 (fundação `notebooks`, ver docs/NOTEBOOK_ARCHITECTURE.md
+// secções 6, 7 e 14): árvore de coleções (pasta/projeto/caderno/secção) +
+// nota vazia. Deliberadamente simples — sem editor rico (fatia 5), sem
+// "Salvar no Caderno" a partir da prévia (fatia 4): só criar/abrir/editar/
+// apagar uma nota de texto simples dentro da árvore.
+type NBCollection = {
+  id: number;
+  parent_id: number | null;
+  kind: "folder" | "project" | "notebook" | "section";
+  title: string;
+  position: number;
+  created_at: string;
+};
+type NBNote = {
+  id: number;
+  collection_id: number;
+  title: string | null;
+  created_at: string;
+  edited_at: string | null;
+};
+type NBNoteDetail = {
+  id: number;
+  collection_id: number;
+  title: string | null;
+  body: string | null;
+};
+
+function NotebooksView({ active }: { active: boolean }) {
+  const { t } = useLang();
+  const [collections, setCollections] = useState<NBCollection[]>([]);
+  const [notes, setNotes] = useState<NBNote[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [busyCollectionId, setBusyCollectionId] = useState<number | null>(null);
+  const [selectedNoteId, setSelectedNoteId] = useState<number | null>(null);
+  const [noteDetail, setNoteDetail] = useState<NBNoteDetail | null>(null);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteBody, setNoteBody] = useState("");
+  const [noteLoading, setNoteLoading] = useState(false);
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteDirty, setNoteDirty] = useState(false);
+  const [confirmDeleteNote, setConfirmDeleteNote] = useState(false);
+  const [confirmDeleteCollection, setConfirmDeleteCollection] = useState<number | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      // Garante a coleção padrão antes de listar — primeira utilização nunca
+      // mostra uma árvore vazia sem destino possível para a primeira nota.
+      await invoke<string>("notebook_ensure_default", { user: getSession()?.id ?? null });
+      const raw = await invoke<string>("notebook_tree", { user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "error") {
+        setError(obj.message);
+      } else {
+        setCollections(obj.collections || []);
+        setNotes(obj.notes || []);
+        setExpanded((prev) => {
+          if (prev.size) return prev;
+          return new Set((obj.collections || []).filter((c: NBCollection) => c.parent_id === null).map((c: NBCollection) => c.id));
+        });
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (active && !loadedOnce) {
+      setLoadedOnce(true);
+      load();
+    }
+  }, [active, loadedOnce]);
+
+  function toggleExpanded(id: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function openNote(id: number) {
+    setSelectedNoteId(id);
+    setNoteLoading(true);
+    setNoteDetail(null);
+    setConfirmDeleteNote(false);
+    try {
+      const raw = await invoke<string>("notebook_note_item", { id, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "notebook_note_item") {
+        const item = obj.item as NBNoteDetail;
+        setNoteDetail(item);
+        setNoteTitle(item.title || "");
+        setNoteBody(item.body || "");
+        setNoteDirty(false);
+      } else {
+        setError(obj.message || t("nbOpenFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setNoteLoading(false);
+    }
+  }
+
+  async function createNote(collectionId: number) {
+    setBusyCollectionId(collectionId);
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_note_create", {
+        collectionId, title: null, user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        await load();
+        await openNote(obj.id);
+      } else {
+        setError(obj.message || t("nbCreateFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusyCollectionId(null);
+    }
+  }
+
+  async function createCollection(parentId: number | null, kind: NBCollection["kind"]) {
+    const title = window.prompt(t("nbNewCollectionPrompt"));
+    if (!title || !title.trim()) return;
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_collection_create", {
+        title: title.trim(), kind, parentId, user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        if (parentId !== null) setExpanded((prev) => new Set(prev).add(parentId));
+        await load();
+      } else {
+        setError(obj.message || t("nbCreateFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function deleteCollection(id: number) {
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_collection_delete", { id, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        setConfirmDeleteCollection(null);
+        if (selectedNoteId && notes.find((n) => n.id === selectedNoteId)?.collection_id === id) {
+          setSelectedNoteId(null);
+          setNoteDetail(null);
+        }
+        await load();
+      } else {
+        setError(obj.message || t("nbDeleteFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function saveNote() {
+    if (!noteDetail) return;
+    setNoteSaving(true);
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_note_update", {
+        id: noteDetail.id, title: noteTitle, body: noteBody, user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        setNoteDirty(false);
+        setNoteDetail({ ...noteDetail, title: noteTitle, body: noteBody });
+        await load();
+      } else {
+        setError(obj.message || t("nbSaveFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setNoteSaving(false);
+    }
+  }
+
+  async function deleteNote() {
+    if (!noteDetail) return;
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_note_delete", { id: noteDetail.id, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        setSelectedNoteId(null);
+        setNoteDetail(null);
+        setConfirmDeleteNote(false);
+        await load();
+      } else {
+        setError(obj.message || t("nbDeleteFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  const childrenOf = (parentId: number | null) =>
+    collections.filter((c) => c.parent_id === parentId).sort((a, b) => a.position - b.position || a.id - b.id);
+  const notesOf = (collectionId: number) => notes.filter((n) => n.collection_id === collectionId);
+
+  const KIND_LABEL: Record<NBCollection["kind"], string> = {
+    folder: t("nbKindFolder"), project: t("nbKindProject"),
+    notebook: t("nbKindNotebook"), section: t("nbKindSection"),
+  };
+
+  function renderCollection(c: NBCollection, depth: number) {
+    const kids = childrenOf(c.id);
+    const items = notesOf(c.id);
+    const isOpen = expanded.has(c.id);
+    return (
+      <div key={c.id} className="nb-node" style={{ marginLeft: depth * 14 }}>
+        <div className="nb-node-row">
+          <button className="nb-node-toggle" onClick={() => toggleExpanded(c.id)} title={isOpen ? t("nbCollapse") : t("nbExpand")}>
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+          <span className="nb-node-title">{c.title}</span>
+          <span className="nb-node-kind">{KIND_LABEL[c.kind]}</span>
+          <span className="nb-node-actions">
+            <button className="nb-icon-btn" title={t("nbNewNote")} disabled={busyCollectionId === c.id}
+              onClick={() => createNote(c.id)}><Plus size={13} /></button>
+            <button className="nb-icon-btn" title={t("nbNewSubcollection")}
+              onClick={() => createCollection(c.id, "section")}><FolderOpen size={13} /></button>
+            <button className="nb-icon-btn nb-icon-danger" title={t("nbDeleteCollection")}
+              onClick={() => setConfirmDeleteCollection(c.id)}><Trash2 size={13} /></button>
+          </span>
+        </div>
+        {confirmDeleteCollection === c.id && (
+          <div className="nb-confirm" style={{ marginLeft: 20 }}>
+            <span>{t("nbDeleteCollectionConfirm")}</span>
+            <button className="btn-danger-solid" onClick={() => deleteCollection(c.id)}>{t("nbDelete")}</button>
+            <button onClick={() => setConfirmDeleteCollection(null)}>{t("cancel")}</button>
+          </div>
+        )}
+        {isOpen && (
+          <div className="nb-node-children">
+            {items.map((n) => (
+              <button key={n.id} className={"nb-note-row" + (selectedNoteId === n.id ? " active" : "")}
+                style={{ marginLeft: (depth + 1) * 14 }} onClick={() => openNote(n.id)}>
+                <StickyNoteIcon />
+                <span>{n.title || t("nbUntitled")}</span>
+              </button>
+            ))}
+            {kids.map((k) => renderCollection(k, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="nb-workspace">
+      <div className="nb-sidebar">
+        <div className="nb-sidebar-header">
+          <h3>{t("navNotebooks")}</h3>
+          <button className="nb-icon-btn" title={t("nbNewCollection")} onClick={() => createCollection(null, "notebook")}>
+            <Plus size={14} />
+          </button>
+        </div>
+        {loading && !collections.length ? (
+          <div className="nb-loading">{t("nbLoading")}</div>
+        ) : error && !collections.length ? (
+          <div className="nb-error">{error}</div>
+        ) : !collections.length ? (
+          <div className="nb-empty">{t("nbEmpty")}</div>
+        ) : (
+          <div className="nb-tree">{childrenOf(null).map((c) => renderCollection(c, 0))}</div>
+        )}
+      </div>
+      <div className="nb-editor">
+        {error && <div className="nb-error">{error}</div>}
+        {!selectedNoteId ? (
+          <div className="nb-empty nb-editor-empty">{t("nbSelectNote")}</div>
+        ) : noteLoading ? (
+          <div className="nb-loading">{t("nbLoading")}</div>
+        ) : noteDetail ? (
+          <div className="nb-note-editor">
+            <input
+              className="nb-note-title-input"
+              value={noteTitle}
+              placeholder={t("nbNoteTitlePlaceholder")}
+              onChange={(e) => { setNoteTitle(e.target.value); setNoteDirty(true); }}
+            />
+            <textarea
+              className="nb-note-body-input"
+              value={noteBody}
+              onChange={(e) => { setNoteBody(e.target.value); setNoteDirty(true); }}
+            />
+            <div className="nb-note-editor-actions">
+              <button disabled={!noteDirty || noteSaving} onClick={saveNote}>
+                {noteSaving ? t("nbSaving") : t("nbSave")}
+              </button>
+              {!confirmDeleteNote ? (
+                <button className="btn-danger" onClick={() => setConfirmDeleteNote(true)}>{t("nbDeleteNote")}</button>
+              ) : (
+                <>
+                  <span>{t("nbDeleteNoteConfirm")}</span>
+                  <button className="btn-danger-solid" onClick={deleteNote}>{t("nbDelete")}</button>
+                  <button onClick={() => setConfirmDeleteNote(false)}>{t("cancel")}</button>
+                </>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function StickyNoteIcon() {
+  return <FileText size={13} />;
 }
 
 type StorageSettings = {
@@ -4383,12 +4714,13 @@ function App() {
   const navItems: { id: View; icon: ReactNode; label: string }[] = [
     { id: "transcribe", icon: <Mic size={16} strokeWidth={1.75} />, label: t("navTranscribe") },
     { id: "library", icon: <LibraryBig size={16} strokeWidth={1.75} />, label: t("navLibrary") },
+    { id: "notebooks", icon: <BookOpen size={16} strokeWidth={1.75} />, label: t("navNotebooks") },
     { id: "settings", icon: <Settings size={16} strokeWidth={1.75} />, label: t("navSettings") },
   ];
   // A aba de Administração só existe para sessões admin (o worker revalida na
   // base de qualquer forma — isto é apresentação, não segurança).
   if (getSession()?.role !== "admin") {
-    navItems.splice(2, 0, { id: "support", icon: <MessageCircle size={16} strokeWidth={1.75} />, label: t("navSupport") });
+    navItems.splice(3, 0, { id: "support", icon: <MessageCircle size={16} strokeWidth={1.75} />, label: t("navSupport") });
   }
 
   if (session === null) {
@@ -4662,6 +4994,10 @@ function App() {
               openRequest={libraryOpenRequest}
               onOpenRequestHandled={() => setLibraryOpenRequest(null)}
             />
+          </div>
+
+          <div className={"view-pane" + (view === "notebooks" ? "" : " hidden")}>
+            <NotebooksView active={view === "notebooks"} />
           </div>
 
           {getSession()?.role !== "admin" && <div className={"view-pane" + (view === "support" ? "" : " hidden")}>

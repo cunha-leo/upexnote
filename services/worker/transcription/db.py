@@ -91,6 +91,84 @@ CREATE TABLE IF NOT EXISTS documents.documents_history (
 )
 """
 
+# ADF-02 (fatia 3, 09/08/2026 — ver docs/NOTEBOOK_ARCHITECTURE.md secao 7 e
+# 14): fundacao do dominio `notebooks` — arvore de colecoes (pasta/projeto/
+# caderno/seccao) + nota vazia. Mesmo espirito isolado de `documents`: schema
+# Postgres proprio, historico flat proprio, dono explicito (_actor). O
+# conteudo da nota fica so' texto simples nesta fatia (note_contents.body) —
+# a estrutura rica (blocos com IDs estaveis) e' fatia 5, ainda nao aqui.
+# Linhagem para transcript/documento (note_sources) e' fatia 4 ("Salvar no
+# Caderno"), tambem fora desta fatia.
+NOTEBOOK_COLLECTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.collections (
+    id          bigserial PRIMARY KEY,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    edited_at   timestamptz,
+    deleted_at  timestamptz,
+    user_id     bigint REFERENCES users(id),
+    parent_id   bigint REFERENCES notebooks.collections(id) ON DELETE CASCADE,
+    kind        text NOT NULL DEFAULT 'notebook'
+                CHECK (kind IN ('folder', 'project', 'notebook', 'section')),
+    title       text NOT NULL,
+    position    integer NOT NULL DEFAULT 0,
+    host        text
+)
+"""
+
+NOTEBOOK_NOTES_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.notes (
+    id            bigserial PRIMARY KEY,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    edited_at     timestamptz,
+    deleted_at    timestamptz,
+    user_id       bigint REFERENCES users(id),
+    collection_id bigint REFERENCES notebooks.collections(id) ON DELETE CASCADE,
+    title         text,
+    host          text
+)
+"""
+
+NOTEBOOK_NOTE_CONTENTS_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.note_contents (
+    note_id bigint PRIMARY KEY REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    body    text
+)
+"""
+
+# Historico flat, um por entidade (mesmo espirito de documents_history, so
+# que sem agregacao de filhos — collections/notes desta fatia nao tem
+# satelites 1:N ainda, por isso a mesma query serve Postgres e SQLite depois
+# da traducao de prefixo/placeholder, sem precisar de variante _SQLITE).
+NOTEBOOK_COLLECTIONS_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.collections_history (
+    history_id  bigserial PRIMARY KEY,
+    archived_at timestamptz NOT NULL DEFAULT now(),
+    change_type text NOT NULL,
+    original_id bigint,
+    created_at  timestamptz,
+    user_id     bigint,
+    parent_id   bigint,
+    kind        text,
+    title       text,
+    host        text
+)
+"""
+
+NOTEBOOK_NOTES_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.notes_history (
+    history_id    bigserial PRIMARY KEY,
+    archived_at   timestamptz NOT NULL DEFAULT now(),
+    change_type   text NOT NULL,
+    original_id   bigint,
+    created_at    timestamptz,
+    user_id       bigint,
+    collection_id bigint,
+    title         text,
+    body          text,
+    host          text
+)
+"""
+
 # users vive AQUI (não só em accounts.py) porque o hub transcriptions
 # referencia users(id) — a ordem de criação importa. accounts.py reutiliza.
 USERS_DDL = """CREATE TABLE IF NOT EXISTS users (
@@ -240,6 +318,12 @@ SCHEMA_SQL = [
            output_tokens integer
        )""",
     DOCUMENTS_HISTORY_DDL,
+    "CREATE SCHEMA IF NOT EXISTS notebooks",
+    NOTEBOOK_COLLECTIONS_DDL,
+    NOTEBOOK_NOTES_DDL,
+    NOTEBOOK_NOTE_CONTENTS_DDL,
+    NOTEBOOK_COLLECTIONS_HISTORY_DDL,
+    NOTEBOOK_NOTES_HISTORY_DDL,
 ]
 
 ENGINE_SEED = [
@@ -340,6 +424,27 @@ WHERE d.id = %s
 """
 
 
+# Snapshots do dominio `notebooks` (fatia 3): sem filhos 1:N nesta fatia,
+# entao uma unica query serve os dois dialetos (a traducao de prefixo/
+# placeholder de _to_sqlite_sql já basta — sem jsonb_agg a resolver).
+NOTEBOOK_COLLECTION_SNAPSHOT_JOIN = """
+INSERT INTO notebooks.collections_history
+(change_type, original_id, created_at, user_id, parent_id, kind, title, host)
+SELECT %s, c.id, c.created_at, c.user_id, c.parent_id, c.kind, c.title, c.host
+FROM notebooks.collections c
+WHERE c.id = %s
+"""
+
+NOTEBOOK_NOTE_SNAPSHOT_JOIN = """
+INSERT INTO notebooks.notes_history
+(change_type, original_id, created_at, user_id, collection_id, title, body, host)
+SELECT %s, n.id, n.created_at, n.user_id, n.collection_id, n.title, nc.body, n.host
+FROM notebooks.notes n
+LEFT JOIN notebooks.note_contents nc ON nc.note_id = n.id
+WHERE n.id = %s
+"""
+
+
 def _snapshot_sql():
     return SNAPSHOT_JOIN_SQLITE if storage_mode() == "local" else SNAPSHOT_JOIN
 
@@ -430,6 +535,11 @@ def _to_sqlite_sql(sql: str) -> str:
     if sql.strip().upper().startswith("CREATE SCHEMA"):
         return "SELECT 1"
     sql = sql.replace("documents.", "")
+    # notebooks: "collections"/"notes" são nomes demasiado genéricos para
+    # desaparecer no namespace único do SQLite (colidiriam com outra coisa
+    # mais cedo ou mais tarde) — em vez de remover o prefixo, prefixa-se a
+    # tabela (decisão explícita em NOTEBOOK_ARCHITECTURE.md secção 7).
+    sql = sql.replace("notebooks.", "notebook_")
     for a, b in _SQLITE_DDL_RULES:
         sql = sql.replace(a, b)
     sql = sql.replace(" ILIKE ", " LIKE ")
@@ -1388,6 +1498,282 @@ def delete_document(doc_id, user_id=None, admin_verified=False):
                 return {"ok": False, "error": "not_found"}
             cur.execute(_doc_snapshot_sql(), ("delete", int(doc_id)))
             cur.execute("UPDATE documents.structured_documents SET deleted_at = now() WHERE id = %s", (int(doc_id),))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+# --------------------------------------------------------------------------
+# ADF-02 (fatia 3) — fundacao `notebooks`: colecao padrao, arvore e nota
+# vazia (ver docs/NOTEBOOK_ARCHITECTURE.md secoes 6, 7 e 14). Mesmo padrao de
+# dono/admin (_actor) e soft-delete + snapshot de transcriptions/documents.
+# Fora desta fatia: linhagem (note_sources), versoes, anotacoes, referencias,
+# glossario, chat, exportacao — cada uma so' entra na sua propria fatia.
+# --------------------------------------------------------------------------
+
+DEFAULT_NOTEBOOK_TITLE = "Caderno padrão"
+
+
+def notebook_ensure_default_collection(user_id, log=print):
+    """Coleção padrão (kind='notebook', raiz) para o utilizador — criada na
+    primeira gravação, nunca duplicada (idempotente por utilizador). A UI
+    pode renomeá-la depois; o Caderno nunca fica sem destino para a primeira
+    nota (secção 6 da arquitetura: "nunca inventa uma hierarquia invisível
+    que o utilizador não consiga localizar depois" — esta é sempre visível
+    na árvore, não escondida)."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "SELECT id FROM notebooks.collections "
+                "WHERE kind = 'notebook' AND parent_id IS NULL AND deleted_at IS NULL "
+                "AND (user_id = %s OR (%s IS NULL AND user_id IS NULL)) "
+                "ORDER BY id LIMIT 1",
+                (owner, owner),
+            )
+            row = cur.fetchone()
+            if row:
+                return row[0]
+            cur.execute(
+                "INSERT INTO notebooks.collections (user_id, parent_id, kind, title, host) "
+                "VALUES (%s, NULL, 'notebook', %s, %s) RETURNING id",
+                (owner, DEFAULT_NOTEBOOK_TITLE, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+        conn.commit()
+        log(f"Notebooks: coleção padrão #{new_id} criada.")
+        return new_id
+    finally:
+        close_connection(conn)
+
+
+def notebook_tree(user_id=None, admin_verified=False):
+    """Árvore completa (coleções + notas, incluindo vazias) do utilizador —
+    a UI monta a hierarquia no cliente a partir de parent_id/collection_id."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_c = own_sql.replace("t.user_id", "c.user_id")
+            cur.execute(
+                "SELECT c.id, c.parent_id, c.kind, c.title, c.position, c.created_at "
+                "FROM notebooks.collections c "
+                f"WHERE c.deleted_at IS NULL{own_sql_c} "
+                "ORDER BY c.parent_id NULLS FIRST, c.position, c.id",
+                own_params,
+            )
+            collections = _rows_to_dicts(cur)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                "SELECT n.id, n.collection_id, n.title, n.created_at, n.edited_at "
+                "FROM notebooks.notes n "
+                f"WHERE n.deleted_at IS NULL{own_sql_n} "
+                "ORDER BY n.edited_at DESC NULLS LAST, n.created_at DESC",
+                own_params,
+            )
+            notes = _rows_to_dicts(cur)
+        for c in collections:
+            c["created_at"] = _iso(c["created_at"])
+        for n in notes:
+            n["created_at"] = _iso(n["created_at"])
+            n["edited_at"] = _iso(n["edited_at"])
+        return {"collections": collections, "notes": notes}
+    finally:
+        close_connection(conn)
+
+
+def notebook_collection_create(user_id, title, parent_id=None, kind="notebook", admin_verified=False):
+    """Cria pasta/projeto/caderno/secção. parent_id (se houver) tem de
+    pertencer ao mesmo dono — evita pendurar uma coleção na árvore de outra
+    pessoa por engano de id."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_c = own_sql.replace("t.user_id", "c.user_id")
+            if parent_id is not None:
+                cur.execute(
+                    f"SELECT 1 FROM notebooks.collections c WHERE c.id = %s AND c.deleted_at IS NULL{own_sql_c}",
+                    [int(parent_id)] + own_params,
+                )
+                if not cur.fetchone():
+                    return {"ok": False, "error": "parent_not_found"}
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.collections (user_id, parent_id, kind, title, host) "
+                "VALUES (%s,%s,%s,%s,%s) RETURNING id",
+                (owner, int(parent_id) if parent_id is not None else None,
+                 kind, title, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": new_id}
+    finally:
+        close_connection(conn)
+
+
+def _notebook_descendant_ids(cur, root_id):
+    """Todos os ids de coleções descendentes de root_id (inclusive), em
+    memória — a árvore desta fatia é pequena e o SQLite local não tem
+    WITH RECURSIVE garantido em todas as versões empacotadas."""
+    ids = [int(root_id)]
+    frontier = [int(root_id)]
+    while frontier:
+        placeholders = ",".join(["%s"] * len(frontier))
+        cur.execute(
+            f"SELECT id FROM notebooks.collections WHERE parent_id IN ({placeholders}) AND deleted_at IS NULL",
+            frontier,
+        )
+        found = [r[0] for r in cur.fetchall()]
+        ids.extend(found)
+        frontier = found
+    return ids
+
+
+def notebook_collection_delete(collection_id, user_id=None, admin_verified=False):
+    """Soft-delete em cascata: a coleção e todas as suas descendentes (e as
+    notas dentro delas) são arquivadas — nunca apaga transcript/documento de
+    origem (fora deste domínio). Cada linha apagada ganha snapshot próprio no
+    histórico, igual ao resto do produto."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_c = own_sql.replace("t.user_id", "c.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.collections c WHERE c.id = %s AND c.deleted_at IS NULL{own_sql_c}",
+                [int(collection_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            coll_ids = _notebook_descendant_ids(cur, collection_id)
+            placeholders = ",".join(["%s"] * len(coll_ids))
+            cur.execute(
+                f"SELECT id FROM notebooks.notes WHERE collection_id IN ({placeholders}) AND deleted_at IS NULL",
+                coll_ids,
+            )
+            note_ids = [r[0] for r in cur.fetchall()]
+            for nid in note_ids:
+                cur.execute(NOTEBOOK_NOTE_SNAPSHOT_JOIN, ("delete", nid))
+                cur.execute("UPDATE notebooks.notes SET deleted_at = now() WHERE id = %s", (nid,))
+            # Filhos primeiro, raiz por último (mantém o snapshot legível).
+            for cid in reversed(coll_ids):
+                cur.execute(NOTEBOOK_COLLECTION_SNAPSHOT_JOIN, ("delete", cid))
+                cur.execute("UPDATE notebooks.collections SET deleted_at = now() WHERE id = %s", (cid,))
+        conn.commit()
+        return {"ok": True, "collections": len(coll_ids), "notes": len(note_ids)}
+    finally:
+        close_connection(conn)
+
+
+def notebook_note_create(user_id, collection_id, title=None, body="", admin_verified=False):
+    """Nota vazia (fatia 3 — sem estrutura rica ainda: body é texto simples).
+    collection_id tem de pertencer ao dono."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_c = own_sql.replace("t.user_id", "c.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.collections c WHERE c.id = %s AND c.deleted_at IS NULL{own_sql_c}",
+                [int(collection_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "collection_not_found"}
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.notes (user_id, collection_id, title, host) VALUES (%s,%s,%s,%s) RETURNING id",
+                (owner, int(collection_id), title, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO notebooks.note_contents (note_id, body) VALUES (%s,%s)",
+                (new_id, body or ""),
+            )
+        conn.commit()
+        return {"ok": True, "id": new_id}
+    finally:
+        close_connection(conn)
+
+
+def notebook_note_item(note_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                "SELECT n.id, n.created_at, n.edited_at, n.collection_id, n.title, nc.body "
+                "FROM notebooks.notes n "
+                "LEFT JOIN notebooks.note_contents nc ON nc.note_id = n.id "
+                f"WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            rows = _rows_to_dicts(cur)
+            if not rows:
+                return None
+            note = rows[0]
+        note["created_at"] = _iso(note["created_at"])
+        note["edited_at"] = _iso(note["edited_at"])
+        return note
+    finally:
+        close_connection(conn)
+
+
+def notebook_note_update(note_id, user_id=None, title=None, body=None, admin_verified=False):
+    """Edita título/corpo no lugar (padrão do produto — sem versionar ainda;
+    note_versions é fatia futura). Snapshot no histórico ANTES de alterar."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(NOTEBOOK_NOTE_SNAPSHOT_JOIN, ("update", int(note_id)))
+            if title is not None:
+                cur.execute("UPDATE notebooks.notes SET title = %s, edited_at = now() WHERE id = %s",
+                            (title, int(note_id)))
+            else:
+                cur.execute("UPDATE notebooks.notes SET edited_at = now() WHERE id = %s", (int(note_id),))
+            if body is not None:
+                cur.execute("UPDATE notebooks.note_contents SET body = %s WHERE note_id = %s",
+                            (body, int(note_id)))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+def notebook_note_delete(note_id, user_id=None, admin_verified=False):
+    """Soft-delete: snapshot em notes_history + deleted_at. Só o dono ou admin."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(NOTEBOOK_NOTE_SNAPSHOT_JOIN, ("delete", int(note_id)))
+            cur.execute("UPDATE notebooks.notes SET deleted_at = now() WHERE id = %s", (int(note_id),))
         conn.commit()
         return {"ok": True}
     finally:
