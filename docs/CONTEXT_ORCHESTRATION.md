@@ -369,6 +369,18 @@ Esses caminhos devem ser verificados, não presumidos em outros ambientes. Se `s
 
 No Windows, o perfil temporário do LibreOffice deve ser passado como URI de arquivo válida, por exemplo `file:///C:/caminho/perfil`. Não concatenar `file://` diretamente com um caminho nativo como `C:\...`; converter o caminho com mecanismo equivalente a `Path(...).resolve().as_uri()`.
 
+### 9.2. Ambiente compartilhado entre múltiplas IAs — não excluir nem alterar dependências de outras ferramentas
+
+Leonardo trabalha com mais de uma IA/agente (Claude, Codex e outros) na mesma máquina, com plugins, caches, sessões e runtimes que podem ser compartilhados ou específicos de cada ferramenta. Uma IA não deve presumir que um arquivo, pasta temporária ou dependência "não usada por ela" está livre para limpeza, mesmo quando parecer órfã, redundante ou fora do escopo do repositório.
+
+Regra durável:
+
+- não excluir, mover, renomear, reinstalar ou "corrigir" arquivos, plugins, caches, sessões ou runtimes de outra ferramenta de IA (por exemplo, `C:\Users\cunha\.codex`, `.agents`, diretórios `codex-runtimes` referenciados na seção 9.1, ou equivalentes de outras IAs) mesmo que a limpeza pareça resolver um erro local;
+- não presumir que um erro (por exemplo, falha de automação, `EnumWindows`, timeout de ferramenta) tem relação com o repositório ou com esses diretórios sem evidência concreta; registrar a falha e, quando necessário, pedir a Leonardo para diagnosticar ou confirmar antes de qualquer ação de limpeza;
+- tratar dependências nativas usadas por outra IA (como as instalações de LibreOffice/Poppler referenciadas na seção 9.1, que já vivem sob um caminho `codex-runtimes`) como infraestrutura compartilhada: usar quando necessário, nunca apagar ou substituir;
+- se uma tarefa parecer exigir excluir, reinstalar ou reconfigurar algo fora do próprio repositório do UpexNote, parar e confirmar com Leonardo antes de agir, explicando o motivo e o risco de quebrar a dependência de outra ferramenta;
+- essa cautela é permanente, não apenas para uma sessão específica: o objetivo é impedir que uma IA remova algo de que outra depende e trave silenciosamente o trabalho de Leonardo em outra ferramenta.
+
 ---
 
 ## 10. Caminho de retorno documental
