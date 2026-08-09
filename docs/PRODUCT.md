@@ -1,6 +1,6 @@
 # Produto UpexNote
 
-> Estado alinhado à versão desktop `0.29.1`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.30.0`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
 
 ## Marca e propósito
 
@@ -26,7 +26,7 @@ Essa direção foi concebida e arquitetada por Leonardo Cunha como parte do dese
 - Suporte com casos, conversas, estados, atribuição e evidências sem armazenar binários no banco.
 - Perfil completo no rodapé com identidade, papel, informações da conta e preparação para avatar futuro.
 - Data Studio com catálogo por schema, construtor visual, SQL Editor, Saved Queries e diagramas ER por schema, tabela ou consulta.
-- Documentos estruturados derivados acessíveis pela Biblioteca: faixa no transcript, leitor em só leitura, blocos semânticos, campos, glossário, cópia e retorno à origem; ADF-01 passo 2, pontos 1 e 3, validados na v0.29.1.
+- Prévia estruturada acessível pela Biblioteca: seção permanente, estado vazio, lista, leitor em só leitura, blocos semânticos, campos, glossário, cópia e retorno à origem. A v0.30.0 acrescenta criação opcional com motor, perfil, custo e chave visíveis e painel pós-transcrição com retomada pela Library.
 
 ## Princípios de produto
 
@@ -56,7 +56,7 @@ O produto cresce por prateleiras: `Transcriptions`, `Documents`, `Notebooks`, `S
 2. Tornar a telemetria agregada mais acionável sem quebrar consentimento ou anonimato.
 3. Acrescentar scheduler, jobs, eventos e entregas às Saved Queries.
 4. Evoluir suporte com filtros, SLA futuro, prioridade, atribuição, notificações e histórico.
-5. Evoluir a prévia estruturada já legível para criação pela interface e passagem controlada ao Caderno, sem confundir leitura derivada com edição pessoal.
+5. Concluir a configuração padrão do motor e implementar, em fatia própria, a passagem controlada `Salvar no Caderno`, sem confundir leitura derivada com edição pessoal.
 6. Implementar material de estudo: explicações, fluxos, tabelas, quiz e exportações.
 7. Implementar chat ancorado no material, sem transformar inferências em fatos do transcript.
 8. Retomar Integrações/Webhooks somente após contratos concretos de consultas, eventos e automações.

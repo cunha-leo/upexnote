@@ -1,6 +1,6 @@
 # Arquitetura do UpexNote
 
-> Estado alinhado à versão desktop `0.29.1`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.30.0`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
 
 ## Visão geral
 
@@ -61,7 +61,7 @@ Menu e schema não têm relação obrigatória de um para um. `Administration`, 
 
 A direção aprovada de navegação agrupa `Transcribe` e `Library` sob o pai `Transcriptions`, cria `Notebooks` como prateleira principal e transforma `Settings` num pai com destinos estáveis para Appearance, Typography, Layout, Storage, Engines, Privacy, Account e Security. A árvore de projetos/cadernos/notas pertence ao workspace interno de `Notebooks`, não ao menu global.
 
-O contrato completo de Cadernos, incluindo hierarquia, fronteira com `documents`, objetos lógicos, linhagem, âncoras e fatias, vive em `NOTEBOOK_ARCHITECTURE.md`. A direção está aprovada, mas não foi implementada na v0.29.1.
+O contrato completo de Cadernos, incluindo hierarquia, fronteira com `documents`, objetos lógicos, linhagem, âncoras e fatias, vive em `NOTEBOOK_ARCHITECTURE.md`. A direção está aprovada, mas não foi implementada na v0.30.0.
 
 ## Aplicação desktop
 
@@ -100,7 +100,7 @@ O suporte segue hub-and-spoke: `support.tickets` é a matriz e satélites preser
 
 O ADF-01 segue a mesma regra desde 2026-08-07 (commits `3f341fc`/`57e518e`): `documents.structured_documents` é a matriz e os satélites `document_blocks`, `document_glossary`, `document_metrics` e `documents_history` penduram-se nela. As tabelas tinham nascido em `public` por engano e foram movidas com a migração idempotente `db-migrate-documents-schema`, executada e validada na VPS real (dados preservados). A dimensão `engines` permanece em `public`, partilhada entre transcrição e formatação (coluna `kind`) — o join entre schemas é normal e está validado.
 
-Desde a v0.29.1, a Biblioteca expõe os documentos derivados do transcript e abre um leitor estruturado em só leitura. O percurso completo UI → Rust → worker → `documents.*` foi validado com dados reais; geração na interface, edição e motor padrão continuam fora desta fatia.
+Desde a v0.29.1, a Biblioteca abre a prévia estruturada em só leitura. A v0.30.0 acrescentou a seção permanente de entrada, descoberta dos motores via worker, seleção de perfil, custo e chave visíveis e geração somente por ação explícita. O painel pós-transcrição recebe o ID persistido por evento aditivo `transcription_saved` e pode retomar diretamente o transcript ou o compositor na Library. Edição, motor padrão e Caderno continuam fora desta fatia.
 
 O leitor passa a ser compreendido como **prévia estruturada**, não como Caderno. O futuro schema `notebooks` possuirá o conteúdo editável e sua hierarquia. `Salvar no Caderno` copiará o estado inicial e registrará a linhagem para transcript/documento, sem criar vínculo vivo que permita uma regeneração sobrescrever edições pessoais.
 

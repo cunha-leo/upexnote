@@ -2,8 +2,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 8 de agosto de 2026 (arquitetura de prateleiras, prévia e domínio `notebooks`)
-**Estado mais recente:** 8 de agosto de 2026 (v0.29.1 validada; arquitetura do Caderno aprovada e documentada, ainda não implementada)
+**Última atualização:** 8 de agosto de 2026 (v0.30.0 — entrada da prévia e painel pós-transcrição)
+**Estado mais recente:** 9 de agosto de 2026 (v0.30.0 instalada; entrada da prévia entregue e validada na instalação real, transcript #23 e documento #9, janela normal e estreita; Caderno ainda não implementado)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -24,9 +24,9 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 ## 1.1. Estado atual - 8 de agosto de 2026
 
 - A transcricao e a Biblioteca foram validadas como base funcional do produto.
-- A versão desktop é **v0.29.1**. Instalador válido: `UpexNote_0.29.1_x64-setup.exe` (58.405.707 bytes; SHA-256 `56CECAB45ADC0F07903D7F783D51E8BA55B968827E969B33068A0BDD0874E894`), gerado em 08/08/2026 às 17:47 depois de reempacotar o worker. A instalação foi confirmada pelo executável local com `FileVersion` e `ProductVersion` 0.29.1.
+- A versão desktop é **v0.30.0**. Instalador válido: `UpexNote_0.30.0_x64-setup.exe` (58.412.306 bytes; SHA-256 `4E27F06D5C23869085C5EA1287AB734BD754A729A7C444DEBCDCF745F67F7456`), gerado em 08/08/2026 às 21:19 depois de reempacotar o worker. A instalação foi confirmada pelo executável local com `ProductVersion` 0.30.0.
 - ⚠ Um primeiro instalador de 0.29.0 (57.791.920 bytes; SHA-256 `1B2E6B95…F4AB`) foi gerado sem reempacotar o worker e **não deve ser usado**: levava dentro o `upexnote-worker.exe` de 25/07, sem o backend do ADF-01 e sem o campo `documents` do `library_item`. Ver a regra de build no Registro 2026-08-08.
-- A v0.29.0 foi a primeira versão com superfície visual do ADF-01; a v0.29.1 corrigiu o contrato Unicode do worker empacotado, tornou títulos/chips/campos responsivos e validou os pontos 1 e 3 do passo 2 com o transcript #23 e o documento #9. O leitor passa a ser entendido como **prévia estruturada**, não como Caderno. Criar prévia pela UI, salvar no Caderno e o schema `notebooks` ainda não existem.
+- A v0.29.0 foi a primeira superfície visual do ADF-01; a v0.29.1 validou ponte e leitor com o transcript #23/documento #9. A v0.30.0 entrega a linguagem e entrada **Prévia estruturada**, criação opcional com motor/perfil/custo/chave visíveis e painel pós-transcrição com retomada pela Library. `Salvar no Caderno`, editor e schema `notebooks` ainda não existem.
 - A arquitetura de prateleiras e do Caderno foi aprovada em 08/08/2026 e formalizada em `docs/NOTEBOOK_ARCHITECTURE.md`: `documents` possui transformação/prévia; o futuro `notebooks` possuirá hierarquia, edição, marcações, balões, referências, glossário pessoal, chats, versões e exportações.
 - O perfil do rodape apresenta nome completo, utilizador, papel e avatar por inicial; o modal padrao detalha e-mail, provedor, modo de armazenamento, criacao e ultimo acesso, com suporte a teclado e estados de carregamento/erro.
 - Login Google, elevacao administrativa e MFA foram validados no aplicativo instalado.
@@ -59,9 +59,9 @@ O foco imediato é **transcrição de ficheiros** (vídeo/áudio já existente).
 
 ### Pendencias imediatas
 
-1. Refinar visualmente a navegação por prateleiras, o painel pós-transcrição, a seção `Prévia estruturada` e o seletor hierárquico `Salvar no Caderno`, antes de codar.
-2. Fechar o DDL e os contratos da primeira fatia do schema `notebooks`, mantendo equivalência SQLite e a fronteira definida em `NOTEBOOK_ARCHITECTURE.md`.
-3. Implementar depois, em fatia própria, a entrada `Criar/Ver prévia` e a configuração do motor de formatação; não ressuscitar o botão único `Formatar` como conceito que mistura intenções.
+1. Concluir a captura visual da v0.30.0 instalada no transcript #23, incluindo compositor aberto e janela estreita, sem acionar `Gerar prévia`.
+2. Implementar em fatia própria a configuração padrão do motor de formatação, preservando motor, finalidade e custo visíveis.
+3. Refinar visualmente a navegação por prateleiras, árvore do Caderno e seletor hierárquico `Salvar no Caderno`; depois fechar o DDL e os contratos da primeira fatia do schema `notebooks`, mantendo equivalência SQLite.
 4. Finalizar a infraestrutura de evidencias: volume persistente `/data/support-spool`, job de arquivamento e manifesto no Drive.
 5. Evoluir telemetria agregada, Saved Queries, Support e Integrações somente conforme suas próprias frentes e contratos.
 
@@ -306,7 +306,7 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 - **Sessão operacional em browser interno do Codex (2026-07-23):** para painéis e serviços externos autorizados pelo utilizador (EasyPanel, Hostinger, Google, GitHub etc.), trabalhar exclusivamente nas abas do navegador interno do Codex em que ele já abriu sessão. Não abrir/controlar navegador externo como alternativa, salvo pedido explícito. Isto mantém o escopo de acesso visível, direto e estável para o utilizador.
 - **ADF-01 passo 1 — formatação clean→documento estruturado, backend do worker (2026-08-07, commits `0929d66`/`9e55907`/`3f341fc`):** os 6 motores de formatação decididos no benchmark (DeepSeek, Grok, `gpt-5-mini`, Claude Haiku 4.5, Claude Sonnet 5, Gemini), gate de validação raw↔clean, schema hub-and-spoke novo em `documents.*` (Postgres) — corrigido de `public` para o schema dedicado, com migração idempotente (`db-migrate-documents-schema`) — e comandos de CLI (`format-engines`, `format`, `document-generate`, `transcribe --format-engine`), validados com transcripts reais pelo utilizador. A migração foi executada na VPS real, preservou os dados e confirmou idempotência. Ver Registro 2026-08-07 e `docs/FEATURE_VALIDATION_AND_ROADMAP.md` (ADF-01). **Fora deste passo:** UI, popup de primeira vez e Configurações de motor padrão.
-- **ADF-01 passo 2, pontos 1 e 3 — ponte e prévia em só leitura (v0.29.1, 2026-08-08):** Biblioteca → transcript #23 → documento #9 validado de ponta a ponta, com 30 blocos, 34 termos de glossário, retorno à origem e comportamento responsivo. O transporte NDJSON tornou-se independente da página de código Windows. A entrada `Criar/Ver prévia` e a configuração do motor permanecem por fazer; Cadernos pertencem ao novo domínio `notebooks`.
+- **ADF-01 passo 2 — ponte, leitor e entrada da prévia (v0.29.1–v0.30.0, 2026-08-08):** Biblioteca → transcript #23 → documento #9 validado de ponta a ponta, com 30 blocos, 34 termos de glossário, retorno à origem e comportamento responsivo. A v0.30.0 acrescenta estado vazio, `Criar/Ver prévia`, compositor com transparência de custo/chave e painel pós-transcrição. Configuração padrão do motor permanece por fazer; Cadernos pertencem ao novo domínio `notebooks`.
 
 ### Próximo trabalho (deixados em aberto)
 
@@ -475,8 +475,31 @@ Ao trabalhar neste projeto, uma IA deve:
 - Evidência documental: v1.2 relida integralmente e revisada visualmente em 81 páginas; v1.3 validada textualmente, renderizada e revisada visualmente em suas 85 páginas antes da promoção canônica em 08/08/2026.
 
 ### Próximo passo
-- Antes de código: produzir o desenho visual das prateleiras, painel pós-transcrição, Library/prévia, árvore do Caderno e seletor de destino; depois fechar DDL/contratos da primeira fatia `notebooks`.
+- A entrada Library/prévia e o painel pós-transcrição foram implementados na v0.30.0. Antes da fundação `notebooks`: produzir o desenho visual da árvore do Caderno e do seletor de destino; depois fechar DDL/contratos.
 - A implementação começa em versões pequenas conforme `NOTEBOOK_ARCHITECTURE.md`; não tentar entregar o universo inteiro num único build.
+
+### Registro — 2026-08-08: entrada da prévia e painel pós-transcrição — v0.30.0
+
+**Direção e autoria:** esta fatia executa a arquitetura conduzida por Leonardo Cunha: `transcriptions` preserva a fonte, `documents` oferece transformação e prévia em só leitura, e o futuro `notebooks` possuirá conhecimento editável e hierárquico. A implementação não reduz a concepção a uma troca de rótulo nem antecipa um Caderno falso dentro de `documents`.
+
+**Entregue:**
+
+- O detalhe do transcript substitui a faixa `Documentos gerados` por uma seção permanente `Prévia estruturada`, com estado vazio, lista de prévias existentes, título completo, perfil/motor/data, selo de só leitura e abertura do leitor já validado.
+- `Criar prévia`/`Criar outra prévia` abre compositor inline com os motores retornados pelo worker, perfis detalhado/resumo técnico/estudo, custo por hora e estado da chave. Chave ausente bloqueia a ação; nenhuma chamada paga ocorre sem clique explícito.
+- Eventos `document://event`/`document://done` atualizam início, progresso, gate raw↔clean, erro e conclusão. Após sucesso, o transcript é recarregado e o documento persistido pode ser aberto.
+- O worker emite `transcription_saved` depois da persistência best-effort. O painel pós-transcrição consegue abrir o transcript específico ou seu compositor na Library sem misturar IDs; falha da base não invalida o resultado local.
+- A educação transcript → prévia → Caderno fica visível na primeira experiência até a pessoa escolher uma ação. O aceite é guardado localmente e o painel permanece compacto nas seguintes.
+- PT/EN/ES foram atualizados; layouts normal e estreito empilham títulos, lista, seletor, custo, avisos e ações sem overflow horizontal.
+
+**Validação e build:**
+
+- `npm.cmd run build`: aprovado (`tsc` + Vite; apenas o aviso histórico de chunk acima de 500 kB).
+- Worker: 14 testes aprovados. `build_worker.ps1` executado antes do Tauri; `upexnote-worker.exe` final com 14.114.460 bytes e SHA-256 `E04C098BB2AF08B4D7A8114455AF8AF1B306C22737B4F923ABB3072C5A9A633E`.
+- Harness visual temporário com dados equivalentes ao transcript #23/documento #9 cobriu lista, leitor/retorno, compositor, chave ausente, estado vazio, painel pós-transcrição e 800 × 1000. Não houve cortes, sobreposições, truncamentos ou geração paga. O arquivo de harness foi removido.
+- Tauri/NSIS aprovado; instalador final `UpexNote_0.30.0_x64-setup.exe`, 58.412.306 bytes, SHA-256 `4E27F06D5C23869085C5EA1287AB734BD754A729A7C444DEBCDCF745F67F7456`. Instalado e reaberto com `ProductVersion` 0.30.0.
+- O Computer Use falhou repetidamente ao enumerar janelas com `0x80070003`, inclusive após reinicialização do kernel. A automação foi interrompida conforme o protocolo; a captura final com dados reais foi delegada ao utilizador, sem coordenadas inseguras. **Retomada com sucesso em 09/08/2026** (sem relação identificada com o repositório): captura final concluída na instalação real v0.30.0, transcript #23, documento #9 ("Onboarding e Orientação da Comunidade Classe A"), compositor aberto via `Criar outra prévia` sem geração acionada, janela normal e janela estreita sem cortes, sobreposições ou truncamentos.
+
+**Resultado atual:** `Validated` — validação visual concluída na instalação real da v0.30.0 em 09/08/2026, transcript #23 e documento #9, janela normal e estreita, sem geração paga e sem alteração de dados. Configuração padrão do motor, `Salvar no Caderno`, schema `notebooks`, editor e navegação por prateleiras permanecem fora desta versão.
 
 ### Registro — 2026-08-08: validação visual do ADF-01 e correção do protocolo Unicode — v0.29.1
 

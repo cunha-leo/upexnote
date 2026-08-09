@@ -155,6 +155,23 @@ type Engine = {
   key_set: boolean;
 };
 
+type FormatEngine = {
+  id: string;
+  label: string;
+  info: string;
+  key_name: string;
+  key_set: boolean;
+  cost_hora_brl: number | string | null;
+};
+
+type PreviewProfile = "detalhado" | "resumo_tecnico" | "estudo";
+
+type LibraryOpenRequest = {
+  transcriptionId: number;
+  openPreviewComposer: boolean;
+  nonce: number;
+};
+
 type ResultData = {
   ok: boolean;
   clean_text: string;
@@ -443,6 +460,12 @@ const ENGINE_I18N: Record<string, { label: I18nKey; info: I18nKey }> = {
   gpt4o_openai: { label: "engLabelGpt4o", info: "engInfoGpt4o" },
 };
 
+const PREVIEW_PROFILE_I18N: Record<PreviewProfile, I18nKey> = {
+  detalhado: "docProfileDetalhado",
+  resumo_tecnico: "docProfileResumo",
+  estudo: "docProfileEstudo",
+};
+
 function fmtCost(v: number | null): string {
   if (v == null) return "—";
   return "$" + v.toFixed(v < 1 ? 4 : 2);
@@ -664,7 +687,15 @@ function readLibCache(): LibCache | null {
   }
 }
 
-function LibraryView({ active }: { active: boolean }) {
+function LibraryView({
+  active,
+  openRequest,
+  onOpenRequestHandled,
+}: {
+  active: boolean;
+  openRequest: LibraryOpenRequest | null;
+  onOpenRequestHandled: () => void;
+}) {
   const { t, locale } = useLang();
   const [summary, setSummary] = useState<LibSummary | null>(null);
   const [items, setItems] = useState<LibItem[]>([]);
@@ -675,6 +706,15 @@ function LibraryView({ active }: { active: boolean }) {
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [docDetail, setDocDetail] = useState<DocDetail | null>(null);
   const [openingDocId, setOpeningDocId] = useState<number | null>(null);
+  const [previewComposerOpen, setPreviewComposerOpen] = useState(false);
+  const [formatEngines, setFormatEngines] = useState<FormatEngine[]>([]);
+  const [formatEngineId, setFormatEngineId] = useState("");
+  const [previewProfile, setPreviewProfile] = useState<PreviewProfile>("detalhado");
+  const [formatEnginesLoading, setFormatEnginesLoading] = useState(false);
+  const [formatEnginesError, setFormatEnginesError] = useState("");
+  const [previewGenerating, setPreviewGenerating] = useState(false);
+  const [previewStatus, setPreviewStatus] = useState("");
+  const [previewValidationOk, setPreviewValidationOk] = useState<boolean | null>(null);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -742,10 +782,14 @@ function LibraryView({ active }: { active: boolean }) {
 
   function closeDetail() {
     setDetail(null);
+    setDocDetail(null);
     setEditing(false);
     setConfirmDel(false);
     setShowWarnings(false);
     setActionMsg("");
+    setPreviewComposerOpen(false);
+    setPreviewStatus("");
+    setPreviewValidationOk(null);
   }
 
   /** Abre um documento estruturado ja gerado (so leitura, ADF-01 passo 2). */
@@ -784,6 +828,8 @@ function LibraryView({ active }: { active: boolean }) {
         setConfirmDel(false);
         setShowWarnings(false);
         setEditText(obj.item.clean_text);
+        setPreviewStatus("");
+        setPreviewValidationOk(null);
       } else {
         setError(obj.message || t("libOpenFail"));
       }
@@ -793,6 +839,105 @@ function LibraryView({ active }: { active: boolean }) {
       setOpeningId(null);
     }
   }
+
+  async function loadFormatEngines() {
+    if (formatEnginesLoading) return;
+    setFormatEnginesLoading(true);
+    setFormatEnginesError("");
+    try {
+      const raw = await invoke<string>("format_engines");
+      const obj = JSON.parse(raw);
+      if (obj.type !== "format_engines") {
+        setFormatEnginesError(obj.message || t("previewEnginesFail"));
+        return;
+      }
+      const list = (obj.engines || []) as FormatEngine[];
+      setFormatEngines(list);
+      setFormatEngineId((current) => current || list.find((engine) => engine.key_set)?.id || list[0]?.id || "");
+    } catch (e) {
+      setFormatEnginesError(String(e));
+    } finally {
+      setFormatEnginesLoading(false);
+    }
+  }
+
+  async function openPreviewComposer() {
+    setPreviewComposerOpen(true);
+    setPreviewStatus("");
+    setPreviewValidationOk(null);
+    if (!formatEngines.length) await loadFormatEngines();
+  }
+
+  async function generatePreview() {
+    if (!detail || previewGenerating) return;
+    const engine = formatEngines.find((item) => item.id === formatEngineId);
+    if (!engine?.key_set) return;
+    setPreviewGenerating(true);
+    setPreviewValidationOk(null);
+    setPreviewStatus(t("previewStarting"));
+    setError("");
+    try {
+      await invoke("document_generate", {
+        transcriptionId: detail.id,
+        engine: engine.id,
+        profile: previewProfile,
+        user: getSession()?.id ?? null,
+      });
+    } catch (e) {
+      setPreviewGenerating(false);
+      setPreviewStatus(t("previewGenerateFail", { err: String(e) }));
+    }
+  }
+
+  useEffect(() => {
+    const unlistenEvent = listen<string>("document://event", (event) => {
+      let obj: any;
+      try {
+        obj = JSON.parse(event.payload);
+      } catch {
+        return;
+      }
+      if (obj.type === "start") {
+        setPreviewStatus(t("previewStarting"));
+      } else if (obj.type === "progress") {
+        setPreviewStatus(obj.message || t("previewGenerating"));
+      } else if (obj.type === "validation") {
+        setPreviewValidationOk(Boolean(obj.ok));
+        setPreviewStatus(obj.ok ? t("previewValidationOk") : t("previewValidationFail"));
+      } else if (obj.type === "format_result") {
+        setPreviewGenerating(false);
+        setPreviewStatus(t("previewGenerated"));
+        const documentId = Number(obj.document_id);
+        const transcriptId = detail?.id;
+        if (transcriptId) {
+          void (async () => {
+            await openItem(transcriptId);
+            if (Number.isFinite(documentId) && documentId > 0) await openDocument(documentId);
+          })();
+        }
+      } else if (obj.type === "error") {
+        setPreviewGenerating(false);
+        setPreviewStatus(t("previewGenerateFail", { err: obj.message || t("errFail") }));
+      }
+    });
+    const unlistenDone = listen("document://done", () => setPreviewGenerating(false));
+    return () => {
+      unlistenEvent.then((dispose) => dispose());
+      unlistenDone.then((dispose) => dispose());
+    };
+  }, [t, detail?.id]);
+
+  useEffect(() => {
+    if (!active || !openRequest) return;
+    let cancelled = false;
+    void (async () => {
+      await openItem(openRequest.transcriptionId);
+      if (!cancelled && openRequest.openPreviewComposer) await openPreviewComposer();
+      if (!cancelled) onOpenRequestHandled();
+    })();
+    return () => { cancelled = true; };
+    // A nonce representa uma solicitação deliberada, inclusive quando o ID se repete.
+  }, [active, openRequest?.nonce]);
 
   async function saveEdit() {
     if (!detail) return;
@@ -879,6 +1024,8 @@ function LibraryView({ active }: { active: boolean }) {
     });
   }
 
+  const selectedFormatEngine = formatEngines.find((engine) => engine.id === formatEngineId) || null;
+
   // Vista do documento estruturado (so leitura) — tem precedencia sobre o
   // detalhe do transcript, e o "voltar" dela devolve ao transcript de origem.
   if (detail && docDetail) {
@@ -964,22 +1111,124 @@ function LibraryView({ active }: { active: boolean }) {
             </span>
           )}
         </div>
-        {detail.documents && detail.documents.length > 0 && (
-          <div className="doc-strip">
-            <span className="doc-strip-label">{t("docsOnTranscript")}</span>
-            {detail.documents.map((d) => (
-              <button
-                key={d.id}
-                className="secondary doc-chip"
-                onClick={() => openDocument(d.id)}
-                disabled={openingDocId !== null}
-                title={d.title || undefined}
-              >
-                {openingDocId === d.id ? t("docOpening") : (d.title || t("docTitleFallback", { id: d.id }))}
-              </button>
-            ))}
+        <section className="preview-section" aria-labelledby="preview-section-title">
+          <div className="preview-section-head">
+            <div className="preview-section-copy">
+              <span className="preview-kicker">{t("previewKicker")}</span>
+              <h3 id="preview-section-title">{t("previewTitle")}</h3>
+              <p>{detail.documents?.length ? t("previewHelpReady") : t("previewHelpEmpty")}</p>
+            </div>
+            <button
+              className="secondary preview-create"
+              onClick={() => previewComposerOpen ? setPreviewComposerOpen(false) : void openPreviewComposer()}
+              disabled={previewGenerating}
+              aria-expanded={previewComposerOpen}
+            >
+              <Plus size={15} aria-hidden="true" />
+              {previewComposerOpen
+                ? t("previewCancel")
+                : detail.documents?.length ? t("previewCreateAnother") : t("previewCreate")}
+            </button>
           </div>
-        )}
+
+          {detail.documents && detail.documents.length > 0 ? (
+            <div className="preview-list">
+              {detail.documents.map((documentRef) => (
+                <button
+                  key={documentRef.id}
+                  className="preview-item"
+                  onClick={() => openDocument(documentRef.id)}
+                  disabled={openingDocId !== null || previewGenerating}
+                  title={documentRef.title || undefined}
+                >
+                  <span className="preview-item-icon"><FileText size={17} aria-hidden="true" /></span>
+                  <span className="preview-item-copy">
+                    <strong>
+                      {openingDocId === documentRef.id
+                        ? t("docOpening")
+                        : (documentRef.title || t("docTitleFallback", { id: documentRef.id }))}
+                    </strong>
+                    <span>
+                      {documentRef.profile && t(PREVIEW_PROFILE_I18N[documentRef.profile as PreviewProfile] || "docProfileDetalhado")}
+                      {documentRef.engine ? ` · ${documentRef.engine}` : ""}
+                      {documentRef.created_at ? ` · ${fmtDate(documentRef.created_at, locale)}` : ""}
+                    </span>
+                  </span>
+                  <span className="preview-readonly">{t("previewReadOnly")}</span>
+                  <ChevronRight size={16} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          ) : !previewComposerOpen && (
+            <div className="preview-empty">
+              <FileText size={18} aria-hidden="true" />
+              <span>{t("previewEmpty")}</span>
+            </div>
+          )}
+
+          {previewComposerOpen && (
+            <div className="preview-composer">
+              <div className="preview-composer-intro">
+                <strong>{t("previewComposerTitle")}</strong>
+                <span>{t("previewComposerHelp")}</span>
+              </div>
+              {formatEnginesLoading ? (
+                <div className="status"><span className="spinner" /> {t("previewEnginesLoading")}</div>
+              ) : (
+                <div className="preview-composer-grid">
+                  <label>
+                    <span>{t("previewEngineLabel")}</span>
+                    <select value={formatEngineId} onChange={(event) => setFormatEngineId(event.currentTarget.value)} disabled={previewGenerating}>
+                      {formatEngines.map((engine) => (
+                        <option key={engine.id} value={engine.id}>{engine.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>{t("previewProfileLabel")}</span>
+                    <select value={previewProfile} onChange={(event) => setPreviewProfile(event.currentTarget.value as PreviewProfile)} disabled={previewGenerating}>
+                      {(Object.keys(PREVIEW_PROFILE_I18N) as PreviewProfile[]).map((profile) => (
+                        <option key={profile} value={profile}>{t(PREVIEW_PROFILE_I18N[profile])}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+              {selectedFormatEngine && (
+                <div className="preview-engine-info">
+                  <span>{selectedFormatEngine.info}</span>
+                  <strong>
+                    {selectedFormatEngine.cost_hora_brl == null
+                      ? t("previewCostUnknown")
+                      : t("previewCostHour", {
+                          cost: typeof selectedFormatEngine.cost_hora_brl === "number"
+                            ? selectedFormatEngine.cost_hora_brl.toFixed(2)
+                            : selectedFormatEngine.cost_hora_brl,
+                        })}
+                  </strong>
+                </div>
+              )}
+              {selectedFormatEngine && !selectedFormatEngine.key_set && (
+                <div className="key-warn" role="alert">{t("previewKeyMissing", { key: selectedFormatEngine.key_name })}</div>
+              )}
+              {formatEnginesError && <div className="key-warn" role="alert">{t("previewEnginesError", { err: formatEnginesError })}</div>}
+              <div className="preview-composer-actions">
+                <button
+                  onClick={generatePreview}
+                  disabled={previewGenerating || formatEnginesLoading || !selectedFormatEngine?.key_set}
+                >
+                  {previewGenerating ? <><span className="spinner" /> {t("previewGenerating")}</> : t("previewGenerate")}
+                </button>
+                <span>{t("previewPaidAction")}</span>
+              </div>
+              {previewStatus && (
+                <div className={`preview-status${previewValidationOk === false ? " error" : ""}`} role="status">
+                  {previewStatus}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
         {!detail.validation_ok && showWarnings && (
           <div className="warnings-panel">
             {detail.problems && detail.problems.length > 0 ? (
@@ -3911,6 +4160,7 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
   const [view, setView] = useState<View>("transcribe");
+  const [libraryOpenRequest, setLibraryOpenRequest] = useState<LibraryOpenRequest | null>(null);
   const [adminExpanded, setAdminExpanded] = useState(true);
   const [adminSection, setAdminSection] = useState<AdminSection>("users");
   // Histórico de vistas para as setas voltar/avançar da barra de título
@@ -3956,6 +4206,12 @@ function App() {
   const [stage, setStage] = useState<number>(0);
   const [elapsed, setElapsed] = useState<number>(0);
   const [result, setResult] = useState<ResultData | null>(null);
+  // undefined = a persistência ainda está a terminar; null = indisponível;
+  // number = transcript pronto para ser retomado diretamente pela Library.
+  const [resultTranscriptionId, setResultTranscriptionId] = useState<number | null | undefined>(undefined);
+  const [showPostTranscriptionEducation, setShowPostTranscriptionEducation] = useState(
+    () => localStorage.getItem("upexnote-post-transcription-education-v1") !== "seen"
+  );
   const [loadError, setLoadError] = useState<string>("");
   const transcriptRef = useRef<HTMLPreElement>(null);
 
@@ -4022,6 +4278,7 @@ function App() {
         if (s > 0) setStage((cur) => Math.max(cur, s));
       } else if (obj.type === "result") {
         setResult(obj as ResultData);
+        setResultTranscriptionId(undefined);
         setStatus(obj.ok ? t("trDone") : t("trDoneWarn"));
         const costMicros = Number.isFinite(Number(obj.cost)) ? Math.max(0, Math.round(Number(obj.cost) * 1_000_000)) : undefined;
         void telemetry(obj.ok ? "transcription_completed" : "transcription_failed", {
@@ -4030,6 +4287,9 @@ function App() {
           estimatedCostMicros: costMicros,
           errorCode: obj.ok ? undefined : "TRANSCRIPTION_VALIDATION_FAILED",
         });
+      } else if (obj.type === "transcription_saved") {
+        const transcriptionId = Number(obj.transcription_id);
+        setResultTranscriptionId(obj.saved && Number.isFinite(transcriptionId) && transcriptionId > 0 ? transcriptionId : null);
       } else if (obj.type === "error") {
         setStatus(t("errPrefix") + obj.message);
         void telemetry("transcription_failed", { engine: selected?.id, errorCode: "TRANSCRIPTION_ERROR" });
@@ -4055,6 +4315,7 @@ function App() {
     setFile("");
     setDest("");
     setResult(null);
+    setResultTranscriptionId(undefined);
     setStatus("");
     setStage(0);
     setElapsed(0);
@@ -4064,6 +4325,7 @@ function App() {
     if (!file || !selected || running) return;
     setRunning(true);
     setResult(null);
+    setResultTranscriptionId(undefined);
     setStage(1);
     setStatus(t("trStarting"));
     try {
@@ -4099,6 +4361,23 @@ function App() {
       ],
     });
     if (typeof picked === "string") setFile(picked);
+  }
+
+  function acknowledgePostTranscriptionEducation() {
+    localStorage.setItem("upexnote-post-transcription-education-v1", "seen");
+    setShowPostTranscriptionEducation(false);
+  }
+
+  function continueInLibrary(openPreviewComposer: boolean) {
+    acknowledgePostTranscriptionEducation();
+    if (typeof resultTranscriptionId === "number") {
+      setLibraryOpenRequest({
+        transcriptionId: resultTranscriptionId,
+        openPreviewComposer,
+        nonce: Date.now(),
+      });
+    }
+    navTo("library");
   }
 
   const navItems: { id: View; icon: ReactNode; label: string }[] = [
@@ -4311,6 +4590,52 @@ function App() {
               </section>
 
               {result && (
+                <section className="card post-transcription-panel">
+                  <div className="post-transcription-head">
+                    <div>
+                      <span className="preview-kicker">{t("postTrKicker")}</span>
+                      <h2>{result.ok ? t("postTrTitle") : t("postTrTitleWarn")}</h2>
+                      <p>{result.ok ? t("postTrHelp") : t("postTrHelpWarn")}</p>
+                    </div>
+                    <span className={`badge ${result.ok ? "ok" : "warn"}`}>
+                      {result.ok ? t("valOk") : t("valWarn")}
+                    </span>
+                  </div>
+                  <div className="post-transcription-actions">
+                    <button className="secondary" onClick={() => {
+                      acknowledgePostTranscriptionEducation();
+                      transcriptRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}>
+                      <Eye size={16} aria-hidden="true" /> {t("postTrViewTranscript")}
+                    </button>
+                    {result.ok && (
+                      <button
+                        onClick={() => continueInLibrary(true)}
+                        disabled={typeof resultTranscriptionId !== "number"}
+                      >
+                        <FileText size={16} aria-hidden="true" /> {t("postTrCreatePreview")}
+                      </button>
+                    )}
+                    <button className="secondary" onClick={() => continueInLibrary(false)}>
+                      <LibraryBig size={16} aria-hidden="true" /> {t("postTrOpenLibrary")}
+                    </button>
+                  </div>
+                  {result.ok && resultTranscriptionId === undefined && (
+                    <div className="muted post-transcription-state"><span className="spinner" /> {t("postTrSaving")}</div>
+                  )}
+                  {result.ok && resultTranscriptionId === null && (
+                    <div className="key-warn post-transcription-state">{t("postTrSaveUnavailable")}</div>
+                  )}
+                  {showPostTranscriptionEducation && (
+                    <div className="post-transcription-note">
+                      <strong>{t("postTrLayersTitle")}</strong>
+                      <span>{t("postTrLayersHelp")}</span>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {result && (
                 <section className="card">
                   <div className="result-head">
                     <h2 style={{ margin: 0 }}>{t("resTitle")}</h2>
@@ -4332,7 +4657,11 @@ function App() {
           </div>
 
           <div className={"view-pane" + (view === "library" ? "" : " hidden")}>
-            <LibraryView active={view === "library"} />
+            <LibraryView
+              active={view === "library"}
+              openRequest={libraryOpenRequest}
+              onOpenRequestHandled={() => setLibraryOpenRequest(null)}
+            />
           </div>
 
           {getSession()?.role !== "admin" && <div className={"view-pane" + (view === "support" ? "" : " hidden")}>

@@ -397,6 +397,16 @@ def cmd_transcribe(args):
     except Exception as e:  # noqa: BLE001 - best-effort, nunca bloquear
         progress(f"DB: passo ignorado ({e})")
 
+    # Evento aditivo para a UI pós-transcrição: o `result` continua a chegar
+    # assim que o ficheiro local está pronto, e este segundo evento informa se
+    # já existe um ID persistido que possa ser aberto diretamente na Library.
+    # Falha best-effort na base não invalida o transcript local.
+    _emit(real_stdout, {
+        "type": "transcription_saved",
+        "saved": new_transcription_id is not None,
+        "transcription_id": new_transcription_id,
+    })
+
     # Formatacao encadeada (ADF-01, decisao 06/08/2026): "a escolha do motor
     # de formatacao acontece no mesmo momento em que o usuario escolhe o
     # motor de transcricao... ao executar, o sistema ja roda as duas etapas

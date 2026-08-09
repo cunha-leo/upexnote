@@ -51,8 +51,8 @@ Todo modulo com dados operacionais segue, quando aplicavel:
 ## Artefactos derivados do transcript
 
 - O detalhe do transcript pode aprofundar a jornada em `detalhe -> artefacto derivado`, sem perder a origem. O artefacto sempre oferece uma acao clara para voltar ao transcript que o gerou.
-- O leitor estruturado da v0.29.1 e uma **previa estruturada**: ajuda a compreender objetivo, assuntos, decisoes e conceitos antes de criar material editavel. Nao e o Caderno nem o documento pessoal final.
-- A implementacao atual usa a faixa `Documentos gerados`; a direcao aprovada e evoluir a linguagem para `Previa estruturada`, imediatamente depois dos badges e antes do conteudo principal.
+- O leitor estruturado e uma **previa estruturada**: ajuda a compreender objetivo, assuntos, decisoes e conceitos antes de criar material editavel. Nao e o Caderno nem o documento pessoal final.
+- Desde a v0.30.0, o detalhe do transcript usa uma secao permanente `Previa estruturada`, imediatamente depois dos badges e antes do conteudo principal. Estado vazio, lista de previas e criacao opcional permanecem no mesmo contexto.
 - Cada documento e representado por um chip acionavel. O titulo completo deve permanecer legivel: em espaco reduzido, quebra em mais de uma linha em vez de usar reticencias ou cortar informacao. `title` pode complementar, mas nao substituir o texto visivel.
 - Um transcript pode ter varios documentos derivados; a faixa precisa acomodar essa relacao sem transformar os chips em navegacao principal do aplicativo.
 - O leitor estruturado abre com retorno para a origem, titulo completo, metadados relevantes e a acao secundaria `Copiar`. Enquanto o ADF-01 permanecer em leitura, nao exibe campos editaveis nem affordances de edicao.
@@ -64,10 +64,10 @@ Todo modulo com dados operacionais segue, quando aplicavel:
 ## Previa, Caderno e painel pos-transcricao
 
 - O fluxo mental e `transcript -> previa estruturada -> Caderno`; cada camada permanece identificavel.
-- Sem previa: oferecer `Criar previa`, com fornecedor e custo visiveis antes de qualquer chamada paga.
+- Sem previa: oferecer `Criar previa`, com motor, perfil, disponibilidade da chave e custo visiveis antes de qualquer chamada paga.
 - Com previa: oferecer `Ver previa` e `Salvar no Caderno`.
 - Com nota ja criada: oferecer `Abrir no Caderno` e indicar o destino.
-- Depois de uma transcricao concluida, as acoes aparecem no mesmo workspace sem reload. Na primeira utilizacao, uma mensagem explica as camadas e informa que a pessoa pode adiar e continuar depois pela Library; nas seguintes, o painel fica compacto.
+- Depois de uma transcricao concluida, as acoes aparecem no mesmo workspace sem reload. Na primeira utilizacao, uma mensagem explica as camadas e informa que a pessoa pode adiar e continuar depois pela Library; a escolha de uma acao registra localmente a educacao concluida e deixa o painel compacto nas seguintes.
 - `Salvar no Caderno` pede ou confirma o destino hierarquico e cria uma copia editavel com linhagem. Nunca torna a previa editavel nem altera o transcript.
 - O Caderno permite documento visualmente continuo, sem bordas obrigatorias em cada bloco. Estrutura interna e IDs estaveis permanecem invisiveis para sustentar historico, baloes e referencias.
 - Barra superior concentra formatacao; corpo central concentra escrita; painel lateral concentra comentarios, referencias, dicionario, glossario e palavras-chave.
@@ -80,6 +80,8 @@ Todo modulo com dados operacionais segue, quando aplicavel:
 - Validado na v0.29.1 em 08/08/2026 com o transcript #23 e o documento #9, em janela normal e estreita.
 - Evidencia cobriu faixa e chip de documentos, cabecalho, objetivo, inicio/meio/fim dos 30 blocos, 34 entradas de glossario e retorno ao transcript de origem.
 - O leitor permaneceu em so leitura, sem cortes, sobreposicoes, truncamentos ou estados vazios incorretos.
+- A entrada da v0.30.0 foi validada em ambiente controlado nos estados com previa, vazio, compositor, chave ausente e painel pos-transcricao, em janela normal e a 800 x 1000.
+- **Validado na instalacao real em 09/08/2026**, na v0.30.0 instalada, com o transcript #23 e o documento #9 ("Onboarding e Orientacao da Comunidade Classe A", detalhado, claude_haiku): secao `Previa estruturada` visivel com o cartao do documento, compositor aberto via `Criar outra previa` sem geracao acionada, janela normal e janela estreita (sidebar colapsada, coluna unica) sem cortes, sobreposicoes ou truncamentos. Nenhuma geracao paga foi acionada e nenhum dado foi alterado.
 
 ## Privacidade e administracao
 

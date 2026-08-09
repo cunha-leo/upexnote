@@ -2,7 +2,7 @@
 
 > **Estado:** direção de produto e arquitetura aprovada em 08/08/2026; ainda não implementada.
 > **Autoridade:** este documento define os limites do domínio `notebooks`, sua relação com `transcriptions` e `documents`, a hierarquia do Caderno e os contratos que qualquer implementação futura deve preservar.
-> **Estado executável atual:** desktop v0.29.1, com prévia estruturada em só leitura validada; não existe ainda schema `notebooks`, editor rico ou navegação de Cadernos.
+> **Estado executável atual:** desktop v0.30.0, com prévia estruturada em só leitura, entrada pela Library e painel pós-transcrição; não existe ainda schema `notebooks`, editor rico ou navegação de Cadernos.
 
 ## Responsabilidade intelectual e arquitetural
 
@@ -52,7 +52,7 @@ transcript raw imutável
   → documento final ou pacote de contexto para outra IA
 ```
 
-O leitor estruturado entregue na v0.29.1 é a prévia. O Caderno é outra prateleira: editor contínuo, hierárquico e extensível, comparável em intenção a Word, Notion, Evernote ou OneNote, sem copiar visualmente nenhum deles.
+O leitor estruturado entregue na v0.29.1 é a prévia; a v0.30.0 entregou sua entrada explícita na Library e o painel pós-transcrição. O Caderno é outra prateleira: editor contínuo, hierárquico e extensível, comparável em intenção a Word, Notion, Evernote ou OneNote, sem copiar visualmente nenhum deles.
 
 ## 2. Prateleiras e bounded contexts
 
@@ -126,7 +126,7 @@ O detalhe do transcript mantém a fonte e expõe uma seção de **Prévia estrut
 - com prévia ainda não usada: `Salvar no Caderno`;
 - com nota ligada: `Abrir no Caderno` e indicação do destino.
 
-A v0.29.1 ainda mostra a faixa `Documentos gerados`; a mudança para a linguagem de prévia é evolução aprovada, não funcionalidade já entregue.
+A v0.30.0 substituiu a faixa `Documentos gerados` pela seção permanente `Prévia estruturada`. Ela distingue estado vazio, prévias existentes e criação opcional; o compositor expõe motor, perfil, custo e disponibilidade da chave antes de qualquer chamada paga.
 
 ## 5. Navegação por prateleiras
 
@@ -305,7 +305,7 @@ Não é necessário criar event bus ou microserviços agora. Eventos duráveis/o
 ## 14. Fatias de implementação
 
 1. **Arquitetura e UX:** mapa de prateleiras, fluxos, estados e DDL proposto — esta etapa documental.
-2. **Entrada da prévia:** linguagem `Prévia estruturada`, painel pós-transcrição e ações na Library, sem criar Caderno automaticamente.
+2. ~~**Entrada da prévia:** linguagem `Prévia estruturada`, painel pós-transcrição e ações na Library, sem criar Caderno automaticamente.~~ **Entregue na v0.30.0.**
 3. **Fundação `notebooks`:** schema/migração, equivalência SQLite, coleção padrão, árvore e nota vazia.
 4. **Passagem controlada:** `Salvar no Caderno`, seleção de destino, linhagem e abertura.
 5. **Editor rico essencial:** edição contínua, formatação, salvamento e versões; sem balões/chat ainda.
