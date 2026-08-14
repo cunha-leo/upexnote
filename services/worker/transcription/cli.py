@@ -301,6 +301,50 @@ def cmd_document_generate(args):
     return 0
 
 
+# Registro — 2026-08-11 ("documento gerado mas não gravado"): `insert_document`
+# é best-effort ("nunca levanta") e `format_result` já respondia `saved` sem a
+# UI ler esse campo — uma falha de gravação (transitória: túnel a cair, VPS a
+# reiniciar) fazia o utilizador achar que perdeu a formatação já paga à API,
+# sem forma de recuperar sem gastar de novo. Este comando recebe o `document`
+# JÁ GERADO (guardado em memória no cliente) e só faz o INSERT — nunca chama
+# o motor de IA outra vez.
+def cmd_document_save(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    payload = _stdin_json()
+    if not isinstance(payload, dict) or not isinstance(payload.get("document"), dict):
+        _emit(sys.stdout, {"type": "error", "message": "Payload inválido para guardar o documento."})
+        return 1
+    document = payload["document"]
+    usage = payload.get("usage") or {}
+    try:
+        doc_id = db.insert_document({
+            "transcription_id": args.transcription_id,
+            "user_id": getattr(args, "user", None),
+            "engine": args.engine,
+            "profile": args.profile,
+            "title": document.get("title"),
+            "objective": document.get("objective"),
+            "raw_clean_check_ok": payload.get("raw_clean_check_ok"),
+            "blocks": document.get("blocks") or [],
+            "jargon": document.get("jargon") or [],
+            "processing_s": payload.get("processing_s"),
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+        })
+        if doc_id is None:
+            _emit(sys.stdout, {"type": "error", "message": "Ainda não foi possível guardar o documento — verifique a ligação e tente novamente."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "document_id": doc_id})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao guardar o documento: {e}"})
+        return 1
+
+
 def cmd_transcribe(args):
     real_stdout = sys.stdout
 
@@ -1208,6 +1252,28 @@ def cmd_notebook_note_item(args):
         return 1
 
 
+def cmd_notebook_note_open(args):
+    """Analise arquitetural 2026-08-13, fase B: abrir uma nota disparava 6
+    processos separados (item, anotacoes, referencias, links, keywords,
+    glossario) — cada um e um spawn de processo + handshake SSH/Postgres a
+    parte. Este comando devolve tudo numa unica resposta/ligacao."""
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        bundle = db.notebook_note_open(args.id, user_id=getattr(args, "user", None))
+        if bundle is None:
+            _emit(sys.stdout, {"type": "error", "message": f"Nota #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "notebook_note_open", **bundle})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a abrir a nota: {e}"})
+        return 1
+
+
 def cmd_notebook_note_update(args):
     from . import db
     err = _require_db()
@@ -1243,6 +1309,470 @@ def cmd_notebook_note_delete(args):
         return 0
     except Exception as e:  # noqa: BLE001
         _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar a nota: {e}"})
+        return 1
+
+
+def cmd_notebook_save_document(args):
+    """'Salvar no Caderno' (fatia 4): copia a previa (documento estruturado)
+    para uma nota nova, com linhagem. Idempotente — devolve a nota existente
+    se ja tiver sido salva antes."""
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_save_document_as_note(
+            args.document_id, user_id=getattr(args, "user", None), collection_id=args.collection_id,
+        )
+        if not res.get("ok"):
+            messages = {
+                "document_not_found": "Documento não encontrado.",
+                "collection_not_found": "Coleção de destino não encontrada.",
+            }
+            _emit(sys.stdout, {"type": "error", "message": messages.get(res.get("error"), "Falha ao salvar no Caderno.")})
+            return 1
+        # devolve já a nota completa (não só o id) — sem isto, o frontend tinha
+        # de fazer uma segunda viagem pelo túnel (notebook-note-item) só para
+        # mostrar o que acabou de gravar, e essa nota nunca tinha cache local
+        # ainda (é a primeira vez que existe): o utilizador via sempre um
+        # "Loading..." logo a seguir a "guardar com sucesso", mesmo sendo
+        # conteúdo que o próprio cliente já tinha visto na prévia da Biblioteca.
+        note = db.notebook_note_item(res["id"], user_id=getattr(args, "user", None))
+        _emit(sys.stdout, {"type": "ok", "id": res["id"], "existed": res.get("existed", False), "note": note})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao salvar no Caderno: {e}"})
+        return 1
+
+
+def cmd_notebook_note_version_create(args):
+    """Snapshot manual do estado atual da nota (fatia 5 — "versões")."""
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_note_version_create(args.note_id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Nota #{args.note_id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "id": res["id"]})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao guardar a versão: {e}"})
+        return 1
+
+
+def cmd_notebook_note_versions(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        versions = db.notebook_note_versions(args.note_id, user_id=getattr(args, "user", None))
+        if versions is None:
+            _emit(sys.stdout, {"type": "error", "message": f"Nota #{args.note_id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "notebook_note_versions", "versions": versions})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter as versões: {e}"})
+        return 1
+
+
+def cmd_notebook_note_version_restore(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_note_version_restore(args.note_id, args.version_id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            messages = {
+                "not_found": f"Nota #{args.note_id} não encontrada.",
+                "version_not_found": "Versão não encontrada.",
+            }
+            _emit(sys.stdout, {"type": "error", "message": messages.get(res.get("error"), "Falha ao recuperar a versão.")})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "message": "Versão recuperada."})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao recuperar a versão: {e}"})
+        return 1
+
+
+def cmd_notebook_annotation_create(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        body = sys.stdin.read()
+        res = db.notebook_annotation_create(
+            args.note_id, body, user_id=getattr(args, "user", None), block_id=args.block_id,
+            start_offset=args.start_offset, end_offset=args.end_offset,
+            selected_text=args.selected_text, context_snippet=args.context_snippet,
+        )
+        if not res.get("ok"):
+            messages = {"note_not_found": f"Nota #{args.note_id} não encontrada.", "empty_body": "Comentário vazio."}
+            _emit(sys.stdout, {"type": "error", "message": messages.get(res.get("error"), "Falha ao criar a anotação.")})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "id": res["id"]})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao criar a anotação: {e}"})
+        return 1
+
+
+def cmd_notebook_annotation_list(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        items = db.notebook_annotation_list(args.note_id, user_id=getattr(args, "user", None))
+        _emit(sys.stdout, {"type": "notebook_annotation_list", "items": items})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter as anotações: {e}"})
+        return 1
+
+
+def cmd_notebook_annotation_resolve(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_annotation_resolve(args.id, user_id=getattr(args, "user", None), resolved=not args.reopen)
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Anotação #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok"})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao atualizar a anotação: {e}"})
+        return 1
+
+
+def cmd_notebook_annotation_delete(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_annotation_delete(args.id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Anotação #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok"})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar a anotação: {e}"})
+        return 1
+
+
+def cmd_notebook_reference_create(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_reference_create(
+            args.note_id, title=args.title, url=args.url, note_text=args.note_text,
+            user_id=getattr(args, "user", None),
+        )
+        if not res.get("ok"):
+            messages = {"note_not_found": f"Nota #{args.note_id} não encontrada.", "empty_reference": "Referência vazia (título ou URL)."}
+            _emit(sys.stdout, {"type": "error", "message": messages.get(res.get("error"), "Falha ao criar a referência.")})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "id": res["id"]})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao criar a referência: {e}"})
+        return 1
+
+
+def cmd_notebook_reference_list(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        items = db.notebook_reference_list(args.note_id, user_id=getattr(args, "user", None))
+        _emit(sys.stdout, {"type": "notebook_reference_list", "items": items})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter as referências: {e}"})
+        return 1
+
+
+def cmd_notebook_reference_delete(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_reference_delete(args.id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Referência #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok"})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar a referência: {e}"})
+        return 1
+
+
+def cmd_notebook_link_create(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_link_create(args.from_note_id, args.to_note_id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            messages = {
+                "note_not_found": f"Nota #{args.from_note_id} não encontrada.",
+                "target_not_found": f"Nota #{args.to_note_id} não encontrada.",
+                "self_link": "Uma nota não pode ligar a si própria.",
+                "already_linked": "Essa ligação já existe.",
+            }
+            _emit(sys.stdout, {"type": "error", "message": messages.get(res.get("error"), "Falha ao criar a ligação.")})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "id": res["id"]})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao criar a ligação: {e}"})
+        return 1
+
+
+def cmd_notebook_links(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        links = db.notebook_links(args.note_id, user_id=getattr(args, "user", None))
+        _emit(sys.stdout, {"type": "notebook_links", **links})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter as ligações: {e}"})
+        return 1
+
+
+def cmd_notebook_link_delete(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_link_delete(args.id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Ligação #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok"})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar a ligação: {e}"})
+        return 1
+
+
+def cmd_notebook_keyword_create(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_keyword_create(args.note_id, args.term, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            messages = {"note_not_found": f"Nota #{args.note_id} não encontrada.", "empty_term": "Palavra-chave vazia."}
+            _emit(sys.stdout, {"type": "error", "message": messages.get(res.get("error"), "Falha ao criar a palavra-chave.")})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "id": res["id"]})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao criar a palavra-chave: {e}"})
+        return 1
+
+
+def cmd_notebook_keyword_list(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        items = db.notebook_keyword_list(args.note_id, user_id=getattr(args, "user", None))
+        _emit(sys.stdout, {"type": "notebook_keyword_list", "items": items})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter as palavras-chave: {e}"})
+        return 1
+
+
+def cmd_notebook_keyword_delete(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_keyword_delete(args.id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Palavra-chave #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok"})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar a palavra-chave: {e}"})
+        return 1
+
+
+def cmd_notebook_glossary_create(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_glossary_create(
+            args.note_id, args.term, args.definition, source=args.source, language=args.language,
+            user_id=getattr(args, "user", None),
+        )
+        if not res.get("ok"):
+            messages = {"note_not_found": f"Nota #{args.note_id} não encontrada.", "empty_entry": "Termo/definição vazios."}
+            _emit(sys.stdout, {"type": "error", "message": messages.get(res.get("error"), "Falha ao criar a entrada do glossário.")})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "id": res["id"]})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao criar a entrada do glossário: {e}"})
+        return 1
+
+
+def cmd_notebook_glossary_list(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        items = db.notebook_glossary_list(args.note_id, user_id=getattr(args, "user", None))
+        _emit(sys.stdout, {"type": "notebook_glossary_list", "items": items})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter o glossário: {e}"})
+        return 1
+
+
+def cmd_notebook_glossary_delete(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        res = db.notebook_glossary_delete(args.id, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Entrada #{args.id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok"})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao apagar a entrada do glossário: {e}"})
+        return 1
+
+
+def cmd_notebook_export(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        layers = [l for l in (args.layers or "").split(",") if l.strip()] or None
+        res = db.notebook_note_export(args.note_id, layers=layers, fmt=args.format or "markdown",
+                                       user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Nota #{args.note_id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "notebook_export", "content": res["content"], "layers": res["layers"],
+                            "language": res.get("language") or "pt"})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao exportar: {e}"})
+        return 1
+
+
+def cmd_notebook_context_package_create(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        layers = [l for l in (args.layers or "").split(",") if l.strip()] or None
+        res = db.notebook_note_context_package(args.note_id, layers=layers, user_id=getattr(args, "user", None))
+        if not res.get("ok"):
+            _emit(sys.stdout, {"type": "error", "message": f"Nota #{args.note_id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "ok", "id": res["id"], "manifest": res["manifest"], "prompt": res["prompt"],
+                            "language": res.get("language") or "pt"})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha ao gerar o pacote para IA: {e}"})
+        return 1
+
+
+def cmd_notebook_context_packages(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        items = db.notebook_context_packages(args.note_id, user_id=getattr(args, "user", None))
+        if items is None:
+            _emit(sys.stdout, {"type": "error", "message": f"Nota #{args.note_id} não encontrada."})
+            return 1
+        _emit(sys.stdout, {"type": "notebook_context_packages", "items": items})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter os pacotes: {e}"})
+        return 1
+
+
+def cmd_notebook_context_package_item(args):
+    from . import db
+    err = _require_db()
+    if err:
+        _emit(sys.stdout, {"type": "error", "message": err})
+        return 1
+    try:
+        item = db.notebook_context_package_item(args.note_id, args.id, user_id=getattr(args, "user", None))
+        if item is None:
+            _emit(sys.stdout, {"type": "error", "message": "Pacote não encontrado."})
+            return 1
+        _emit(sys.stdout, {"type": "notebook_context_package_item", "item": item})
+        return 0
+    except Exception as e:  # noqa: BLE001
+        _emit(sys.stdout, {"type": "error", "message": f"Falha a obter o pacote: {e}"})
         return 1
 
 
@@ -1329,6 +1859,12 @@ def build_parser():
     p_dg.add_argument("--engine", required=True, help=f"ID do motor de formatacao: {', '.join(FORMAT_ENGINES)}")
     p_dg.add_argument("--profile", choices=["detalhado", "resumo_tecnico", "estudo"], default="detalhado", help="Perfil de transformacao.")
     p_dg.add_argument("--user", type=int, help="ID (pk) da conta da sessao — dono da transcricao.")
+
+    p_ds = sub.add_parser("document-save", help="Guarda (retry) um documento estruturado JA GERADO, sem chamar a IA de novo.")
+    p_ds.add_argument("--transcription-id", type=int, required=True, dest="transcription_id")
+    p_ds.add_argument("--engine", required=True)
+    p_ds.add_argument("--profile", required=True)
+    p_ds.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
 
     sub.add_parser("get-settings", help="Definicoes de armazenamento em vigor (JSON).")
 
@@ -1425,6 +1961,10 @@ def build_parser():
     p_nbni.add_argument("--id", type=int, required=True, help="ID da nota.")
     p_nbni.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
 
+    p_nbno = sub.add_parser("notebook-note-open", help="Abrir nota: item + anotacoes + referencias + links + keywords + glossario numa so chamada (analise arquitetural 2026-08-13, fase B).")
+    p_nbno.add_argument("--id", type=int, required=True, help="ID da nota.")
+    p_nbno.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
     p_nbnu = sub.add_parser("notebook-note-update", help="Edita titulo e/ou corpo de uma nota (corpo por stdin).")
     p_nbnu.add_argument("--id", type=int, required=True, help="ID da nota.")
     p_nbnu.add_argument("--title", help="Novo titulo (omitir = mantem).")
@@ -1434,6 +1974,123 @@ def build_parser():
     p_nbnd = sub.add_parser("notebook-note-delete", help="Apaga uma nota (arquiva no historico).")
     p_nbnd.add_argument("--id", type=int, required=True, help="ID da nota.")
     p_nbnd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbsd = sub.add_parser("notebook-save-document", help="'Salvar no Caderno': copia a previa (documento estruturado) para uma nota nova, com linhagem. Idempotente.")
+    p_nbsd.add_argument("--document-id", type=int, required=True, dest="document_id", help="ID do documento estruturado (previa) de origem.")
+    p_nbsd.add_argument("--collection-id", type=int, dest="collection_id", help="Colecao de destino (omitir = colecao padrao).")
+    p_nbsd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbvc = sub.add_parser("notebook-note-version-create", help="Snapshot manual do estado atual da nota (fatia 5, versoes).")
+    p_nbvc.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbvc.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbvl = sub.add_parser("notebook-note-versions", help="Lista as versoes guardadas de uma nota (fatia 5).")
+    p_nbvl.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbvl.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbvr = sub.add_parser("notebook-note-version-restore", help="Recupera uma versao antiga da nota (fatia 5).")
+    p_nbvr.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbvr.add_argument("--version-id", type=int, required=True, dest="version_id")
+    p_nbvr.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbac = sub.add_parser("notebook-annotation-create", help="Cria uma anotacao ancorada num trecho da nota (fatia 6). Corpo por stdin.")
+    p_nbac.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbac.add_argument("--block-id", dest="block_id", help="ID estavel do bloco onde a selecao comeca.")
+    p_nbac.add_argument("--start-offset", type=int, dest="start_offset")
+    p_nbac.add_argument("--end-offset", type=int, dest="end_offset")
+    p_nbac.add_argument("--selected-text", dest="selected_text")
+    p_nbac.add_argument("--context-snippet", dest="context_snippet")
+    p_nbac.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbal = sub.add_parser("notebook-annotation-list", help="Lista as anotacoes de uma nota (fatia 6).")
+    p_nbal.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbal.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbar = sub.add_parser("notebook-annotation-resolve", help="Marca/desmarca uma anotacao como resolvida (fatia 6).")
+    p_nbar.add_argument("--id", type=int, required=True)
+    p_nbar.add_argument("--reopen", action="store_true", help="Desmarca como resolvida (reabre).")
+    p_nbar.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbad = sub.add_parser("notebook-annotation-delete", help="Apaga uma anotacao (arquiva no historico) (fatia 6).")
+    p_nbad.add_argument("--id", type=int, required=True)
+    p_nbad.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbrc = sub.add_parser("notebook-reference-create", help="Cria uma referencia de estudo associada a nota (fatia 6).")
+    p_nbrc.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbrc.add_argument("--title")
+    p_nbrc.add_argument("--url")
+    p_nbrc.add_argument("--note-text", dest="note_text")
+    p_nbrc.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbrl = sub.add_parser("notebook-reference-list", help="Lista as referencias de uma nota (fatia 6).")
+    p_nbrl.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbrl.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbrd = sub.add_parser("notebook-reference-delete", help="Apaga uma referencia (arquiva no historico) (fatia 6).")
+    p_nbrd.add_argument("--id", type=int, required=True)
+    p_nbrd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nblc = sub.add_parser("notebook-link-create", help="Liga uma nota a outra nota do Caderno (backlinks).")
+    p_nblc.add_argument("--from-note-id", type=int, required=True, dest="from_note_id")
+    p_nblc.add_argument("--to-note-id", type=int, required=True, dest="to_note_id")
+    p_nblc.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbls = sub.add_parser("notebook-links", help="Lista as ligacoes de saida e os backlinks de uma nota.")
+    p_nbls.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbls.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbld = sub.add_parser("notebook-link-delete", help="Apaga uma ligacao entre notas (arquiva no historico).")
+    p_nbld.add_argument("--id", type=int, required=True)
+    p_nbld.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbkc = sub.add_parser("notebook-keyword-create", help="Cria uma palavra-chave associada a nota (fatia 7).")
+    p_nbkc.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbkc.add_argument("--term", required=True)
+    p_nbkc.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbkl = sub.add_parser("notebook-keyword-list", help="Lista as palavras-chave de uma nota (fatia 7).")
+    p_nbkl.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbkl.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbkd = sub.add_parser("notebook-keyword-delete", help="Apaga uma palavra-chave (fatia 7).")
+    p_nbkd.add_argument("--id", type=int, required=True)
+    p_nbkd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbgc = sub.add_parser("notebook-glossary-create", help="Cria uma entrada de glossario associada a nota (fatia 7).")
+    p_nbgc.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbgc.add_argument("--term", required=True)
+    p_nbgc.add_argument("--definition", required=True)
+    p_nbgc.add_argument("--source")
+    p_nbgc.add_argument("--language")
+    p_nbgc.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbgl = sub.add_parser("notebook-glossary-list", help="Lista o glossario de uma nota (fatia 7).")
+    p_nbgl.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbgl.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbgd = sub.add_parser("notebook-glossary-delete", help="Apaga uma entrada de glossario (fatia 7).")
+    p_nbgd.add_argument("--id", type=int, required=True)
+    p_nbgd.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbex = sub.add_parser("notebook-export", help="Monta o conteudo exportavel da nota a partir das camadas escolhidas (fatia 8).")
+    p_nbex.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbex.add_argument("--layers", help="Lista separada por virgulas: body,annotations,references,glossary,lineage.")
+    p_nbex.add_argument("--format", default="markdown")
+    p_nbex.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbcp = sub.add_parser("notebook-context-package-create", help="Gera o pacote de contexto para IA (manifesto + prompt) (fatia 8).")
+    p_nbcp.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbcp.add_argument("--layers", help="Lista separada por virgulas: body,annotations,references,glossary,lineage.")
+    p_nbcp.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbcpl = sub.add_parser("notebook-context-packages", help="Lista os pacotes de contexto ja gerados para uma nota (fatia 8).")
+    p_nbcpl.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbcpl.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
+
+    p_nbcpi = sub.add_parser("notebook-context-package-item", help="Devolve manifesto+prompt de um pacote de contexto ja gerado (fatia 8).")
+    p_nbcpi.add_argument("--note-id", type=int, required=True, dest="note_id")
+    p_nbcpi.add_argument("--id", type=int, required=True)
+    p_nbcpi.add_argument("--user", type=int, help="ID (pk) da conta da sessao.")
 
     p_lack = sub.add_parser("library-ack", help="Marca/desmarca os avisos de validacao como revistos.")
     p_lack.add_argument("--id", type=int, required=True, help="ID da transcricao.")
@@ -1476,18 +2133,29 @@ def build_parser():
                  "api-admin-revoke", "api-admin-totp-enroll", "api-admin-totp-confirm"):
         sub.add_parser(name, help="MFA administrativo via API HTTPS (payload JSON por stdin).")
 
+    sub.add_parser(
+        "serve",
+        help=(
+            "Fase A da analise arquitetural (2026-08-13): worker persistente. "
+            "Fica vivo a espera de pedidos por stdin (uma linha JSON por pedido: "
+            "{id, argv, stdin}) e responde por stdout (linhas {id, line} seguidas "
+            "de {id, done: true}) — em vez de um processo novo por comando."
+        ),
+    )
+
     return parser
 
 
-def main(argv=None):
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    handlers = {
+def _build_handlers():
+    """Extraido de main() (2026-08-13, Fase A) para ser reutilizado por
+    cmd_serve() sem duplicar esta tabela inteira."""
+    return {
         "engines": cmd_engines,
         "transcribe": cmd_transcribe,
         "format-engines": cmd_format_engines,
         "format": cmd_format,
         "document-generate": cmd_document_generate,
+        "document-save": cmd_document_save,
         "set-key": cmd_set_key,
         "clear-key": cmd_clear_key,
         "check-key": cmd_check_key,
@@ -1511,8 +2179,33 @@ def main(argv=None):
         "notebook-collection-delete": cmd_notebook_collection_delete,
         "notebook-note-create": cmd_notebook_note_create,
         "notebook-note-item": cmd_notebook_note_item,
+        "notebook-note-open": cmd_notebook_note_open,
         "notebook-note-update": cmd_notebook_note_update,
         "notebook-note-delete": cmd_notebook_note_delete,
+        "notebook-save-document": cmd_notebook_save_document,
+        "notebook-note-version-create": cmd_notebook_note_version_create,
+        "notebook-note-versions": cmd_notebook_note_versions,
+        "notebook-note-version-restore": cmd_notebook_note_version_restore,
+        "notebook-annotation-create": cmd_notebook_annotation_create,
+        "notebook-annotation-list": cmd_notebook_annotation_list,
+        "notebook-annotation-resolve": cmd_notebook_annotation_resolve,
+        "notebook-annotation-delete": cmd_notebook_annotation_delete,
+        "notebook-reference-create": cmd_notebook_reference_create,
+        "notebook-reference-list": cmd_notebook_reference_list,
+        "notebook-reference-delete": cmd_notebook_reference_delete,
+        "notebook-link-create": cmd_notebook_link_create,
+        "notebook-links": cmd_notebook_links,
+        "notebook-link-delete": cmd_notebook_link_delete,
+        "notebook-keyword-create": cmd_notebook_keyword_create,
+        "notebook-keyword-list": cmd_notebook_keyword_list,
+        "notebook-keyword-delete": cmd_notebook_keyword_delete,
+        "notebook-glossary-create": cmd_notebook_glossary_create,
+        "notebook-glossary-list": cmd_notebook_glossary_list,
+        "notebook-glossary-delete": cmd_notebook_glossary_delete,
+        "notebook-export": cmd_notebook_export,
+        "notebook-context-package-create": cmd_notebook_context_package_create,
+        "notebook-context-packages": cmd_notebook_context_packages,
+        "notebook-context-package-item": cmd_notebook_context_package_item,
         "library-ack": cmd_library_ack,
         "tunnel-keep": cmd_tunnel_keep,
         "db-adopt-orphans": cmd_db_adopt_orphans,
@@ -1556,7 +2249,86 @@ def main(argv=None):
         "api-admin-revoke": cmd_api_admin_factor,
         "api-admin-totp-enroll": cmd_api_admin_factor,
         "api-admin-totp-confirm": cmd_api_admin_factor,
+        "serve": cmd_serve,
     }
+
+
+def cmd_serve(args):
+    """Fase A da analise arquitetural (2026-08-13): worker persistente.
+
+    Em vez de um processo do SO novo por comando (o padrao ate aqui — caro
+    sobretudo em modo desenvolvimento, onde cada arranque reimporta tudo do
+    zero), este comando fica vivo a ler pedidos de stdin, um por linha JSON:
+        {"id": "<qualquer string>", "argv": ["notebook-note-open", "--id", "5"],
+         "stdin": "<opcional — substitui o stdin real para este pedido>"}
+    e responde por stdout, tambem por linha:
+        {"id": "<mesmo id>", "line": "<uma linha NDJSON original do comando>"}
+        ... (zero ou mais)
+        {"id": "<mesmo id>", "done": true}
+
+    Os handlers `cmd_*` nao mudam nada — continuam a escrever em sys.stdout e
+    a ler de sys.stdin exatamente como sempre fizeram. Este loop troca
+    temporariamente os dois (por StringIO) a volta de cada pedido, captura o
+    que foi escrito, e devolve-o envelopado com o id do pedido — e' assim que
+    um handler que le `sys.stdin.read()` para o corpo de uma nota continua a
+    funcionar sem alteracoes, mesmo com o stdin REAL do processo ocupado a
+    servir de canal de pedidos do loop.
+    """
+    import io
+
+    parser = build_parser()
+    handlers = _build_handlers()
+    real_stdout = sys.stdout
+    real_stdin = sys.stdin
+
+    for raw_line in real_stdin:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            req = json.loads(raw_line)
+        except Exception:  # noqa: BLE001 — linha corrompida: ignora, nao ha id para responder
+            continue
+
+        req_id = req.get("id")
+        argv = req.get("argv") or []
+        stdin_data = req.get("stdin") or ""
+
+        out_buf = io.StringIO()
+        in_buf = io.StringIO(stdin_data)
+        sys.stdout = out_buf
+        sys.stdin = in_buf
+        try:
+            ns = parser.parse_args(argv)
+            handler = handlers.get(ns.command)
+            if handler is None:
+                _emit(out_buf, {"type": "error", "message": f"comando desconhecido: {ns.command}"})
+            else:
+                handler(ns)
+        except SystemExit:
+            # argparse chama sys.exit em erro de parsing dos argumentos —
+            # apanha-se aqui para o loop nao morrer por causa de UM pedido mal formado.
+            _emit(out_buf, {"type": "error", "message": "argumentos invalidos para este comando"})
+        except Exception as e:  # noqa: BLE001 — qualquer falha de um handler fica isolada a este pedido
+            _emit(out_buf, {"type": "error", "message": str(e)})
+        finally:
+            sys.stdout = real_stdout
+            sys.stdin = real_stdin
+
+        for out_line in out_buf.getvalue().splitlines():
+            if not out_line.strip():
+                continue
+            real_stdout.write(json.dumps({"id": req_id, "line": out_line}) + "\n")
+        real_stdout.write(json.dumps({"id": req_id, "done": True}) + "\n")
+        real_stdout.flush()
+
+    return 0
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    handlers = _build_handlers()
     return handlers[args.command](args)
 
 

@@ -1,6 +1,6 @@
 # Produto UpexNote
 
-> Estado alinhado à versão desktop `0.30.0`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.44.0`. Para decisões, validações e histórico completo, consultar `PROJECT_CONTEXT.md`.
 
 ## Marca e propósito
 
@@ -10,7 +10,7 @@
 
 O produto atende especialmente reuniões com português de Portugal, português do Brasil e inglês técnico, preservando o transcript real como fonte de referência e tornando-o útil para leitura, pesquisa e evolução futura em contexto e estudo.
 
-A direção vigente organiza essa evolução em três camadas: **transcript como fonte, prévia estruturada para compreensão rápida e Caderno para edição, estudo e conhecimento pessoal**. A prévia validada já existe; o Caderno é arquitetura aprovada, ainda não implementada.
+A direção vigente organiza essa evolução em três camadas: **transcript como fonte, prévia estruturada para compreensão rápida e Caderno para edição, estudo e conhecimento pessoal**. A prévia validada já existe; o Caderno também já existe e evoluiu significativamente entre a v0.31.0 e a v0.44.0 (árvore de coleções, editor, anotações, referências, links, glossário e exportação real em `.zip`), embora itens como a cache unificada e o colapsar/expandir da árvore continuem pendentes.
 
 Essa direção foi concebida e arquitetada por Leonardo Cunha como parte do desenvolvimento sistêmico do UpexNote. Leonardo possui capacidade demonstrada para conceber e construir o produto de ponta a ponta; a IA amplia pesquisa, produção e implementação sob sua direção, correção e aceite. O fato de `Developer` não ser seu rótulo profissional principal não reduz a capacidade técnica nem transfere autoria arquitetural para a IA.
 
@@ -26,7 +26,8 @@ Essa direção foi concebida e arquitetada por Leonardo Cunha como parte do dese
 - Suporte com casos, conversas, estados, atribuição e evidências sem armazenar binários no banco.
 - Perfil completo no rodapé com identidade, papel, informações da conta e preparação para avatar futuro.
 - Data Studio com catálogo por schema, construtor visual, SQL Editor, Saved Queries e diagramas ER por schema, tabela ou consulta.
-- Prévia estruturada acessível pela Biblioteca: seção permanente, estado vazio, lista, leitor em só leitura, blocos semânticos, campos, glossário, cópia e retorno à origem. A v0.30.0 acrescenta criação opcional com motor, perfil, custo e chave visíveis e painel pós-transcrição com retomada pela Library.
+- Prévia estruturada acessível pela Biblioteca: seção permanente, estado vazio, lista, leitor em só leitura, blocos semânticos, campos, glossário, cópia e retorno à origem. A v0.30.0 acrescentou criação opcional com motor, perfil, custo e chave visíveis e painel pós-transcrição com retomada pela Library.
+- Caderno (`notebooks`), entregue entre a v0.31.0 e a v0.44.0: árvore de coleções (pastas/projetos/cadernos/seções), notas editáveis com passagem `Salvar no Caderno`, worker Python persistente (processo `serve` em vez de um spawn por ação), abertura de nota por endpoint composto, store partilhado entre a vista de Notebooks e a Biblioteca, anotações/comentários, referências de estudo, links entre notas, glossário pessoal com consulta manual via dictionaryapi.dev, popup de seleção de texto com atalhos para dicionário e comentário, e exportação real em `.zip` (.md exato do editor, .docx formatado, prompt estruturado para IA), com o idioma do `.docx` e do prompt seguindo o idioma da reunião/transcrição de origem (PT/EN/ES). A cache unificada do Caderno e o colapsar/expandir da árvore ainda não foram implementados.
 
 ## Princípios de produto
 
@@ -56,8 +57,8 @@ O produto cresce por prateleiras: `Transcriptions`, `Documents`, `Notebooks`, `S
 2. Tornar a telemetria agregada mais acionável sem quebrar consentimento ou anonimato.
 3. Acrescentar scheduler, jobs, eventos e entregas às Saved Queries.
 4. Evoluir suporte com filtros, SLA futuro, prioridade, atribuição, notificações e histórico.
-5. Concluir a configuração padrão do motor e implementar, em fatia própria, a passagem controlada `Salvar no Caderno`, sem confundir leitura derivada com edição pessoal.
-6. Implementar material de estudo: explicações, fluxos, tabelas, quiz e exportações.
+5. Concluir a configuração padrão do motor de formatação. `Salvar no Caderno` já foi implementado e não confunde leitura derivada com edição pessoal; a cache unificada do Caderno e o colapsar/expandir da árvore continuam pendentes.
+6. Implementar material de estudo: explicações, fluxos, tabelas e quiz.
 7. Implementar chat ancorado no material, sem transformar inferências em fatos do transcript.
 8. Retomar Integrações/Webhooks somente após contratos concretos de consultas, eventos e automações.
 

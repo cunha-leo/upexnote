@@ -1,8 +1,8 @@
 # UpexNote Notebooks — arquitetura do Caderno
 
-> **Estado:** direção de produto e arquitetura aprovada em 08/08/2026; ainda não implementada.
-> **Autoridade:** este documento define os limites do domínio `notebooks`, sua relação com `transcriptions` e `documents`, a hierarquia do Caderno e os contratos que qualquer implementação futura deve preservar.
-> **Estado executável atual:** desktop v0.30.0, com prévia estruturada em só leitura, entrada pela Library e painel pós-transcrição; não existe ainda schema `notebooks`, editor rico ou navegação de Cadernos.
+> **Estado:** direção de produto e arquitetura aprovada em 08/08/2026; entre a v0.31.0 e a v0.44.0 passou a estar em grande parte implementada e majoritariamente confirmada por Leonardo na instalação real. Este documento continua sendo o contrato de referência — as fatias abaixo (secção 14) foram atualizadas com o que já foi entregue.
+> **Autoridade:** este documento define os limites do domínio `notebooks`, sua relação com `transcriptions` e `documents`, a hierarquia do Caderno e os contratos que qualquer implementação deve preservar.
+> **Estado executável atual (14/08/2026, v0.44.0):** schema `notebooks` existe (com equivalência SQLite), com árvore de coleções, notas, anotações, referências, links entre notas, glossário pessoal (consulta manual via dictionaryapi.dev) e exportação real em `.zip` (.md exato do editor + .docx formatado + prompt estruturado para IA, no idioma da transcrição de origem). O worker deixou de spawnar um processo por ação: um processo `serve` persistente atende os pedidos, e a abertura de nota usa um endpoint composto em vez de seis chamadas separadas (ver `ANALISE_ARQUITETURA_CADERNO_2026-08-13.md`, Fases A e B). `NotebooksView` e `LibraryView` partilham um store único (Fase C). A cache unificada (Fase D) e o colapsar/expandir da árvore de Cadernos continuam pendentes. Chat ancorado (fatia 9) não foi confirmado como implementado. Ver `docs/PROJECT_CONTEXT.md`, secção 12 (Registro de atualizações), para o detalhamento versão a versão.
 
 ## Responsabilidade intelectual e arquitetural
 
@@ -205,11 +205,12 @@ Os nomes abaixo definem responsabilidade, não DDL final. A modelagem física de
 | --- | --- |
 | `notebooks.collections` | árvore de pastas, projetos, cadernos e seções |
 | `notebooks.notes` | hub de identidade, proprietário, coleção, estado e título |
-| `notebooks.note_contents` / `note_blocks` | estrutura rica atual com IDs internos estáveis |
+| `notebooks.note_contents` / `note_blocks` | estrutura rica atual com IDs internos estáveis — implementado como JSON de blocos dentro de `note_contents.body` (não uma tabela `note_blocks` própria); ver `docs/PROJECT_CONTEXT.md` secção 12, Registro — 2026-08-11 |
 | `notebooks.note_sources` | linhagem explícita para transcript e documento estruturado |
 | `notebooks.note_versions` | snapshots recuperáveis e metadados de edição |
 | `notebooks.annotations` | comentários, balões, destaques e estados |
 | `notebooks.references` | fontes, links e referências de estudo |
+| `notebooks.note_links` | ligação direcionada nota→nota (backlinks); ver `docs/PROJECT_CONTEXT.md` secção 12, Registro — 2026-08-11 |
 | `notebooks.keywords` | palavras-chave pessoais ou aceitas pelo utilizador |
 | `notebooks.glossary_entries` | glossário pessoal, definição, idioma e fonte |
 | `notebooks.chat_threads` | conversa ancorada numa nota ou seleção |
@@ -306,13 +307,15 @@ Não é necessário criar event bus ou microserviços agora. Eventos duráveis/o
 
 1. **Arquitetura e UX:** mapa de prateleiras, fluxos, estados e DDL proposto — esta etapa documental.
 2. ~~**Entrada da prévia:** linguagem `Prévia estruturada`, painel pós-transcrição e ações na Library, sem criar Caderno automaticamente.~~ **Entregue na v0.30.0.**
-3. **Fundação `notebooks`:** schema/migração, equivalência SQLite, coleção padrão, árvore e nota vazia.
-4. **Passagem controlada:** `Salvar no Caderno`, seleção de destino, linhagem e abertura.
-5. **Editor rico essencial:** edição contínua, formatação, salvamento e versões; sem balões/chat ainda.
-6. **Anotações e referências:** âncoras híbridas, painel lateral e estados quebrados.
-7. **Dicionário e glossário:** provedores desacoplados, fonte/idioma e inclusão explícita.
-8. **Exportação e pacote para IA:** camadas selecionáveis, manifesto e prompt portátil.
-9. **Chat ancorado:** somente depois de conteúdo, âncoras, histórico e custo estarem estáveis.
+3. ~~**Fundação `notebooks`:** schema/migração, equivalência SQLite, coleção padrão, árvore e nota vazia.~~ **Entregue.**
+4. ~~**Passagem controlada:** `Salvar no Caderno`, seleção de destino, linhagem e abertura.~~ **Entregue.**
+5. ~~**Editor rico essencial:** edição contínua, formatação, salvamento e versões.~~ **Entregue**, incluindo popup de seleção de texto com atalhos diretos para dicionário e comentário (v0.40.0).
+6. ~~**Anotações e referências:** âncoras híbridas, painel lateral e estados quebrados.~~ **Entregue**, com abas dedicadas por Anotações/Referências/Links/Glossário/Export (v0.39.0).
+7. ~~**Dicionário e glossário:** provedores desacoplados, fonte/idioma e inclusão explícita.~~ **Entregue** — consulta manual via dictionaryapi.dev.
+8. ~~**Exportação e pacote para IA:** camadas selecionáveis, manifesto e prompt portátil.~~ **Entregue** (v0.41.0–v0.44.0): `.zip` com `.md`/`.docx`/prompt para IA, spinner de progresso, prompt estruturado com instruções de leitura e menção explícita ao UpexNote, e idioma do documento/prompt seguindo a transcrição de origem.
+9. **Chat ancorado:** somente depois de conteúdo, âncoras, histórico e custo estarem estáveis. Direção de escopo fechado (agente de recepção/FAQ, sem vazar contexto, direcionamento por âncoras em vez de texto livre), disciplina de testes de motor e a bifurcação trial-vs-BYOK estão registadas em `docs/PROJECT_CONTEXT.md`, secção 12, Registro — 2026-08-11 — ler antes de implementar esta fatia. **Ainda não implementado.**
+
+Pendências conhecidas que não estavam nesta lista original: cache unificada do Caderno (Fase D da correção arquitetural, ver `ANALISE_ARQUITETURA_CADERNO_2026-08-13.md`) e colapsar/expandir a árvore do Caderno.
 
 Cada fatia exige autorização, testes automatizados proporcionais, validação visual e atualização do roadmap. Não acumular o universo inteiro numa única versão.
 

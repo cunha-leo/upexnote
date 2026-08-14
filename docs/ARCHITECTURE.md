@@ -1,6 +1,6 @@
 # Arquitetura do UpexNote
 
-> Estado alinhado à versão desktop `0.30.0`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.44.0`. O histórico detalhado, decisões e validações vivem em `PROJECT_CONTEXT.md`.
 
 ## Visão geral
 
@@ -61,13 +61,13 @@ Menu e schema não têm relação obrigatória de um para um. `Administration`, 
 
 A direção aprovada de navegação agrupa `Transcribe` e `Library` sob o pai `Transcriptions`, cria `Notebooks` como prateleira principal e transforma `Settings` num pai com destinos estáveis para Appearance, Typography, Layout, Storage, Engines, Privacy, Account e Security. A árvore de projetos/cadernos/notas pertence ao workspace interno de `Notebooks`, não ao menu global.
 
-O contrato completo de Cadernos, incluindo hierarquia, fronteira com `documents`, objetos lógicos, linhagem, âncoras e fatias, vive em `NOTEBOOK_ARCHITECTURE.md`. A direção está aprovada, mas não foi implementada na v0.30.0.
+O contrato completo de Cadernos, incluindo hierarquia, fronteira com `documents`, objetos lógicos, linhagem, âncoras e fatias, vive em `NOTEBOOK_ARCHITECTURE.md`. A direção foi aprovada em 08/08/2026 e, entre a v0.31.0 e a v0.44.0, passou a estar em grande parte implementada: schema `notebooks`, árvore de coleções, editor, anotações, referências, links, glossário e exportação já existem. A cache unificada (Fase D da correção arquitetural registrada em `ANALISE_ARQUITETURA_CADERNO_2026-08-13.md`) e o colapsar/expandir da árvore continuam pendentes.
 
 ## Aplicação desktop
 
 - **UI:** React 19, TypeScript e Vite, empacotados em Tauri 2 para Windows.
 - **Shell nativo:** Rust expõe comandos assíncronos para o worker, evita bloquear a janela e mantém o túnel SSH persistente quando aplicável.
-- **Worker:** Python empacotado com PyInstaller como sidecar; comunica progresso e resultado por NDJSON, sem servidor HTTP local, portas ou CORS. O protocolo serializa Unicode com escapes ASCII para não depender da página de código do console Windows; o consumidor recupera os caracteres originais ao decodificar o JSON.
+- **Worker:** Python empacotado com PyInstaller como sidecar; comunica progresso e resultado por NDJSON, sem servidor HTTP local, portas ou CORS. O protocolo serializa Unicode com escapes ASCII para não depender da página de código do console Windows; o consumidor recupera os caracteres originais ao decodificar o JSON. Desde a correção arquitetural do Caderno (Fase A, ver `ANALISE_ARQUITETURA_CADERNO_2026-08-13.md`), o worker deixou de ser um processo novo do SO por `invoke()`: um comando `serve` mantém um processo Python de longa duração, falando um protocolo de pedido/resposta por stdin/stdout, e o Rust escreve nesse processo já vivo em vez de fazer `spawn()` a cada chamada.
 - **Persistência local:** cada instalação pode usar SQLite embutido; a instalação administrativa também pode usar PostgreSQL pela ligação protegida já configurada.
 - **Identidade:** e-mail/senha, Google OAuth e GitHub Device Flow; administração exige elevação MFA por TOTP ou código por e-mail.
 
@@ -102,7 +102,7 @@ O ADF-01 segue a mesma regra desde 2026-08-07 (commits `3f341fc`/`57e518e`): `do
 
 Desde a v0.29.1, a Biblioteca abre a prévia estruturada em só leitura. A v0.30.0 acrescentou a seção permanente de entrada, descoberta dos motores via worker, seleção de perfil, custo e chave visíveis e geração somente por ação explícita. O painel pós-transcrição recebe o ID persistido por evento aditivo `transcription_saved` e pode retomar diretamente o transcript ou o compositor na Library. Edição, motor padrão e Caderno continuam fora desta fatia.
 
-O leitor passa a ser compreendido como **prévia estruturada**, não como Caderno. O futuro schema `notebooks` possuirá o conteúdo editável e sua hierarquia. `Salvar no Caderno` copiará o estado inicial e registrará a linhagem para transcript/documento, sem criar vínculo vivo que permita uma regeneração sobrescrever edições pessoais.
+O leitor da Library é compreendido como **prévia estruturada**, distinta do Caderno. O schema `notebooks` já existe e possui o conteúdo editável e sua hierarquia (árvore de coleções, notas, anotações, referências, links, glossário e exportações). `Salvar no Caderno` copia o estado inicial e registra a linhagem para transcript/documento, sem criar vínculo vivo que permita uma regeneração sobrescrever edições pessoais.
 
 ## Operação
 
@@ -113,4 +113,4 @@ O leitor passa a ser compreendido como **prévia estruturada**, não como Cadern
 
 ## Estado e próximos domínios
 
-Entregues: transcrição, Biblioteca, identidade, MFA, administração, telemetria consentida, suporte e Data Studio até diagramas ER. As frentes imediatas registradas são concluir a infraestrutura de evidências, tornar a telemetria agregada mais acionável, evoluir Saved Queries para execução central e amadurecer a operação de suporte. Os próximos domínios de conteúdo são contexto/decisões/ações/riscos, estudo e chat ancorado no material. Integrações e webhooks só serão implementados após a definição de eventos e contratos reais.
+Entregues: transcrição, Biblioteca, identidade, MFA, administração, telemetria consentida, suporte, Data Studio até diagramas ER e, desde a v0.31.0 à v0.44.0, o Caderno (`notebooks`) com árvore de coleções, editor, anotações, referências, links, glossário e exportação real em `.zip` (.md/.docx/prompt para IA no idioma da fonte). As frentes imediatas registradas são concluir a infraestrutura de evidências, tornar a telemetria agregada mais acionável, evoluir Saved Queries para execução central, amadurecer a operação de suporte e fechar a cache unificada do Caderno (Fase D) e o colapsar/expandir da árvore. Os próximos domínios de conteúdo são estudo e chat ancorado no material. Integrações e webhooks só serão implementados após a definição de eventos e contratos reais.

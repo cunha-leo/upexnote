@@ -58,3 +58,7 @@ apps/desktop/src-tauri/worker/
 services/worker/transcription/upexnote.db
 services/worker/transcription/upexnote.db-*
 services/worker/transcription/tunnel_state.json
+
+# Limpeza de sessao (Cowork) - nao versionar
+_to_delete/
+scripts/package-lock.json

@@ -363,11 +363,11 @@ transcript → prévia estruturada em documents → nota editável em notebooks 
 - `Transcriptions`, `Notebooks`, `Settings` e `Administration` são pais de navegação expansíveis; a árvore de objetos pessoais fica dentro do workspace, não no menu global;
 - o contrato completo está em `docs/NOTEBOOK_ARCHITECTURE.md`.
 
-Esta direção está `Approved`, mas não significa que o schema ou a UI de Cadernos já existam.
+Esta direção foi `Approved` em 08/08/2026. **Atualização (14/08/2026):** entre a v0.31.0 e a v0.44.0 o schema `notebooks` e a UI de Cadernos passaram a existir e a maior parte das fatias abaixo (ADF-02 a ADF-05) foi implementada e majoritariamente confirmada por Leonardo na instalação real — ver `docs/PROJECT_CONTEXT.md`, secção 12, para o detalhamento por versão, e `docs/NOTEBOOK_ARCHITECTURE.md` para o estado atual das fatias. Este roadmap não foi retroalimentado em tempo real durante essas versões; os status `Approved` abaixo devem ser lidos como desatualizados quanto à execução, não quanto ao escopo aprovado.
 
 ### ADF-01 — Structured Document Generation
 
-**Status:** `In progress` — passo 1 (backend do worker) entregue em 07/08/2026; passo 2 pontos 1 e 3 validados na v0.29.1; ponto 2 (entrada/painel da prévia) entregue na v0.30.0 e **validado na instalação real em 09/08/2026** (transcript #23, documento #9, janela normal e estreita); ponto 4 (configuração padrão do motor) por fazer. O Caderno começa no ADF-02 e no futuro schema `notebooks`.
+**Status:** `In progress` — passo 1 (backend do worker) entregue em 07/08/2026; passo 2 pontos 1 e 3 validados na v0.29.1; ponto 2 (entrada/painel da prévia) entregue na v0.30.0 e **validado na instalação real em 09/08/2026** (transcript #23, documento #9, janela normal e estreita); ponto 4 (configuração padrão do motor) por fazer. **Atualização (14/08/2026):** o Caderno (ADF-02) deixou de ser futuro — o schema `notebooks` já existe e está em uso, ver status atualizado na secção ADF-02 abaixo.
 
 **Prioridade:** máxima na evolução atual do produto.
 
@@ -540,7 +540,7 @@ O ponto 2 fecha a compreensão e criação da prévia. A passagem ao Caderno com
 
 ### ADF-02 — Notebooks / Rich Study Workspace
 
-**Status:** `Approved` (precisa de especificação para chegar a `Ready` — as capacidades abaixo são a lista aprovada, não um plano de implementação; o leitor do passo 2 do ADF-01 é o degrau anterior natural)
+**Status:** `Approved` no texto original; **na prática, majoritariamente `Delivered`/`Validated` desde a v0.31.0–v0.44.0** (schema `notebooks`, árvore/coleções, editor, worker persistente, store partilhado) — ver `docs/NOTEBOOK_ARCHITECTURE.md` e `docs/PROJECT_CONTEXT.md`, secção 12, para o estado real por versão. Este registro não foi retroalimentado fatia a fatia durante essa execução.
 
 **Prioridade:** máxima e acoplada à ADF-01.
 
@@ -593,7 +593,7 @@ O ponto 2 fecha a compreensão e criação da prévia. A passagem ao Caderno com
 
 ### ADF-03 — Anchored Comments and Study References
 
-**Status:** `Approved`
+**Status:** `Approved` no texto original; **anotações e referências foram entregues** (abas dedicadas na v0.39.0, popup de seleção com atalho direto na v0.40.0) — ver `docs/PROJECT_CONTEXT.md`, secção 12.
 
 **Prioridade:** alta dentro do Rich Study Workspace.
 
@@ -634,7 +634,7 @@ Comentários e referências não precisam poluir o corpo principal. Podem ser in
 
 ### ADF-04 — Dictionary and Glossary Layer
 
-**Status:** `Approved`
+**Status:** `Approved` no texto original; **consulta manual de dicionário/glossário foi entregue** (consulta via dictionaryapi.dev, v0.39.0–v0.40.0) — ver `docs/PROJECT_CONTEXT.md`, secção 12. A distinção deste documento entre dicionário e explicação contextual por IA permanece válida como critério de aceite.
 
 **Prioridade:** alta, depois da base de seleção, âncoras e comentários.
 
@@ -674,7 +674,7 @@ Comentários e referências não precisam poluir o corpo principal. Podem ser in
 
 ### ADF-05 — Persistence, History and Structured Export
 
-**Status:** `Approved`
+**Status:** `Approved` no texto original; **exportação estruturada foi entregue** (v0.41.0–v0.44.0: `.zip` com `.md`/`.docx`/prompt para IA, idioma seguindo a transcrição de origem) — ver `docs/PROJECT_CONTEXT.md`, secção 12. Histórico/versionamento de notas e pacote de contexto para IA também existem; confirmar no roadmap específico antes de assumir cobertura total do escopo abaixo.
 
 **Prioridade:** necessária para concluir o primeiro ciclo de valor.
 

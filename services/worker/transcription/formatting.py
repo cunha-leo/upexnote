@@ -293,7 +293,16 @@ def _run_claude(clean_text, api_key, engine_id, model, profile, log):
             },
             json={
                 "model": model,
-                "max_tokens": 8192,
+                # 8192 (valor original) cortava documentos longos a meio de
+                # uma string do JSON — sintoma real observado em 11/08/2026:
+                # "Unterminated string starting at: line 342 ...". O motor
+                # respondia corretamente, só que o corpo era truncado antes de
+                # fechar o JSON. gpt-5-mini nunca tinha esse teto explícito
+                # (ver _run_openai_compatible), por isso não reproduzia. Os
+                # documentos estruturados desta app raramente passam de poucos
+                # milhares de tokens de saída; 16384 dá folga real sem custo
+                # desproporcional.
+                "max_tokens": 16384,
                 "system": system_msg,
                 "messages": [{"role": "user", "content": user_msg}],
             },
@@ -306,6 +315,16 @@ def _run_claude(clean_text, api_key, engine_id, model, profile, log):
     elapsed = time.time() - started
     payload = resp.json()
     raw_text = "".join(block.get("text", "") for block in payload.get("content", []))
+    if payload.get("stop_reason") == "max_tokens":
+        # Mesmo com o teto maior, um transcript muito longo pode ainda assim
+        # esgotar o limite — aqui isso é sempre corte, nunca JSON inválido do
+        # motor. Mensagem clara em vez do erro genérico de parsing (o utilizador
+        # já viu o genérico e não deu para saber a causa real).
+        return _fail(
+            f"Resposta do motor {engine_id} foi cortada por atingir o limite de tokens de saída "
+            f"(max_tokens=16384) — o transcript é longo demais para este perfil. "
+            f"Tente o perfil 'resumo_tecnico' ou outro motor."
+        )
     try:
         document = _parse_document(raw_text)
     except ValueError as e:

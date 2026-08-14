@@ -1,6 +1,6 @@
 # UpexNote Data Studio
 
-> Estado alinhado à versão desktop `0.28.0`. Este documento define os limites arquiteturais do módulo. O histórico de implementação e validação permanece em `PROJECT_CONTEXT.md`.
+> Estado alinhado à versão desktop `0.28.0`, quando o Data Studio recebeu sua última evolução funcional (ainda válido em `0.44.0` — o módulo não mudou desde então). Este documento define os limites arquiteturais do módulo. O histórico de implementação e validação permanece em `PROJECT_CONTEXT.md`.
 
 ## Objetivo
 

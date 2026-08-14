@@ -11,7 +11,7 @@
 // parse abaixo, a tela mostraria JSON cru em vez de uma lista de ações.
 import {
   ArrowLeft, BookOpen, CircleHelp, Clock3, Copy, FileText, Hash,
-  ListChecks, Quote, ShieldCheck, Target, TriangleAlert,
+  ListChecks, NotebookPen, Quote, ShieldCheck, Target, TriangleAlert,
 } from "lucide-react";
 import type { TFn } from "./i18n";
 
@@ -32,6 +32,9 @@ export type DocRef = {
   title: string | null;
   created_at: string | null;
   engine: string | null;
+  // ADF-02 fatia 4: id da nota já criada a partir deste documento, se
+  // existir — decide "Salvar no Caderno" vs "Abrir no Caderno" sem 2ª ida ao worker.
+  notebook_note_id: number | null;
 };
 
 export type DocDetail = {
@@ -49,6 +52,7 @@ export type DocDetail = {
   output_tokens: number | null;
   blocks: DocBlock[];
   jargon: DocJargon[];
+  notebook_note_id: number | null;
 };
 
 const TYPE_ICON: Record<string, typeof FileText> = {
@@ -188,6 +192,7 @@ function Block({ block, t }: { block: DocBlock; t: TFn }) {
 
 export default function DocumentReader({
   doc, t, locale, onBack, engineLabel, fmtDate,
+  onSaveToNotebook, onOpenInNotebook, savingToNotebook,
 }: {
   doc: DocDetail;
   t: TFn;
@@ -195,6 +200,11 @@ export default function DocumentReader({
   onBack: () => void;
   engineLabel: (id: string) => string;
   fmtDate: (iso: string | null, locale: string) => string;
+  // ADF-02 fatia 4 ("Salvar no Caderno") — ambos opcionais: quem só quer o
+  // leitor (ex.: uso futuro fora da Library) continua a funcionar sem eles.
+  onSaveToNotebook?: () => void;
+  onOpenInNotebook?: (noteId: number) => void;
+  savingToNotebook?: boolean;
 }) {
   const profileKey = doc.profile ? PROFILE_LABEL[doc.profile] : undefined;
   const profileLabel = profileKey ? t(profileKey as never) : (doc.profile || "—");
@@ -229,6 +239,17 @@ export default function DocumentReader({
         <button className="secondary" onClick={() => navigator.clipboard.writeText(plainText())}>
           <Copy size={14} aria-hidden="true" /> {t("copy")}
         </button>
+        {onSaveToNotebook && onOpenInNotebook && (
+          doc.notebook_note_id != null ? (
+            <button className="secondary" onClick={() => onOpenInNotebook(doc.notebook_note_id!)}>
+              <NotebookPen size={14} aria-hidden="true" /> {t("nbOpenInNotebook")}
+            </button>
+          ) : (
+            <button className="secondary" onClick={onSaveToNotebook} disabled={savingToNotebook}>
+              <NotebookPen size={14} aria-hidden="true" /> {savingToNotebook ? t("nbSavingToNotebook") : t("nbSaveToNotebook")}
+            </button>
+          )
+        )}
       </div>
 
       <div className="result-head">

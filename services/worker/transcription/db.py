@@ -18,8 +18,10 @@ SCHEMA (hub-and-spoke, desde 2026-07-15 — ver Registro):
 """
 import json
 import os
+import re
 import socket
 import sys
+from html import unescape as _html_unescape
 from pathlib import Path
 
 from .credentials import get_key
@@ -135,6 +137,20 @@ CREATE TABLE IF NOT EXISTS notebooks.note_contents (
 )
 """
 
+# ADF-02 fatia 4 (09/08/2026 — "Passagem controlada", ver NOTEBOOK_ARCHITECTURE
+# secao 3): linhagem explicita de "Salvar no Caderno". 1:1 com a nota nesta
+# fatia (uma nota nasce de NO MAXIMO uma previa/transcricao) — nao referencia
+# viva: o conteudo ja foi COPIADO para note_contents no momento da gravacao;
+# regenerar a previa em `documents` nunca sobrescreve isto.
+NOTEBOOK_NOTE_SOURCES_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.note_sources (
+    note_id          bigint PRIMARY KEY REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    transcription_id bigint REFERENCES transcriptions(id),
+    document_id      bigint REFERENCES documents.structured_documents(id),
+    created_at       timestamptz NOT NULL DEFAULT now()
+)
+"""
+
 # Historico flat, um por entidade (mesmo espirito de documents_history, so
 # que sem agregacao de filhos — collections/notes desta fatia nao tem
 # satelites 1:N ainda, por isso a mesma query serve Postgres e SQLite depois
@@ -166,6 +182,223 @@ CREATE TABLE IF NOT EXISTS notebooks.notes_history (
     title         text,
     body          text,
     host          text
+)
+"""
+
+# ADF-02 (fatia 5, 11/08/2026 — "Editor rico essencial", ver secção 14 item 5):
+# versões recuperáveis da nota. NÃO é o mesmo histórico de auditoria de
+# notes_history (rasto interno de qualquer update) — este é visível ao
+# utilizador ("recuperar versão antiga") e só ganha uma linha quando ele pede
+# explicitamente um ponto de recuperação, nunca a cada tecla do autosave.
+NOTEBOOK_NOTE_VERSIONS_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.note_versions (
+    id         bigserial PRIMARY KEY,
+    note_id    bigint NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    title      text,
+    body       text,
+    user_id    bigint,
+    host       text
+)
+"""
+
+# ADF-02 (fatia 6, 11/08/2026 — "Anotações e referências", ver secção 9):
+# âncora híbrida — id do bloco + offsets + texto selecionado + contexto
+# próximo — para a UI tentar reposicionar o comentário depois de uma edição
+# em vez de depender só de busca textual frágil. `status` reflete o resultado
+# dessa tentativa; quem decide a lógica de reposicionamento é a UI, aqui só se
+# guarda o estado resultante.
+NOTEBOOK_ANNOTATIONS_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.annotations (
+    id               bigserial PRIMARY KEY,
+    note_id          bigint NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    edited_at        timestamptz,
+    deleted_at       timestamptz,
+    resolved_at      timestamptz,
+    user_id          bigint,
+    block_id         text,
+    start_offset     integer,
+    end_offset       integer,
+    selected_text    text,
+    context_snippet  text,
+    body             text NOT NULL,
+    status           text NOT NULL DEFAULT 'valid'
+                     CHECK (status IN ('valid', 'moved', 'broken')),
+    host             text
+)
+"""
+
+# "references" é palavra reservada em Postgres/SQL — daí `note_references`,
+# no mesmo espírito de `note_contents`/`note_sources`/`note_versions`.
+NOTEBOOK_NOTE_REFERENCES_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.note_references (
+    id          bigserial PRIMARY KEY,
+    note_id     bigint NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    deleted_at  timestamptz,
+    user_id     bigint,
+    title       text,
+    url         text,
+    note_text   text,
+    host        text
+)
+"""
+
+NOTEBOOK_ANNOTATIONS_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.annotations_history (
+    history_id   bigserial PRIMARY KEY,
+    archived_at  timestamptz NOT NULL DEFAULT now(),
+    change_type  text NOT NULL,
+    original_id  bigint,
+    created_at   timestamptz,
+    user_id      bigint,
+    note_id      bigint,
+    block_id     text,
+    body         text,
+    host         text
+)
+"""
+
+NOTEBOOK_NOTE_REFERENCES_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.note_references_history (
+    history_id   bigserial PRIMARY KEY,
+    archived_at  timestamptz NOT NULL DEFAULT now(),
+    change_type  text NOT NULL,
+    original_id  bigint,
+    created_at   timestamptz,
+    user_id      bigint,
+    note_id      bigint,
+    title        text,
+    url          text,
+    host         text
+)
+"""
+
+# ADF-02 (backlinks, 11/08/2026 — ligação nota-a-nota, ver PROJECT_CONTEXT.md
+# secção 12, Registro do mesmo dia). Diferente de `note_references` (link
+# externo ou nota livre): aqui `to_note_id` aponta para OUTRA nota do próprio
+# Caderno. Direcionado (from → to) de propósito — "backlinks" é sempre a
+# leitura inversa (quem aponta para mim), calculada em `notebook_links`, não
+# uma segunda linha gravada. Sem parsing de `[[wikilinks]]` no corpo: o
+# utilizador escolhe a nota-alvo explicitamente, o que evita ambiguidade de
+# título duplicado e mantém o custo de implementação baixo.
+NOTEBOOK_NOTE_LINKS_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.note_links (
+    id            bigserial PRIMARY KEY,
+    from_note_id  bigint NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    to_note_id    bigint NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    deleted_at    timestamptz,
+    user_id       bigint,
+    host          text
+)
+"""
+
+NOTEBOOK_NOTE_LINKS_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.note_links_history (
+    history_id    bigserial PRIMARY KEY,
+    archived_at   timestamptz NOT NULL DEFAULT now(),
+    change_type   text NOT NULL,
+    original_id   bigint,
+    created_at    timestamptz,
+    user_id       bigint,
+    from_note_id  bigint,
+    to_note_id    bigint,
+    host          text
+)
+"""
+
+# ADF-02 (fatia 7, 11/08/2026 — "Dicionário e glossário", ver secção 10 e 14
+# item 7): palavra-chave pessoal solta (`keywords`) e definição vinculada à
+# nota (`glossary_entries`). Nesta primeira passagem `source` é sempre
+# 'manual' (o utilizador escreve a definição) — "provedores desacoplados"
+# (dicionário externo/API) é a evolução natural, não implementada agora; a
+# coluna já existe para não exigir migração quando isso chegar.
+NOTEBOOK_KEYWORDS_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.keywords (
+    id         bigserial PRIMARY KEY,
+    note_id    bigint NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    deleted_at timestamptz,
+    user_id    bigint,
+    term       text NOT NULL,
+    host       text
+)
+"""
+
+NOTEBOOK_GLOSSARY_ENTRIES_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.glossary_entries (
+    id         bigserial PRIMARY KEY,
+    note_id    bigint NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    deleted_at timestamptz,
+    user_id    bigint,
+    term       text NOT NULL,
+    definition text NOT NULL,
+    source     text NOT NULL DEFAULT 'manual',
+    language   text,
+    host       text
+)
+"""
+
+NOTEBOOK_KEYWORDS_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.keywords_history (
+    history_id  bigserial PRIMARY KEY,
+    archived_at timestamptz NOT NULL DEFAULT now(),
+    change_type text NOT NULL,
+    original_id bigint,
+    created_at  timestamptz,
+    user_id     bigint,
+    note_id     bigint,
+    term        text,
+    host        text
+)
+"""
+
+NOTEBOOK_GLOSSARY_ENTRIES_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.glossary_entries_history (
+    history_id  bigserial PRIMARY KEY,
+    archived_at timestamptz NOT NULL DEFAULT now(),
+    change_type text NOT NULL,
+    original_id bigint,
+    created_at  timestamptz,
+    user_id     bigint,
+    note_id     bigint,
+    term        text,
+    definition  text,
+    host        text
+)
+"""
+
+# ADF-02 (fatia 8, 11/08/2026 — "Exportação e pacote para IA", ver secção 12
+# e 14 item 8). `exports` é só METADADOS (formato + camadas escolhidas) —
+# nunca o conteúdo/binário em si, por regra explícita da arquitetura; o
+# conteúdo é gerado on-the-fly a cada pedido. `context_packages` é diferente:
+# manifesto + prompt são texto simples pequeno, pensados para serem
+# reabertos/reenviados depois — por isso esses SIM ficam persistidos.
+NOTEBOOK_EXPORTS_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.exports (
+    id         bigserial PRIMARY KEY,
+    note_id    bigint NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    user_id    bigint,
+    format     text NOT NULL,
+    layers     text,
+    host       text
+)
+"""
+
+NOTEBOOK_CONTEXT_PACKAGES_DDL = """
+CREATE TABLE IF NOT EXISTS notebooks.context_packages (
+    id         bigserial PRIMARY KEY,
+    note_id    bigint NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    user_id    bigint,
+    layers     text,
+    manifest   text,
+    prompt     text,
+    host       text
 )
 """
 
@@ -322,8 +555,22 @@ SCHEMA_SQL = [
     NOTEBOOK_COLLECTIONS_DDL,
     NOTEBOOK_NOTES_DDL,
     NOTEBOOK_NOTE_CONTENTS_DDL,
+    NOTEBOOK_NOTE_SOURCES_DDL,
+    NOTEBOOK_NOTE_VERSIONS_DDL,
+    NOTEBOOK_ANNOTATIONS_DDL,
+    NOTEBOOK_NOTE_REFERENCES_DDL,
+    NOTEBOOK_KEYWORDS_DDL,
+    NOTEBOOK_GLOSSARY_ENTRIES_DDL,
+    NOTEBOOK_EXPORTS_DDL,
+    NOTEBOOK_CONTEXT_PACKAGES_DDL,
+    NOTEBOOK_NOTE_LINKS_DDL,
     NOTEBOOK_COLLECTIONS_HISTORY_DDL,
     NOTEBOOK_NOTES_HISTORY_DDL,
+    NOTEBOOK_ANNOTATIONS_HISTORY_DDL,
+    NOTEBOOK_NOTE_REFERENCES_HISTORY_DDL,
+    NOTEBOOK_KEYWORDS_HISTORY_DDL,
+    NOTEBOOK_GLOSSARY_ENTRIES_HISTORY_DDL,
+    NOTEBOOK_NOTE_LINKS_HISTORY_DDL,
 ]
 
 ENGINE_SEED = [
@@ -442,6 +689,61 @@ SELECT %s, n.id, n.created_at, n.user_id, n.collection_id, n.title, nc.body, n.h
 FROM notebooks.notes n
 LEFT JOIN notebooks.note_contents nc ON nc.note_id = n.id
 WHERE n.id = %s
+"""
+
+# fatia 5 — snapshot RECUPERÁVEL (não é rasto de auditoria): guarda o estado
+# ATUAL antes de sobrescrever, só quando pedido explicitamente (ver
+# notebook_note_version_create/_restore).
+NOTEBOOK_NOTE_VERSION_SNAPSHOT_JOIN = """
+INSERT INTO notebooks.note_versions (note_id, title, body, user_id, host)
+SELECT n.id, n.title, nc.body, %s, n.host
+FROM notebooks.notes n
+LEFT JOIN notebooks.note_contents nc ON nc.note_id = n.id
+WHERE n.id = %s
+RETURNING id
+"""
+
+# fatia 6 — mesmo espírito de NOTEBOOK_NOTE_SNAPSHOT_JOIN, para anotações e
+# referências.
+NOTEBOOK_ANNOTATION_SNAPSHOT_JOIN = """
+INSERT INTO notebooks.annotations_history
+(change_type, original_id, created_at, user_id, note_id, block_id, body, host)
+SELECT %s, a.id, a.created_at, a.user_id, a.note_id, a.block_id, a.body, a.host
+FROM notebooks.annotations a
+WHERE a.id = %s
+"""
+
+NOTEBOOK_NOTE_REFERENCE_SNAPSHOT_JOIN = """
+INSERT INTO notebooks.note_references_history
+(change_type, original_id, created_at, user_id, note_id, title, url, host)
+SELECT %s, r.id, r.created_at, r.user_id, r.note_id, r.title, r.url, r.host
+FROM notebooks.note_references r
+WHERE r.id = %s
+"""
+
+# fatia 7 — mesmo espírito.
+NOTEBOOK_KEYWORD_SNAPSHOT_JOIN = """
+INSERT INTO notebooks.keywords_history
+(change_type, original_id, created_at, user_id, note_id, term, host)
+SELECT %s, k.id, k.created_at, k.user_id, k.note_id, k.term, k.host
+FROM notebooks.keywords k
+WHERE k.id = %s
+"""
+
+NOTEBOOK_GLOSSARY_SNAPSHOT_JOIN = """
+INSERT INTO notebooks.glossary_entries_history
+(change_type, original_id, created_at, user_id, note_id, term, definition, host)
+SELECT %s, g.id, g.created_at, g.user_id, g.note_id, g.term, g.definition, g.host
+FROM notebooks.glossary_entries g
+WHERE g.id = %s
+"""
+
+NOTEBOOK_NOTE_LINK_SNAPSHOT_JOIN = """
+INSERT INTO notebooks.note_links_history
+(change_type, original_id, created_at, user_id, from_note_id, to_note_id, host)
+SELECT %s, l.id, l.created_at, l.user_id, l.from_note_id, l.to_note_id, l.host
+FROM notebooks.note_links l
+WHERE l.id = %s
 """
 
 
@@ -1152,10 +1454,16 @@ def library_item(item_id, user_id=None, admin_verified=False):
             # o botao "Formatar" sabe na hora se ha documento para abrir sem
             # pagar uma segunda ida ao worker pelo tunel. Aditivo — quem lia
             # library_item antes continua a funcionar.
+            # notebook_note_id (fatia 4, ver secao 4 da arquitetura): a UI
+            # decide "Salvar no Caderno" vs "Abrir no Caderno" sem 2a ida ao
+            # worker — nota soft-apagada nao conta (deleted_at IS NULL), o
+            # dono pode gravar de novo.
             cur.execute(
-                "SELECT d.id, d.profile, d.title, d.created_at, e.code AS engine "
+                "SELECT d.id, d.profile, d.title, d.created_at, e.code AS engine, nn.id AS notebook_note_id "
                 "FROM documents.structured_documents d "
                 "LEFT JOIN engines e ON e.id = d.engine_id "
+                "LEFT JOIN notebooks.note_sources ns ON ns.document_id = d.id "
+                "LEFT JOIN notebooks.notes nn ON nn.id = ns.note_id AND nn.deleted_at IS NULL "
                 "WHERE d.transcription_id = %s AND d.deleted_at IS NULL "
                 "ORDER BY d.id DESC",
                 (int(item_id),),
@@ -1473,6 +1781,15 @@ def document_item(doc_id, user_id=None, admin_verified=False):
                 (int(doc_id),),
             )
             doc["jargon"] = _rows_to_dicts(cur)
+            # notebook_note_id (fatia 4): ver comentário equivalente em library_item.
+            cur.execute(
+                "SELECT nn.id FROM notebooks.note_sources ns "
+                "JOIN notebooks.notes nn ON nn.id = ns.note_id AND nn.deleted_at IS NULL "
+                "WHERE ns.document_id = %s",
+                (int(doc_id),),
+            )
+            note_row = cur.fetchone()
+            doc["notebook_note_id"] = note_row[0] if note_row else None
         doc["created_at"] = _iso(doc["created_at"])
         doc["edited_at"] = _iso(doc["edited_at"])
         # numeric do Postgres vem como Decimal (nao serializa em JSON) —
@@ -1728,6 +2045,117 @@ def notebook_note_item(note_id, user_id=None, admin_verified=False):
         close_connection(conn)
 
 
+def notebook_note_open(note_id, user_id=None, admin_verified=False):
+    """Análise arquitetural 2026-08-13, fase B: abrir uma nota disparava 6
+    processos/handshakes separados (item + anotações + referências + links +
+    keywords + glossário) — cada `notebook_*_list()` acima abre e fecha a
+    SUA PRÓPRIA ligação. Esta função faz o mesmo trabalho numa única ligação
+    e num único round-trip pelo túnel SSH, devolvendo tudo de uma vez.
+    Sem side-effects, sem escrita — pode ser chamada com segurança sempre
+    que uma nota é aberta, incluindo em cache."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        note_id = int(note_id)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                "SELECT n.id, n.created_at, n.edited_at, n.collection_id, n.title, nc.body "
+                "FROM notebooks.notes n "
+                "LEFT JOIN notebooks.note_contents nc ON nc.note_id = n.id "
+                f"WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [note_id] + own_params,
+            )
+            note_rows = _rows_to_dicts(cur)
+            if not note_rows:
+                return None
+            note = note_rows[0]
+            note["created_at"] = _iso(note["created_at"])
+            note["edited_at"] = _iso(note["edited_at"])
+
+            own_sql_a = own_sql.replace("t.user_id", "a.user_id")
+            cur.execute(
+                "SELECT a.id, a.block_id, a.start_offset, a.end_offset, a.selected_text, "
+                "a.context_snippet, a.body, a.status, a.resolved_at, a.created_at "
+                "FROM notebooks.annotations a "
+                f"WHERE a.note_id = %s AND a.deleted_at IS NULL{own_sql_a} "
+                "ORDER BY a.created_at",
+                [note_id] + own_params,
+            )
+            annotations = _rows_to_dicts(cur)
+            for r in annotations:
+                r["created_at"] = _iso(r["created_at"])
+                r["resolved_at"] = _iso(r["resolved_at"])
+
+            own_sql_r = own_sql.replace("t.user_id", "r.user_id")
+            cur.execute(
+                "SELECT r.id, r.title, r.url, r.note_text, r.created_at "
+                "FROM notebooks.note_references r "
+                f"WHERE r.note_id = %s AND r.deleted_at IS NULL{own_sql_r} "
+                "ORDER BY r.created_at",
+                [note_id] + own_params,
+            )
+            references = _rows_to_dicts(cur)
+            for r in references:
+                r["created_at"] = _iso(r["created_at"])
+
+            own_sql_l = own_sql.replace("t.user_id", "l.user_id")
+            cur.execute(
+                "SELECT l.id, l.to_note_id AS note_id, n2.title, l.created_at "
+                "FROM notebooks.note_links l "
+                "JOIN notebooks.notes n2 ON n2.id = l.to_note_id "
+                f"WHERE l.from_note_id = %s AND l.deleted_at IS NULL{own_sql_l} "
+                "ORDER BY l.created_at",
+                [note_id] + own_params,
+            )
+            outgoing = _rows_to_dicts(cur)
+            cur.execute(
+                "SELECT l.id, l.from_note_id AS note_id, n2.title, l.created_at "
+                "FROM notebooks.note_links l "
+                "JOIN notebooks.notes n2 ON n2.id = l.from_note_id "
+                f"WHERE l.to_note_id = %s AND l.deleted_at IS NULL{own_sql_l} "
+                "ORDER BY l.created_at",
+                [note_id] + own_params,
+            )
+            incoming = _rows_to_dicts(cur)
+            for row in outgoing + incoming:
+                row["created_at"] = _iso(row["created_at"])
+
+            own_sql_k = own_sql.replace("t.user_id", "k.user_id")
+            cur.execute(
+                "SELECT k.id, k.term, k.created_at FROM notebooks.keywords k "
+                f"WHERE k.note_id = %s AND k.deleted_at IS NULL{own_sql_k} ORDER BY k.created_at",
+                [note_id] + own_params,
+            )
+            keywords = _rows_to_dicts(cur)
+            for r in keywords:
+                r["created_at"] = _iso(r["created_at"])
+
+            own_sql_g = own_sql.replace("t.user_id", "g.user_id")
+            cur.execute(
+                "SELECT g.id, g.term, g.definition, g.source, g.language, g.created_at "
+                "FROM notebooks.glossary_entries g "
+                f"WHERE g.note_id = %s AND g.deleted_at IS NULL{own_sql_g} ORDER BY g.created_at",
+                [note_id] + own_params,
+            )
+            glossary = _rows_to_dicts(cur)
+            for r in glossary:
+                r["created_at"] = _iso(r["created_at"])
+
+        return {
+            "note": note,
+            "annotations": annotations,
+            "references": references,
+            "links": {"outgoing": outgoing, "incoming": incoming},
+            "keywords": keywords,
+            "glossary": glossary,
+        }
+    finally:
+        close_connection(conn)
+
+
 def notebook_note_update(note_id, user_id=None, title=None, body=None, admin_verified=False):
     """Edita título/corpo no lugar (padrão do produto — sem versionar ainda;
     note_versions é fatia futura). Snapshot no histórico ANTES de alterar."""
@@ -1776,6 +2204,1062 @@ def notebook_note_delete(note_id, user_id=None, admin_verified=False):
             cur.execute("UPDATE notebooks.notes SET deleted_at = now() WHERE id = %s", (int(note_id),))
         conn.commit()
         return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+# --------------------------------------------------------------------------
+# ADF-02 (fatia 4, 09/08/2026) — "Passagem controlada": Salvar no Caderno,
+# seleção de destino, linhagem e abertura (ver NOTEBOOK_ARCHITECTURE.md
+# secção 3, "Regra de passagem"). NUNCA é referência viva: o conteúdo é
+# COPIADO para notebooks.note_contents no momento da gravação; regenerar a
+# prévia em `documents` depois disto nunca sobrescreve a nota.
+# --------------------------------------------------------------------------
+
+def _render_blocks_as_text(blocks):
+    """Serialização simples (título + corpo) dos blocos do documento —
+    conteúdo inicial da nota nesta fatia. blocks: lista de (heading, content)
+    já na ordem de leitura (document_blocks.position)."""
+    parts = []
+    for heading, content in blocks:
+        if heading:
+            parts.append(f"## {heading}")
+        if content:
+            parts.append(content)
+    return "\n\n".join(parts)
+
+
+def notebook_note_for_document(document_id, user_id=None, admin_verified=False):
+    """Id da nota já criada a partir deste documento (ou None) — a UI decide
+    "Salvar no Caderno" vs "Abrir no Caderno" sem repetir a lógica de
+    document_item/library_item (usado quando só se tem o document_id à mão,
+    ex.: o painel pós-transcrição)."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                "SELECT n.id FROM notebooks.note_sources ns "
+                "JOIN notebooks.notes n ON n.id = ns.note_id "
+                f"WHERE ns.document_id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(document_id)] + own_params,
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        close_connection(conn)
+
+
+def notebook_save_document_as_note(document_id, user_id=None, collection_id=None, admin_verified=False):
+    """'Salvar no Caderno': cria uma nota no destino escolhido (ou na coleção
+    padrão, se nenhum for indicado), copia o conteúdo ATUAL do documento
+    estruturado e regista a linhagem (note_sources). Idempotente: se já
+    existir uma nota ativa para este documento (deste dono), devolve-a em vez
+    de duplicar — clique repetido no botão nunca cria duas notas."""
+    existing = notebook_note_for_document(document_id, user_id=user_id, admin_verified=admin_verified)
+    if existing:
+        return {"ok": True, "id": existing, "existed": True}
+
+    target_collection_id = collection_id
+    if target_collection_id is None:
+        target_collection_id = notebook_ensure_default_collection(user_id)
+
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_c = own_sql.replace("t.user_id", "c.user_id")
+            own_sql_d = own_sql.replace("t.user_id", "d.user_id")
+
+            cur.execute(
+                f"SELECT 1 FROM notebooks.collections c WHERE c.id = %s AND c.deleted_at IS NULL{own_sql_c}",
+                [int(target_collection_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "collection_not_found"}
+
+            cur.execute(
+                "SELECT d.id, d.transcription_id, d.title "
+                "FROM documents.structured_documents d "
+                f"WHERE d.id = %s AND d.deleted_at IS NULL{own_sql_d}",
+                [int(document_id)] + own_params,
+            )
+            doc_row = cur.fetchone()
+            if not doc_row:
+                return {"ok": False, "error": "document_not_found"}
+            _doc_id, transcription_id, doc_title = doc_row
+
+            cur.execute(
+                "SELECT heading, content FROM documents.document_blocks "
+                "WHERE document_id = %s ORDER BY position",
+                (int(document_id),),
+            )
+            body = _render_blocks_as_text(cur.fetchall())
+
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.notes (user_id, collection_id, title, host) VALUES (%s,%s,%s,%s) RETURNING id",
+                (owner, int(target_collection_id), doc_title, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO notebooks.note_contents (note_id, body) VALUES (%s,%s)",
+                (new_id, body),
+            )
+            cur.execute(
+                "INSERT INTO notebooks.note_sources (note_id, transcription_id, document_id) VALUES (%s,%s,%s)",
+                (new_id, int(transcription_id) if transcription_id is not None else None, int(document_id)),
+            )
+        conn.commit()
+        return {"ok": True, "id": new_id, "existed": False}
+    finally:
+        close_connection(conn)
+
+
+# --------------------------------------------------------------------------
+# ADF-02 (fatia 5, 11/08/2026) — "Editor rico essencial" (ver NOTEBOOK_
+# ARCHITECTURE.md secção 14 item 5): edição contínua, formatação e
+# salvamento já existiam desde a fatia 3 (notebook_note_update). O que entra
+# aqui é só "versões": um ponto de recuperação explícito, guardado a pedido
+# do utilizador (botão "Salvar versão" ou marco natural como fechar a nota),
+# nunca a cada autosave — senão a lista de versões vira ruído em minutos.
+# --------------------------------------------------------------------------
+
+def notebook_note_version_create(note_id, user_id=None, admin_verified=False):
+    """Snapshot manual do estado ATUAL da nota (título + corpo)."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(NOTEBOOK_NOTE_VERSION_SNAPSHOT_JOIN, (owner, int(note_id)))
+            new_id = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": new_id}
+    finally:
+        close_connection(conn)
+
+
+def notebook_note_versions(note_id, user_id=None, admin_verified=False):
+    """Lista leve (sem o corpo — só quem vai restaurar precisa dele) para o
+    painel de histórico da nota."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return None
+            cur.execute(
+                "SELECT id, created_at, title FROM notebooks.note_versions "
+                "WHERE note_id = %s ORDER BY created_at DESC, id DESC",
+                (int(note_id),),
+            )
+            versions = _rows_to_dicts(cur)
+        for v in versions:
+            v["created_at"] = _iso(v["created_at"])
+        return versions
+    finally:
+        close_connection(conn)
+
+
+def notebook_note_version_restore(note_id, version_id, user_id=None, admin_verified=False):
+    """Recupera uma versão antiga. O estado atual é versionado ANTES de ser
+    substituído — o restauro em si nunca é um beco sem saída."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(
+                "SELECT title, body FROM notebooks.note_versions WHERE id = %s AND note_id = %s",
+                (int(version_id), int(note_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {"ok": False, "error": "version_not_found"}
+            old_title, old_body = row
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(NOTEBOOK_NOTE_VERSION_SNAPSHOT_JOIN, (owner, int(note_id)))
+            cur.execute(NOTEBOOK_NOTE_SNAPSHOT_JOIN, ("update", int(note_id)))
+            cur.execute("UPDATE notebooks.notes SET title = %s, edited_at = now() WHERE id = %s",
+                        (old_title, int(note_id)))
+            cur.execute("UPDATE notebooks.note_contents SET body = %s WHERE note_id = %s",
+                        (old_body, int(note_id)))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+# --------------------------------------------------------------------------
+# ADF-02 (fatia 6, 11/08/2026) — "Anotações e referências" (secção 9 e 14
+# item 6): comentário/destaque ancorado a um trecho da nota (âncora híbrida:
+# bloco + offsets + texto + contexto), e referência de estudo solta (título/
+# URL/nota) associada à nota. Soft-delete + histórico flat, mesmo padrão do
+# resto do domínio.
+# --------------------------------------------------------------------------
+
+def notebook_annotation_create(note_id, body, user_id=None, block_id=None, start_offset=None,
+                                end_offset=None, selected_text=None, context_snippet=None,
+                                admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "note_not_found"}
+            if not (body or "").strip():
+                return {"ok": False, "error": "empty_body"}
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.annotations "
+                "(note_id, user_id, block_id, start_offset, end_offset, selected_text, context_snippet, body, host) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                (int(note_id), owner, block_id, start_offset, end_offset, selected_text,
+                 context_snippet, body, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": new_id}
+    finally:
+        close_connection(conn)
+
+
+def notebook_annotation_list(note_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_a = own_sql.replace("t.user_id", "a.user_id")
+            cur.execute(
+                "SELECT a.id, a.block_id, a.start_offset, a.end_offset, a.selected_text, "
+                "a.context_snippet, a.body, a.status, a.resolved_at, a.created_at "
+                "FROM notebooks.annotations a "
+                f"WHERE a.note_id = %s AND a.deleted_at IS NULL{own_sql_a} "
+                "ORDER BY a.created_at",
+                [int(note_id)] + own_params,
+            )
+            rows = _rows_to_dicts(cur)
+        for r in rows:
+            r["created_at"] = _iso(r["created_at"])
+            r["resolved_at"] = _iso(r["resolved_at"])
+        return rows
+    finally:
+        close_connection(conn)
+
+
+def notebook_annotation_resolve(annotation_id, user_id=None, resolved=True, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_a = own_sql.replace("t.user_id", "a.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.annotations a WHERE a.id = %s AND a.deleted_at IS NULL{own_sql_a}",
+                [int(annotation_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            if resolved:
+                cur.execute(
+                    "UPDATE notebooks.annotations SET resolved_at = now(), edited_at = now() WHERE id = %s",
+                    (int(annotation_id),))
+            else:
+                cur.execute(
+                    "UPDATE notebooks.annotations SET resolved_at = NULL, edited_at = now() WHERE id = %s",
+                    (int(annotation_id),))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+def notebook_annotation_delete(annotation_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_a = own_sql.replace("t.user_id", "a.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.annotations a WHERE a.id = %s AND a.deleted_at IS NULL{own_sql_a}",
+                [int(annotation_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(NOTEBOOK_ANNOTATION_SNAPSHOT_JOIN, ("delete", int(annotation_id)))
+            cur.execute("UPDATE notebooks.annotations SET deleted_at = now() WHERE id = %s", (int(annotation_id),))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+def notebook_reference_create(note_id, title=None, url=None, note_text=None, user_id=None,
+                               admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "note_not_found"}
+            if not ((title or "").strip() or (url or "").strip()):
+                return {"ok": False, "error": "empty_reference"}
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.note_references (note_id, user_id, title, url, note_text, host) "
+                "VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
+                (int(note_id), owner, title, url, note_text, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": new_id}
+    finally:
+        close_connection(conn)
+
+
+def notebook_reference_list(note_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_r = own_sql.replace("t.user_id", "r.user_id")
+            cur.execute(
+                "SELECT r.id, r.title, r.url, r.note_text, r.created_at "
+                "FROM notebooks.note_references r "
+                f"WHERE r.note_id = %s AND r.deleted_at IS NULL{own_sql_r} "
+                "ORDER BY r.created_at",
+                [int(note_id)] + own_params,
+            )
+            rows = _rows_to_dicts(cur)
+        for r in rows:
+            r["created_at"] = _iso(r["created_at"])
+        return rows
+    finally:
+        close_connection(conn)
+
+
+def notebook_reference_delete(reference_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_r = own_sql.replace("t.user_id", "r.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.note_references r WHERE r.id = %s AND r.deleted_at IS NULL{own_sql_r}",
+                [int(reference_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(NOTEBOOK_NOTE_REFERENCE_SNAPSHOT_JOIN, ("delete", int(reference_id)))
+            cur.execute("UPDATE notebooks.note_references SET deleted_at = now() WHERE id = %s",
+                        (int(reference_id),))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+# --------------------------------------------------------------------------
+# Backlinks (11/08/2026, ver PROJECT_CONTEXT.md secção 12, Registro do mesmo
+# dia) — ligação direcionada nota→nota, escolhida explicitamente pelo
+# utilizador (sem parsing de texto). `notebook_links` devolve as duas
+# direções já resolvidas (título da outra nota incluído) para a UI não
+# precisar de uma segunda chamada.
+# --------------------------------------------------------------------------
+def notebook_link_create(from_note_id, to_note_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(from_note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "note_not_found"}
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(to_note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "target_not_found"}
+            if int(from_note_id) == int(to_note_id):
+                return {"ok": False, "error": "self_link"}
+            own_sql_l = own_sql.replace("t.user_id", "l.user_id")
+            cur.execute(
+                "SELECT 1 FROM notebooks.note_links l "
+                f"WHERE l.from_note_id = %s AND l.to_note_id = %s AND l.deleted_at IS NULL{own_sql_l}",
+                [int(from_note_id), int(to_note_id)] + own_params,
+            )
+            if cur.fetchone():
+                return {"ok": False, "error": "already_linked"}
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.note_links (from_note_id, to_note_id, user_id, host) "
+                "VALUES (%s,%s,%s,%s) RETURNING id",
+                (int(from_note_id), int(to_note_id), owner, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": new_id}
+    finally:
+        close_connection(conn)
+
+
+def notebook_links(note_id, user_id=None, admin_verified=False):
+    """Devolve {"outgoing": [...], "incoming": [...]}: outgoing são as notas
+    para onde ESTA nota aponta; incoming (os "backlinks") são as notas que
+    apontam PARA esta — calculado por leitura inversa, não gravado em dobro."""
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_l = own_sql.replace("t.user_id", "l.user_id")
+            cur.execute(
+                "SELECT l.id, l.to_note_id AS note_id, n.title, l.created_at "
+                "FROM notebooks.note_links l "
+                "JOIN notebooks.notes n ON n.id = l.to_note_id "
+                f"WHERE l.from_note_id = %s AND l.deleted_at IS NULL{own_sql_l} "
+                "ORDER BY l.created_at",
+                [int(note_id)] + own_params,
+            )
+            outgoing = _rows_to_dicts(cur)
+            cur.execute(
+                "SELECT l.id, l.from_note_id AS note_id, n.title, l.created_at "
+                "FROM notebooks.note_links l "
+                "JOIN notebooks.notes n ON n.id = l.from_note_id "
+                f"WHERE l.to_note_id = %s AND l.deleted_at IS NULL{own_sql_l} "
+                "ORDER BY l.created_at",
+                [int(note_id)] + own_params,
+            )
+            incoming = _rows_to_dicts(cur)
+        for row in outgoing + incoming:
+            row["created_at"] = _iso(row["created_at"])
+        return {"outgoing": outgoing, "incoming": incoming}
+    finally:
+        close_connection(conn)
+
+
+def notebook_link_delete(link_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_l = own_sql.replace("t.user_id", "l.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.note_links l WHERE l.id = %s AND l.deleted_at IS NULL{own_sql_l}",
+                [int(link_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(NOTEBOOK_NOTE_LINK_SNAPSHOT_JOIN, ("delete", int(link_id)))
+            cur.execute("UPDATE notebooks.note_links SET deleted_at = now() WHERE id = %s",
+                        (int(link_id),))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+# --------------------------------------------------------------------------
+# ADF-02 (fatia 7, 11/08/2026) — "Dicionário e glossário" (secção 10 e 14
+# item 7): palavra-chave pessoal (`keywords`) e definição vinculada à nota
+# (`glossary_entries`). `source` fica sempre 'manual' nesta passagem — sem
+# provedor de dicionário externo ligado ainda.
+# --------------------------------------------------------------------------
+
+def notebook_keyword_create(note_id, term, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "note_not_found"}
+            term = (term or "").strip()
+            if not term:
+                return {"ok": False, "error": "empty_term"}
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.keywords (note_id, user_id, term, host) VALUES (%s,%s,%s,%s) RETURNING id",
+                (int(note_id), owner, term, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": new_id}
+    finally:
+        close_connection(conn)
+
+
+def notebook_keyword_list(note_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_k = own_sql.replace("t.user_id", "k.user_id")
+            cur.execute(
+                "SELECT k.id, k.term, k.created_at FROM notebooks.keywords k "
+                f"WHERE k.note_id = %s AND k.deleted_at IS NULL{own_sql_k} ORDER BY k.created_at",
+                [int(note_id)] + own_params,
+            )
+            rows = _rows_to_dicts(cur)
+        for r in rows:
+            r["created_at"] = _iso(r["created_at"])
+        return rows
+    finally:
+        close_connection(conn)
+
+
+def notebook_keyword_delete(keyword_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_k = own_sql.replace("t.user_id", "k.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.keywords k WHERE k.id = %s AND k.deleted_at IS NULL{own_sql_k}",
+                [int(keyword_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(NOTEBOOK_KEYWORD_SNAPSHOT_JOIN, ("delete", int(keyword_id)))
+            cur.execute("UPDATE notebooks.keywords SET deleted_at = now() WHERE id = %s", (int(keyword_id),))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+def notebook_glossary_create(note_id, term, definition, source=None, language=None, user_id=None,
+                              admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "note_not_found"}
+            term = (term or "").strip()
+            definition = (definition or "").strip()
+            if not term or not definition:
+                return {"ok": False, "error": "empty_entry"}
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.glossary_entries (note_id, user_id, term, definition, source, language, host) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                (int(note_id), owner, term, definition, source or "manual", language, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+        conn.commit()
+        return {"ok": True, "id": new_id}
+    finally:
+        close_connection(conn)
+
+
+def notebook_glossary_list(note_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_g = own_sql.replace("t.user_id", "g.user_id")
+            cur.execute(
+                "SELECT g.id, g.term, g.definition, g.source, g.language, g.created_at "
+                "FROM notebooks.glossary_entries g "
+                f"WHERE g.note_id = %s AND g.deleted_at IS NULL{own_sql_g} ORDER BY g.created_at",
+                [int(note_id)] + own_params,
+            )
+            rows = _rows_to_dicts(cur)
+        for r in rows:
+            r["created_at"] = _iso(r["created_at"])
+        return rows
+    finally:
+        close_connection(conn)
+
+
+def notebook_glossary_delete(entry_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_g = own_sql.replace("t.user_id", "g.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.glossary_entries g WHERE g.id = %s AND g.deleted_at IS NULL{own_sql_g}",
+                [int(entry_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return {"ok": False, "error": "not_found"}
+            cur.execute(NOTEBOOK_GLOSSARY_SNAPSHOT_JOIN, ("delete", int(entry_id)))
+            cur.execute("UPDATE notebooks.glossary_entries SET deleted_at = now() WHERE id = %s", (int(entry_id),))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        close_connection(conn)
+
+
+# --------------------------------------------------------------------------
+# ADF-02 (fatia 8, 11/08/2026) — "Exportação e pacote para IA" (secção 12 e
+# 14 item 8). O conteúdo é sempre montado on-the-fly a partir das camadas
+# escolhidas — nada de silencioso: só entra o que foi pedido explicitamente.
+# --------------------------------------------------------------------------
+
+_HTML_LI_OPEN_RE = re.compile(r"(?i)<li[^>]*>")
+_HTML_BR_RE = re.compile(r"(?i)<br\s*/?>")
+_HTML_BLOCK_END_RE = re.compile(r"(?i)</(p|h1|h2|h3|li|div)\s*>")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+NOTEBOOK_EXPORT_LAYERS = ("body", "annotations", "references", "glossary", "links", "lineage")
+
+
+def _notebook_html_to_text(raw_html):
+    """Conversão simples de HTML (o conteúdo de UM bloco, ou um blob antigo
+    inteiro) para texto simples — suficiente para exportação/portabilidade;
+    não tenta preservar formatação, só a leitura linear do conteúdo."""
+    if not raw_html:
+        return ""
+    t = _HTML_LI_OPEN_RE.sub("- ", raw_html)
+    t = _HTML_BR_RE.sub("\n", t)
+    t = _HTML_BLOCK_END_RE.sub("\n", t)
+    t = _HTML_TAG_RE.sub("", t)
+    t = _html_unescape(t)
+    out, blank = [], 0
+    for ln in (ln.strip() for ln in t.splitlines()):
+        if ln:
+            blank = 0
+            out.append(ln)
+        else:
+            blank += 1
+            if blank <= 1:
+                out.append(ln)
+    return "\n".join(out).strip()
+
+
+_NOTEBOOK_HEADING_MD = {"H1": "# ", "H2": "## ", "H3": "### "}
+
+
+def _notebook_body_to_text(body):
+    """Corpo da nota → texto simples portátil. Aceita os três formatos que
+    `note_contents.body` pode ter (frontend decide qual escrever; o worker só
+    precisa saber LER todos, retrocompatibilidade nunca quebra uma nota
+    antiga): (1) JSON de blocos com id estável (formato atual, fatia 5+,
+    11/08/2026) — cada bloco vira uma secção/parágrafo/lista; (2) blob de
+    HTML solto (fatias 5–8 antes desta mudança); (3) texto simples (fatias
+    3/4, ou nota vinda de 'Salvar no Caderno')."""
+    if not body:
+        return ""
+    s = body.strip()
+    if s.startswith("["):
+        try:
+            blocks = json.loads(s)
+        except (ValueError, TypeError):
+            blocks = None
+        if isinstance(blocks, list):
+            parts = []
+            for b in blocks:
+                if not isinstance(b, dict):
+                    continue
+                tag = (b.get("tag") or "P").upper()
+                text = _notebook_html_to_text(b.get("html") or "")
+                if not text:
+                    continue
+                prefix = _NOTEBOOK_HEADING_MD.get(tag, "")
+                parts.append(f"{prefix}{text}" if prefix else text)
+            return "\n\n".join(parts)
+    return _notebook_html_to_text(body)
+
+
+# Pedido do Leonardo (2026-08-14): a exportação (.md/.docx/prompt) tem de
+# refletir o idioma da REUNIÃO/TRANSCRIÇÃO de origem — se a transcrição foi
+# em inglês, os rótulos de secção e o prompt para IA saem em inglês; se foi
+# em espanhol, em espanhol; senão (nota manual sem proveniência, ou idioma
+# não coberto) cai no padrão em português, que é o idioma principal da app.
+# Cobrimos só pt/en/es porque são os 3 idiomas que a própria interface do
+# UpexNote já suporta (`i18n.ts`) — não faz sentido gerar rótulos estruturais
+# num idioma que a app nem mostra a si própria.
+_NOTEBOOK_EXPORT_LABELS = {
+    "pt": {
+        "annotations": "Anotações", "references": "Referências", "glossary": "Glossário",
+        "keywords": "Palavras-chave", "links": "Notas ligadas", "lineage": "Proveniência",
+        "source_transcription": "Transcrição de origem", "source_document": "Documento estruturado de origem",
+        "resolved": " (resolvida)",
+    },
+    "en": {
+        "annotations": "Annotations", "references": "References", "glossary": "Glossary",
+        "keywords": "Keywords", "links": "Linked notes", "lineage": "Provenance",
+        "source_transcription": "Source transcription", "source_document": "Source structured document",
+        "resolved": " (resolved)",
+    },
+    "es": {
+        "annotations": "Anotaciones", "references": "Referencias", "glossary": "Glosario",
+        "keywords": "Palabras clave", "links": "Notas enlazadas", "lineage": "Procedencia",
+        "source_transcription": "Transcripción de origen", "source_document": "Documento estructurado de origen",
+        "resolved": " (resuelta)",
+    },
+}
+
+
+def _normalize_notebook_lang(raw):
+    code = (raw or "").strip().lower()
+    if code.startswith("en"):
+        return "en"
+    if code.startswith("es"):
+        return "es"
+    return "pt"
+
+
+def _notebook_note_language(note_id, conn=None):
+    """Idioma herdado da transcrição de origem da nota (via note_sources ->
+    transcription_id direto, ou -> document_id -> structured_documents ->
+    transcription_id). None se a nota não tiver proveniência (ex.: criada
+    manualmente, "Salvar no Caderno" sem origem) — quem chama decide o
+    padrão nesse caso."""
+    owns_conn = conn is None
+    if owns_conn:
+        conn = connect()
+    try:
+        if owns_conn:
+            ensure_schema(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT transcription_id, document_id FROM notebooks.note_sources WHERE note_id = %s",
+                (int(note_id),),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            transcription_id, document_id = row
+            if transcription_id:
+                cur.execute("SELECT language FROM transcriptions WHERE id = %s", (transcription_id,))
+                r = cur.fetchone()
+                if r and r[0]:
+                    return r[0]
+            if document_id:
+                cur.execute(
+                    "SELECT t.language FROM documents.structured_documents d "
+                    "LEFT JOIN transcriptions t ON t.id = d.transcription_id WHERE d.id = %s",
+                    (document_id,),
+                )
+                r = cur.fetchone()
+                if r and r[0]:
+                    return r[0]
+            return None
+    finally:
+        if owns_conn:
+            close_connection(conn)
+
+
+def notebook_note_export(note_id, layers=None, fmt="markdown", user_id=None, admin_verified=False):
+    """Monta o conteúdo a partir das camadas escolhidas e regista só os
+    METADADOS no histórico (notebooks.exports — formato + camadas); o
+    conteúdo em si nunca é guardado no banco, é gerado a cada pedido."""
+    layers = [l for l in (layers or ["body"]) if l in NOTEBOOK_EXPORT_LAYERS] or ["body"]
+    item = notebook_note_item(note_id, user_id=user_id, admin_verified=admin_verified)
+    if item is None:
+        return {"ok": False, "error": "not_found"}
+
+    lang = _normalize_notebook_lang(_notebook_note_language(note_id))
+    L = _NOTEBOOK_EXPORT_LABELS[lang]
+
+    parts = [f"# {item.get('title') or DEFAULT_NOTEBOOK_TITLE}"]
+    if "body" in layers:
+        parts.append(_notebook_body_to_text(item.get("body")))
+    if "annotations" in layers:
+        annotations = notebook_annotation_list(note_id, user_id=user_id, admin_verified=admin_verified)
+        if annotations:
+            lines = [f"## {L['annotations']}"]
+            for a in annotations:
+                quote = f' — "{a["selected_text"]}"' if a.get("selected_text") else ""
+                status = L["resolved"] if a.get("resolved_at") else ""
+                lines.append(f"- {a['body']}{quote}{status}")
+            parts.append("\n".join(lines))
+    if "references" in layers:
+        refs = notebook_reference_list(note_id, user_id=user_id, admin_verified=admin_verified)
+        if refs:
+            lines = [f"## {L['references']}"]
+            for r in refs:
+                line = r.get("title") or r.get("url") or ""
+                if r.get("url") and r.get("title"):
+                    line += f" — {r['url']}"
+                if r.get("note_text"):
+                    line += f" ({r['note_text']})"
+                lines.append(f"- {line}")
+            parts.append("\n".join(lines))
+    if "glossary" in layers:
+        gloss = notebook_glossary_list(note_id, user_id=user_id, admin_verified=admin_verified)
+        kws = notebook_keyword_list(note_id, user_id=user_id, admin_verified=admin_verified)
+        if gloss:
+            lines = [f"## {L['glossary']}"] + [f"- {g['term']}: {g['definition']}" for g in gloss]
+            parts.append("\n".join(lines))
+        if kws:
+            parts.append(f"## {L['keywords']}\n" + ", ".join(k["term"] for k in kws))
+    if "links" in layers:
+        links = notebook_links(note_id, user_id=user_id, admin_verified=admin_verified)
+        out, inc = links.get("outgoing") or [], links.get("incoming") or []
+        if out or inc:
+            lines = [f"## {L['links']}"]
+            for l in out:
+                lines.append(f"- → {l.get('title') or DEFAULT_NOTEBOOK_TITLE}")
+            for l in inc:
+                lines.append(f"- ← {l.get('title') or DEFAULT_NOTEBOOK_TITLE}")
+            parts.append("\n".join(lines))
+    if "lineage" in layers:
+        conn = connect()
+        try:
+            ensure_schema(conn)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT transcription_id, document_id FROM notebooks.note_sources WHERE note_id = %s",
+                    (int(note_id),),
+                )
+                row = cur.fetchone()
+        finally:
+            close_connection(conn)
+        if row and (row[0] or row[1]):
+            lines = [f"## {L['lineage']}"]
+            if row[0]:
+                lines.append(f"{L['source_transcription']}: #{row[0]}")
+            if row[1]:
+                lines.append(f"{L['source_document']}: #{row[1]}")
+            parts.append("\n".join(lines))
+
+    content = "\n\n".join(p for p in parts if p and p.strip())
+
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.exports (note_id, user_id, format, layers, host) VALUES (%s,%s,%s,%s,%s)",
+                (int(note_id), owner, fmt, ",".join(layers), socket.gethostname()),
+            )
+        conn.commit()
+    finally:
+        close_connection(conn)
+
+    return {"ok": True, "content": content, "layers": layers, "language": lang}
+
+
+def notebook_note_context_package(note_id, layers=None, user_id=None, admin_verified=False):
+    """'Pacote para IA': mesmas camadas do export, empacotadas com um
+    manifesto legível por máquina e um prompt legível por pessoas. Ao
+    contrário de `exports`, manifesto+prompt SÃO persistidos (são texto
+    simples pequeno — não é o "binário" que a arquitetura pede para não
+    guardar), porque o utilizador pode querer reabrir/reenviar depois."""
+    export = notebook_note_export(note_id, layers=layers, fmt="context_package",
+                                   user_id=user_id, admin_verified=admin_verified)
+    if not export.get("ok"):
+        return export
+    item = notebook_note_item(note_id, user_id=user_id, admin_verified=admin_verified)
+    title = (item or {}).get("title") or DEFAULT_NOTEBOOK_TITLE
+    lang = export.get("language") or "pt"
+    manifest = json.dumps({
+        "note_id": int(note_id),
+        "title": title,
+        "layers": export["layers"],
+        "generated_by": "UpexNote",
+    }, ensure_ascii=False)
+    # Pedido do Leonardo (2026-08-14): isto não pode ser só um aviso de
+    # "não invente" seguido do conteúdo cru — tem de ser um prompt de
+    # verdade, com instruções de leitura, uma mensagem de abertura pronta
+    # (que a IA deve adaptar, não copiar literalmente) que reconhece o
+    # UpexNote pelo nome, e sugestões padrão para o utilizador continuar.
+    # Isto vale para QUALQUER IA (ChatGPT, Claude, Gemini, etc.) — por isso
+    # são instruções em texto simples, sem depender de formatos
+    # proprietários de "system prompt".
+    #
+    # Pedido do Leonardo (2026-08-14, seguinte): o idioma do prompt (e do
+    # documento exportado) tem de refletir o idioma da reunião/transcrição
+    # de origem — não pode ficar preso ao português. `lang` já foi
+    # calculado acima a partir de `_notebook_note_language()`.
+    prompt_templates = {
+        "pt": """INSTRUÇÕES PARA A IA — lê isto com atenção, até ao fim, antes de responderes.
+
+Isto é um pacote de contexto gerado pelo UpexNote a partir de uma nota pessoal do Caderno do utilizador: "{title}". Camadas incluídas: {layers}.
+
+Se receberes isto junto de outros ficheiros do mesmo pacote (por exemplo, um .docx com o mesmo material formatado, ou o .zip inteiro), a ORDEM DE LEITURA é: primeiro este prompt até ao fim, DEPOIS o material abaixo. O material é a tua ÚNICA fonte factual sobre o assunto — não inventes nem completes com conhecimento externo além do que está aqui.
+
+A tua PRIMEIRA mensagem ao utilizador, antes de qualquer outra coisa, deve:
+1. Confirmar que leste o material e resumir em uma frase curta do que se trata.
+2. Reconhecer que o material foi organizado e preparado pelo UpexNote — menciona o nome "UpexNote" explicitamente, é o aplicativo de anotações do utilizador e o pacote já vem pronto para trabalharem a partir dele.
+3. Sugerir 2 ou 3 formas concretas de continuar a partir DESTE material específico (por exemplo: resumir os pontos principais, aprofundar uma referência ou anotação específica, esclarecer alguma dúvida sobre o conteúdo) e perguntar por onde o utilizador quer começar.
+
+Tom esperado (isto é um EXEMPLO de estrutura — adapta ao conteúdo real, não copies as frases literalmente):
+"Recebi o material sobre '{title}', já organizado pelo UpexNote com anotações e referências prontas — ótimo ponto de partida! Posso: (1) resumir os pontos principais, (2) aprofundar alguma anotação ou referência específica, ou (3) esclarecer dúvidas sobre o conteúdo. Por onde gostarias de começar?"
+
+Depois dessa primeira mensagem, continua a conversa normalmente, sempre respeitando os limites factuais do material abaixo.
+
+--- MATERIAL (fonte única — não invente além disto) ---
+
+{content}
+""",
+        "en": """INSTRUCTIONS FOR THE AI — read this carefully, all the way through, before responding.
+
+This is a context package generated by UpexNote from a personal note in the user's Notebook: "{title}". Layers included: {layers}.
+
+If you receive this alongside other files from the same package (for example, a .docx with the same material formatted, or the whole .zip), the READING ORDER is: first this prompt in full, THEN the material below. The material is your ONLY factual source on the subject — do not invent or fill in gaps with outside knowledge beyond what is here.
+
+Your FIRST message to the user, before anything else, must:
+1. Confirm that you read the material and summarize in one short sentence what it's about.
+2. Acknowledge that the material was organized and prepared by UpexNote — mention the name "UpexNote" explicitly, it's the user's note-taking app, and the package is already prepared to work from.
+3. Suggest 2 or 3 concrete ways to continue from THIS specific material (for example: summarize the main points, dig deeper into a specific reference or annotation, clarify a doubt about the content) and ask where the user wants to start.
+
+Expected tone (this is an EXAMPLE structure — adapt it to the actual content, don't copy the sentences literally):
+"I received the material about '{title}', already organized by UpexNote with annotations and references ready to go — a great starting point! I can: (1) summarize the main points, (2) dig deeper into a specific annotation or reference, or (3) clarify any doubts about the content. Where would you like to start?"
+
+After that first message, continue the conversation normally, always respecting the factual boundaries of the material below.
+
+--- MATERIAL (single source — do not invent beyond this) ---
+
+{content}
+""",
+        "es": """INSTRUCCIONES PARA LA IA — lee esto con atención, hasta el final, antes de responder.
+
+Este es un paquete de contexto generado por UpexNote a partir de una nota personal del Cuaderno del usuario: "{title}". Capas incluidas: {layers}.
+
+Si recibes esto junto con otros archivos del mismo paquete (por ejemplo, un .docx con el mismo material formateado, o todo el .zip), el ORDEN DE LECTURA es: primero este prompt hasta el final, DESPUÉS el material de abajo. El material es tu ÚNICA fuente factual sobre el tema — no inventes ni completes con conocimiento externo más allá de lo que está aquí.
+
+Tu PRIMER mensaje al usuario, antes de cualquier otra cosa, debe:
+1. Confirmar que leíste el material y resumir en una frase corta de qué se trata.
+2. Reconocer que el material fue organizado y preparado por UpexNote — menciona el nombre "UpexNote" explícitamente, es la aplicación de notas del usuario y el paquete ya viene listo para trabajar a partir de él.
+3. Sugerir 2 o 3 formas concretas de continuar a partir de ESTE material específico (por ejemplo: resumir los puntos principales, profundizar en una referencia o anotación específica, aclarar alguna duda sobre el contenido) y preguntar por dónde quiere empezar el usuario.
+
+Tono esperado (esto es un EJEMPLO de estructura — adáptalo al contenido real, no copies las frases literalmente):
+"Recibí el material sobre '{title}', ya organizado por UpexNote con anotaciones y referencias listas — ¡un gran punto de partida! Puedo: (1) resumir los puntos principales, (2) profundizar en alguna anotación o referencia específica, o (3) aclarar dudas sobre el contenido. ¿Por dónde te gustaría empezar?"
+
+Después de ese primer mensaje, continúa la conversación con normalidad, respetando siempre los límites factuales del material de abajo.
+
+--- MATERIAL (fuente única — no inventes más allá de esto) ---
+
+{content}
+""",
+    }
+    prompt = prompt_templates[lang].format(
+        title=title, layers=", ".join(export["layers"]), content=export["content"]
+    )
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            owner = int(user_id) if user_id is not None else None
+            cur.execute(
+                "INSERT INTO notebooks.context_packages (note_id, user_id, layers, manifest, prompt, host) "
+                "VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
+                (int(note_id), owner, ",".join(export["layers"]), manifest, prompt, socket.gethostname()),
+            )
+            new_id = cur.fetchone()[0]
+        conn.commit()
+    finally:
+        close_connection(conn)
+    return {"ok": True, "id": new_id, "manifest": manifest, "prompt": prompt, "language": lang}
+
+
+def notebook_context_packages(note_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return None
+            cur.execute(
+                "SELECT id, created_at, layers FROM notebooks.context_packages "
+                "WHERE note_id = %s ORDER BY created_at DESC, id DESC",
+                (int(note_id),),
+            )
+            rows = _rows_to_dicts(cur)
+        for r in rows:
+            r["created_at"] = _iso(r["created_at"])
+        return rows
+    finally:
+        close_connection(conn)
+
+
+def notebook_context_package_item(note_id, package_id, user_id=None, admin_verified=False):
+    conn = connect()
+    try:
+        ensure_schema(conn)
+        with conn.cursor() as cur:
+            own_sql, own_params, _ = _actor(cur, user_id, admin_verified)
+            own_sql_n = own_sql.replace("t.user_id", "n.user_id")
+            cur.execute(
+                f"SELECT 1 FROM notebooks.notes n WHERE n.id = %s AND n.deleted_at IS NULL{own_sql_n}",
+                [int(note_id)] + own_params,
+            )
+            if not cur.fetchone():
+                return None
+            cur.execute(
+                "SELECT manifest, prompt, layers, created_at FROM notebooks.context_packages "
+                "WHERE id = %s AND note_id = %s",
+                (int(package_id), int(note_id)),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {"manifest": row[0], "prompt": row[1], "layers": row[2], "created_at": _iso(row[3])}
     finally:
         close_connection(conn)
 

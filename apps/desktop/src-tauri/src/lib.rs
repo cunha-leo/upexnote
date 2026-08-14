@@ -1,9 +1,11 @@
 // Ponte entre a interface (React) e o worker de transcrição (CLI Python).
 // A interface chama estes comandos via `invoke`; o `transcribe` transmite os
 // eventos NDJSON do worker em tempo real para a janela via eventos Tauri.
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
 /// Lança o Python SEM janela de consola. Sendo esta uma app gráfica, cada
@@ -58,60 +60,164 @@ fn worker_command(cli_args: &[&str]) -> Command {
             c
         }
     };
-    cmd.args(cli_args).env("PYTHONUNBUFFERED", "1");
+    // Registro — 2026-08-12 ("encoding quebrado no Caderno"): no Windows, o
+    // Python spawnado sem terminal (stdio redirecionado para pipes, não uma
+    // consola real) cai para o codepage ANSI da máquina em vez de UTF-8 para
+    // ler/escrever stdin/stdout — acentos sobrevivem na prévia (que só passa
+    // por NDJSON no stdout) mas corrompem quando o texto volta a entrar por
+    // stdin (corpo da nota, anotações, etc.). PYTHONUTF8 força UTF-8 em todo
+    // o runtime; PYTHONIOENCODING cobre explicitamente stdin/stdout/stderr.
+    cmd.args(cli_args)
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8");
     cmd
 }
 
-fn run_cli(args: &[&str]) -> Result<String, String> {
-    let mut cmd = worker_command(args);
-    with_no_window(&mut cmd);
-    let out = cmd
-        .output()
-        .map_err(|e| format!("Falha ao iniciar o worker Python: {e}"))?;
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(if err.trim().is_empty() {
-            String::from_utf8_lossy(&out.stdout).to_string()
-        } else {
-            err.to_string()
-        });
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+// --------------------------------------------------------------------------
+// Fase A da análise arquitetural (2026-08-13): até aqui, CADA comando do
+// Caderno/Biblioteca era um processo do SO inteiro do zero — em modo
+// desenvolvimento (sem o worker empacotado) isso significa um interpretador
+// Python a arrancar e a reimportar tudo a cada clique. O mesmo padrão que já
+// usávamos para o túnel SSH (`TUNNEL_KEEPER`, mais abaixo: um processo vivo,
+// guardado num static, cujo stdin preso à app garante que morre sozinho
+// quando a app fecha — sem processos órfãos) aplica-se agora ao worker em
+// si: UM processo Python persistente (`serve`), a receber pedidos por uma
+// linha JSON no stdin e a responder por linhas JSON no stdout, em vez de um
+// processo por comando.
+//
+// Comandos sensíveis a isolamento por chamada (oauth, db-check, api-reset,
+// account/admin com prova de senha, support, transcribe) continuam a
+// spawnar o próprio processo — não passam por aqui. O ganho é exatamente
+// nas ações frequentes e curtas do Caderno/Biblioteca, que é onde a
+// lentidão era sentida.
+struct PersistentWorker {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
 }
 
-/// Versão assíncrona: corre `run_cli` numa thread de bloqueio, para não
-/// congelar a UI enquanto o worker abre o túnel SSH + consulta a base
-/// (pode demorar 2-5s). Comandos síncronos de Tauri correm na thread
-/// principal e bloqueariam a janela toda durante esse tempo.
+static WORKER: OnceLock<Mutex<Option<PersistentWorker>>> = OnceLock::new();
+static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+
+fn worker_slot() -> &'static Mutex<Option<PersistentWorker>> {
+    WORKER.get_or_init(|| Mutex::new(None))
+}
+
+fn spawn_persistent_worker() -> Result<PersistentWorker, String> {
+    let mut cmd = worker_command(&["serve"]);
+    // stderr para null (mesmo padrão do TUNNEL_KEEPER): um traceback Python
+    // ocasional não pode bloquear o pipe e travar o worker inteiro — os
+    // erros de comando já vêm no envelope JSON do stdout de qualquer forma.
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+    with_no_window(&mut cmd);
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Falha ao iniciar o worker persistente: {e}"))?;
+    let stdin = child.stdin.take().ok_or("worker persistente sem stdin")?;
+    let stdout = child.stdout.take().ok_or("worker persistente sem stdout")?;
+    Ok(PersistentWorker { child, stdin, stdout: BufReader::new(stdout) })
+}
+
+/// Envia um pedido ao worker persistente (arrancando-o se ainda não existir
+/// ou se tiver morrido entretanto) e devolve as linhas de resposta juntas —
+/// mesma forma que `run_cli`/`run_cli_stdin_async` sempre devolveram, para
+/// não obrigar a mexer nos ~60 comandos Tauri que já esperam este formato.
+fn call_worker(argv: Vec<String>, stdin_payload: Option<String>) -> Result<String, String> {
+    let slot = worker_slot();
+    let mut guard = slot
+        .lock()
+        .map_err(|_| "lock do worker persistente corrompido".to_string())?;
+
+    let needs_restart = match guard.as_mut() {
+        None => true,
+        Some(w) => matches!(w.child.try_wait(), Ok(Some(_)) | Err(_)),
+    };
+    if needs_restart {
+        *guard = Some(spawn_persistent_worker()?);
+    }
+
+    let req_id = REQUEST_ID.fetch_add(1, Ordering::Relaxed).to_string();
+    let req = serde_json::json!({
+        "id": req_id,
+        "argv": argv,
+        "stdin": stdin_payload.unwrap_or_default(),
+    });
+    let line = req.to_string();
+
+    let result: Result<String, String> = (|| {
+        let worker = guard.as_mut().ok_or("worker persistente indisponível")?;
+        worker.stdin.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+        worker.stdin.write_all(b"\n").map_err(|e| e.to_string())?;
+        worker.stdin.flush().map_err(|e| e.to_string())?;
+
+        let mut collected: Vec<String> = Vec::new();
+        loop {
+            let mut resp_line = String::new();
+            let n = worker
+                .stdout
+                .read_line(&mut resp_line)
+                .map_err(|e| e.to_string())?;
+            if n == 0 {
+                return Err("worker persistente fechou o stdout inesperadamente".to_string());
+            }
+            let resp_line = resp_line.trim();
+            if resp_line.is_empty() {
+                continue;
+            }
+            let obj: serde_json::Value = serde_json::from_str(resp_line)
+                .map_err(|e| format!("resposta inválida do worker persistente: {e}"))?;
+            // o mutex serializa pedidos — uma resposta com outro id não
+            // deveria acontecer, mas ignora-se em vez de confundir com o
+            // pedido atual, por segurança.
+            if obj.get("id").and_then(|v| v.as_str()) != Some(req_id.as_str()) {
+                continue;
+            }
+            if let Some(l) = obj.get("line").and_then(|v| v.as_str()) {
+                collected.push(l.to_string());
+            }
+            if obj.get("done").and_then(|v| v.as_bool()) == Some(true) {
+                break;
+            }
+        }
+        // um comando que termina sem emitir nenhuma linha é sinal de algo
+        // errado no handler Python (todo `cmd_*` emite pelo menos uma linha,
+        // sucesso ou erro) — mantém o mesmo contrato de erro que
+        // `run_cli`/`run_cli_stdin_async` sempre tiveram para stdout vazio.
+        if collected.is_empty() {
+            return Err("o worker não devolveu nenhuma resposta para este comando".to_string());
+        }
+        Ok(collected.join("\n"))
+    })();
+
+    // comunicação falhou (pipe partido, worker crashou a meio, etc.): mata
+    // o que sobrar e limpa o slot, para a PRÓXIMA chamada rearrancar do
+    // zero em vez de continuar a bater contra um worker morto.
+    if result.is_err() {
+        if let Some(mut w) = guard.take() {
+            let _ = w.child.kill();
+        }
+    }
+    result
+}
+
+fn run_cli(args: &[&str]) -> Result<String, String> {
+    call_worker(args.iter().map(|s| s.to_string()).collect(), None)
+}
+
+/// Versão assíncrona: corre `call_worker` numa thread de bloqueio, para não
+/// congelar a UI à espera da resposta. Comandos síncronos de Tauri correm na
+/// thread principal e bloqueariam a janela toda durante esse tempo.
 async fn run_cli_async(args: Vec<String>) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        run_cli(&refs)
-    })
-    .await
-    .map_err(|e| format!("erro na thread do worker: {e}"))?
+    tauri::async_runtime::spawn_blocking(move || call_worker(args, None))
+        .await
+        .map_err(|e| format!("erro na thread do worker: {e}"))?
 }
 
 async fn run_cli_stdin_async(args: Vec<String>, payload: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        use std::io::Write;
-        let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let mut cmd = worker_command(&refs);
-        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        with_no_window(&mut cmd);
-        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
-        child.stdin.as_mut().ok_or("sem stdin")?
-            .write_all(payload.as_bytes()).map_err(|e| e.to_string())?;
-        drop(child.stdin.take());
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if stdout.is_empty() {
-            return Err(String::from_utf8_lossy(&out.stderr).to_string());
-        }
-        Ok(stdout)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || call_worker(args, Some(payload)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn admin_proof_json(email: Option<String>, token: Option<String>, text: Option<String>) -> String {
@@ -696,6 +802,16 @@ async fn notebook_note_item(id: i64, user: Option<i64>) -> Result<String, String
     run_cli_async(args).await
 }
 
+/// Abrir nota: item + anotações + referências + links + keywords + glossário
+/// numa só chamada — antes eram 6 spawns de processo separados (análise
+/// arquitetural 2026-08-13, fase B).
+#[tauri::command]
+async fn notebook_note_open(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-note-open".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
 /// Edita título e/ou corpo de uma nota. O corpo (potencialmente grande) vai
 /// por STDIN, nunca por argumento — mesmo cuidado de `library_update`.
 #[tauri::command]
@@ -723,6 +839,256 @@ async fn notebook_note_delete(id: i64, user: Option<i64>) -> Result<String, Stri
     let mut args: Vec<String> = vec!["notebook-note-delete".into(), "--id".into(), id.to_string()];
     push_user(&mut args, user);
     run_cli_async(args).await
+}
+
+/// ADF-02 fatia 4 ("Passagem controlada"): copia a prévia (documento
+/// estruturado) para uma nota nova em `notebooks`, com linhagem — nunca uma
+/// referência viva; a prévia em `documents` fica intacta. Idempotente: um
+/// segundo clique devolve a nota já criada em vez de duplicar.
+#[tauri::command]
+async fn notebook_save_document(
+    document_id: i64, collection_id: Option<i64>, user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec![
+        "notebook-save-document".into(), "--document-id".into(), document_id.to_string(),
+    ];
+    if let Some(cid) = collection_id {
+        args.push("--collection-id".into());
+        args.push(cid.to_string());
+    }
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// ADF-02 fatia 5 ("Editor rico essencial"): versões recuperáveis da nota —
+/// snapshot manual (não a cada autosave), listar, restaurar.
+#[tauri::command]
+async fn notebook_note_version_create(note_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-note-version-create".into(), "--note-id".into(), note_id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_note_versions(note_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-note-versions".into(), "--note-id".into(), note_id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_note_version_restore(note_id: i64, version_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec![
+        "notebook-note-version-restore".into(), "--note-id".into(), note_id.to_string(),
+        "--version-id".into(), version_id.to_string(),
+    ];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// ADF-02 fatia 6 ("Anotações e referências"): comentário ancorado a um
+/// trecho da nota (âncora híbrida) e referência de estudo solta. O corpo do
+/// comentário vai por STDIN (pode ser longo/ter qualquer carácter); a
+/// seleção/contexto vão como argumentos (curtos, controlados pela UI).
+#[tauri::command]
+async fn notebook_annotation_create(
+    note_id: i64, body: String, block_id: Option<String>, start_offset: Option<i64>,
+    end_offset: Option<i64>, selected_text: Option<String>, context_snippet: Option<String>,
+    user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-annotation-create".into(), "--note-id".into(), note_id.to_string()];
+    if let Some(b) = block_id { args.push("--block-id".into()); args.push(b); }
+    if let Some(s) = start_offset { args.push("--start-offset".into()); args.push(s.to_string()); }
+    if let Some(e) = end_offset { args.push("--end-offset".into()); args.push(e.to_string()); }
+    if let Some(s) = selected_text { args.push("--selected-text".into()); args.push(s); }
+    if let Some(c) = context_snippet { args.push("--context-snippet".into()); args.push(c); }
+    push_user(&mut args, user);
+    run_cli_stdin_async(args, body).await
+}
+
+#[tauri::command]
+async fn notebook_annotation_list(note_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-annotation-list".into(), "--note-id".into(), note_id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_annotation_resolve(id: i64, reopen: Option<bool>, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-annotation-resolve".into(), "--id".into(), id.to_string()];
+    if reopen.unwrap_or(false) { args.push("--reopen".into()); }
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_annotation_delete(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-annotation-delete".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_reference_create(
+    note_id: i64, title: Option<String>, url: Option<String>, note_text: Option<String>, user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-reference-create".into(), "--note-id".into(), note_id.to_string()];
+    if let Some(t) = title { args.push("--title".into()); args.push(t); }
+    if let Some(u) = url { args.push("--url".into()); args.push(u); }
+    if let Some(n) = note_text { args.push("--note-text".into()); args.push(n); }
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_reference_list(note_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-reference-list".into(), "--note-id".into(), note_id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_reference_delete(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-reference-delete".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// Backlinks (11/08/2026): ligação direcionada nota→nota escolhida
+/// explicitamente pelo utilizador.
+#[tauri::command]
+async fn notebook_link_create(from_note_id: i64, to_note_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec![
+        "notebook-link-create".into(),
+        "--from-note-id".into(), from_note_id.to_string(),
+        "--to-note-id".into(), to_note_id.to_string(),
+    ];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_links(note_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-links".into(), "--note-id".into(), note_id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_link_delete(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-link-delete".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// ADF-02 fatia 7 ("Dicionário e glossário"): palavra-chave solta e
+/// definição vinculada à nota.
+#[tauri::command]
+async fn notebook_keyword_create(note_id: i64, term: String, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-keyword-create".into(), "--note-id".into(), note_id.to_string(), "--term".into(), term];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_keyword_list(note_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-keyword-list".into(), "--note-id".into(), note_id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_keyword_delete(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-keyword-delete".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_glossary_create(
+    note_id: i64, term: String, definition: String, source: Option<String>, language: Option<String>,
+    user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec![
+        "notebook-glossary-create".into(), "--note-id".into(), note_id.to_string(),
+        "--term".into(), term, "--definition".into(), definition,
+    ];
+    if let Some(s) = source { args.push("--source".into()); args.push(s); }
+    if let Some(l) = language { args.push("--language".into()); args.push(l); }
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_glossary_list(note_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-glossary-list".into(), "--note-id".into(), note_id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_glossary_delete(id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-glossary-delete".into(), "--id".into(), id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// ADF-02 fatia 8 ("Exportação e pacote para IA"): conteúdo montado a partir
+/// das camadas escolhidas — `layers` é uma lista separada por vírgulas
+/// (body,annotations,references,glossary,lineage), nunca "tudo por defeito".
+#[tauri::command]
+async fn notebook_export(
+    note_id: i64, layers: Option<String>, format: Option<String>, user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-export".into(), "--note-id".into(), note_id.to_string()];
+    if let Some(l) = layers { args.push("--layers".into()); args.push(l); }
+    if let Some(f) = format { args.push("--format".into()); args.push(f); }
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_context_package_create(
+    note_id: i64, layers: Option<String>, user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-context-package-create".into(), "--note-id".into(), note_id.to_string()];
+    if let Some(l) = layers { args.push("--layers".into()); args.push(l); }
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_context_packages(note_id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec!["notebook-context-packages".into(), "--note-id".into(), note_id.to_string()];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+#[tauri::command]
+async fn notebook_context_package_item(note_id: i64, id: i64, user: Option<i64>) -> Result<String, String> {
+    let mut args: Vec<String> = vec![
+        "notebook-context-package-item".into(), "--note-id".into(), note_id.to_string(), "--id".into(), id.to_string(),
+    ];
+    push_user(&mut args, user);
+    run_cli_async(args).await
+}
+
+/// Exportação de facto para disco (pedido do Leonardo: o botão "Exportar" tem
+/// de gravar um ficheiro de verdade escolhido pelo utilizador — não só copiar
+/// texto para a área de transferência e mostrar numa caixinha). O caminho vem
+/// sempre do diálogo nativo `save()` do plugin dialog (já autorizado por
+/// `dialog:allow-save`); estes dois comandos só gravam bytes/texto nesse
+/// caminho — sem tocar no worker Python, o `.docx` é montado no frontend
+/// (biblioteca `docx`) porque não há `python-docx` instalado no worker e não
+/// dava para validar um build novo do PyInstaller nesta sessão de trabalho.
+#[tauri::command]
+fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&path, data).map_err(|e| e.to_string())
 }
 
 /// Formatação retroativa (o botão "Formatar" na Biblioteca e no fim do
@@ -796,6 +1162,24 @@ fn document_generate(
         let _ = app.emit("document://done", ());
     });
     Ok(())
+}
+
+/// Guarda (retry) um documento estruturado JÁ GERADO — recuperação sem
+/// chamar a IA de novo quando a gravação inicial falhou (ver Registro —
+/// 2026-08-11, "documento gerado mas não gravado"). O JSON do documento (e
+/// uso de tokens) vai por STDIN; os campos curtos vão como argumentos.
+#[tauri::command]
+async fn document_save(
+    transcription_id: i64, engine: String, profile: String, payload: String, user: Option<i64>,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec![
+        "document-save".into(),
+        "--transcription-id".into(), transcription_id.to_string(),
+        "--engine".into(), engine,
+        "--profile".into(), profile,
+    ];
+    push_user(&mut args, user);
+    run_cli_stdin_async(args, payload).await
 }
 
 /// Definições de armazenamento em vigor (pasta padrão + organização).
@@ -918,9 +1302,18 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_engines, check_key, list_credentials, save_credential, clear_credential,
             get_settings, set_settings, library, library_item, library_update, library_delete, library_ack,
-            format_engines, document_item, document_delete, document_generate,
+            format_engines, document_item, document_delete, document_generate, document_save,
             notebook_ensure_default, notebook_tree, notebook_collection_create, notebook_collection_delete,
-            notebook_note_create, notebook_note_item, notebook_note_update, notebook_note_delete,
+            notebook_note_create, notebook_note_item, notebook_note_open, notebook_note_update, notebook_note_delete,
+            notebook_save_document,
+            notebook_note_version_create, notebook_note_versions, notebook_note_version_restore,
+            notebook_annotation_create, notebook_annotation_list, notebook_annotation_resolve, notebook_annotation_delete,
+            notebook_reference_create, notebook_reference_list, notebook_reference_delete,
+            notebook_link_create, notebook_links, notebook_link_delete,
+            notebook_keyword_create, notebook_keyword_list, notebook_keyword_delete,
+            notebook_glossary_create, notebook_glossary_list, notebook_glossary_delete,
+            notebook_export, notebook_context_package_create, notebook_context_packages, notebook_context_package_item,
+            write_text_file, write_binary_file,
             list_system_fonts, db_check, db_check_secret, account, api_reset, api_admin_factor,
             account_suggest, admin, oauth_start, oauth_google, telemetry_event, telemetry_overview, support, transcribe
         ])

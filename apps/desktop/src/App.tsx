@@ -1,7 +1,12 @@
-import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  Document, Packer, Paragraph, TextRun, AlignmentType, BorderStyle,
+  Footer, PageNumber, convertInchesToTwip,
+} from "docx";
+import JSZip from "jszip";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import CodeMirror from "@uiw/react-codemirror";
@@ -18,6 +23,8 @@ import {
   Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw, UserRound,
   Database, Table2, Columns3, KeyRound, LockKeyhole, Filter, ChevronsLeft, ChevronsRight, Plus, Play, Code2,
   Save, FolderOpen, ArchiveRestore, Clock3, Copy, Network, BookOpen,
+  Bold, Italic, Underline, Highlighter, Heading2, List as ListIcon, ListOrdered,
+  MessageSquarePlus, Link2, History, PanelRight, CircleCheckBig, Download, Tag,
 } from "lucide-react";
 import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from "./i18n";
 import ErDiagram, { type ErScope } from "./ErDiagram";
@@ -169,6 +176,14 @@ type PreviewProfile = "detalhado" | "resumo_tecnico" | "estudo";
 type LibraryOpenRequest = {
   transcriptionId: number;
   openPreviewComposer: boolean;
+  nonce: number;
+};
+
+// ADF-02 fatia 4 ("abertura" da regra de passagem): mesmo padrão de
+// LibraryOpenRequest, para "Abrir no Caderno" navegar direto para a nota,
+// vinda de qualquer aba (por agora, só a Library usa isto).
+type NotebookOpenRequest = {
+  noteId: number;
   nonce: number;
 };
 
@@ -670,9 +685,111 @@ function libCacheKey(): string {
   return `${LIB_CACHE_PREFIX}::${s?.mode || "?"}::${s?.id ?? "?"}`;
 }
 
+// Mesmo padrão stale-while-revalidate para o Caderno (11/08/2026 — queixa de
+// lentidão: cada invoke em modo VPS passa pelo túnel SSH; abrir a árvore e
+// depois cada nota clicada esperava a viagem completa toda vez, mesmo
+// reabrindo algo já visto na mesma sessão). A árvore (coleções+notas, sem o
+// corpo) e o corpo de cada nota aberta ficam em cache local — mostra-se o
+// que já se tem NA HORA, o pedido fresco ao worker corre por trás e
+// substitui silenciosamente quando chega.
+const NB_TREE_CACHE_PREFIX = "upexnote-nb-tree-cache";
+const NB_NOTE_CACHE_PREFIX = "upexnote-nb-note-cache";
+
+function nbTreeCacheKey(): string {
+  const s = getSession();
+  return `${NB_TREE_CACHE_PREFIX}::${s?.mode || "?"}::${s?.id ?? "?"}`;
+}
+function readNbTreeCache(): { ts: string; collections: NBCollection[]; notes: NBNote[] } | null {
+  try {
+    const raw = localStorage.getItem(nbTreeCacheKey());
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    return c && Array.isArray(c.collections) ? c : null;
+  } catch {
+    return null;
+  }
+}
+function writeNbTreeCache(collections: NBCollection[], notes: NBNote[]) {
+  try {
+    localStorage.setItem(nbTreeCacheKey(), JSON.stringify({ ts: new Date().toISOString(), collections, notes }));
+  } catch { /* cache é best-effort */ }
+}
+function nbNoteCacheKey(noteId: number): string {
+  const s = getSession();
+  return `${NB_NOTE_CACHE_PREFIX}::${s?.mode || "?"}::${s?.id ?? "?"}::${noteId}`;
+}
+function readNbNoteCache(noteId: number): NBNoteDetail | null {
+  try {
+    const raw = localStorage.getItem(nbNoteCacheKey(noteId));
+    if (!raw) return null;
+    const c = JSON.parse(raw) as NBNoteDetail;
+    return c && c.id === noteId ? c : null;
+  } catch {
+    return null;
+  }
+}
+function writeNbNoteCache(note: NBNoteDetail) {
+  try {
+    localStorage.setItem(nbNoteCacheKey(note.id), JSON.stringify(note));
+  } catch { /* cache é best-effort */ }
+}
+/** Apagar uma nota tinha de limpar também a cópia em cache — senão uma nota
+ * já apagada no servidor podia "ressuscitar" visualmente ao ser reaberta
+ * (a leitura em cache acontece antes do pedido fresco confirmar o 404). */
+function removeNbNoteCache(noteId: number) {
+  try {
+    localStorage.removeItem(nbNoteCacheKey(noteId));
+  } catch { /* cache é best-effort */ }
+}
+
+// --------------------------------------------------------------------------
+// Fase C (análise arquitetural 2026-08-13): NotebooksView e LibraryView ficam
+// SEMPRE montados ao mesmo tempo (trocar de aba é só CSS, nunca desmonta) —
+// cada um tinha a SUA PRÓPRIA cópia de coleções/notas (`collections`/`notes`
+// em NotebooksView vs `nbCollections` em LibraryView, só para o dropdown do
+// diálogo "Salvar no Caderno"), sem invalidação nenhuma entre elas. Era essa
+// duplicação — não um bug isolado — a causa de "criei uma coleção nova e ela
+// não aparece do outro lado sem F5 manual". Este pequeno store, fora do
+// React, é a fonte única: qualquer mutação (aqui ou lá) passa por
+// `nbTreeSet`/`nbTreeUpdate`, e ambas as vistas leem-no com
+// `useSyncExternalStore` — portanto veem a mesma coisa sempre, no mesmo
+// instante, sem round-trip extra e sem coordenação manual entre componentes.
+type NbTreeState = { collections: NBCollection[]; notes: NBNote[] };
+let nbTreeState: NbTreeState = { collections: [], notes: [] };
+const nbTreeListeners = new Set<() => void>();
+function nbTreeSubscribe(cb: () => void): () => void {
+  nbTreeListeners.add(cb);
+  return () => { nbTreeListeners.delete(cb); };
+}
+function nbTreeGetSnapshot(): NbTreeState {
+  return nbTreeState;
+}
+function nbTreePublish(next: NbTreeState) {
+  nbTreeState = next;
+  writeNbTreeCache(next.collections, next.notes);
+  nbTreeListeners.forEach((cb) => cb());
+}
+/** Substitui coleções+notas por inteiro — usar após um load() fresco do
+ * worker ou ao hidratar a partir da cache local. */
+function nbTreeSet(collections: NBCollection[], notes: NBNote[]) {
+  nbTreePublish({ collections, notes });
+}
+/** Atualização otimista — usada pelas mutações (criar/apagar) para resposta
+ * imediata nas DUAS vistas de uma só vez, sem esperar o round-trip.
+ * IMPORTANTE: se precisar de mudar collections E notes na mesma operação
+ * (ex.: apagar uma coleção arrasta as notas dela), faça isso numa ÚNICA
+ * chamada a nbTreeUpdate — duas chamadas encadeadas seriam reentrantes sobre
+ * o mesmo estado do módulo e uma pisava a outra. */
+function nbTreeUpdate(updater: (prev: NbTreeState) => NbTreeState) {
+  nbTreePublish(updater(nbTreeState));
+}
+
 function clearLibCaches() {
   for (const k of Object.keys(localStorage)) {
-    if (k.startsWith(LIB_CACHE_PREFIX) || k.startsWith("upexnote-admin-cache")) localStorage.removeItem(k);
+    if (
+      k.startsWith(LIB_CACHE_PREFIX) || k.startsWith("upexnote-admin-cache") ||
+      k.startsWith(NB_TREE_CACHE_PREFIX) || k.startsWith(NB_NOTE_CACHE_PREFIX)
+    ) localStorage.removeItem(k);
   }
 }
 
@@ -691,10 +808,12 @@ function LibraryView({
   active,
   openRequest,
   onOpenRequestHandled,
+  onOpenInNotebook,
 }: {
   active: boolean;
   openRequest: LibraryOpenRequest | null;
   onOpenRequestHandled: () => void;
+  onOpenInNotebook: (noteId: number) => void;
 }) {
   const { t, locale } = useLang();
   const [summary, setSummary] = useState<LibSummary | null>(null);
@@ -706,6 +825,33 @@ function LibraryView({
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [docDetail, setDocDetail] = useState<DocDetail | null>(null);
   const [openingDocId, setOpeningDocId] = useState<number | null>(null);
+  // ADF-02 fatia 4 ("Salvar no Caderno"): seleção de destino antes de gravar.
+  const [nbDestOpen, setNbDestOpen] = useState<number | null>(null);
+  // Fase C (análise arquitetural 2026-08-13): já não é uma cópia própria —
+  // lê do mesmo store partilhado que o NotebooksView usa para `collections`.
+  // Uma coleção criada aqui (ver createDestinationCollection) aparece do
+  // outro lado no mesmo instante, sem F5 manual — antes eram duas árvores
+  // independentes que só se falavam por reload explícito.
+  const { collections: nbCollections } = useSyncExternalStore(nbTreeSubscribe, nbTreeGetSnapshot);
+  const [nbCollectionsLoading, setNbCollectionsLoading] = useState(false);
+  const [nbSelectedCollectionId, setNbSelectedCollectionId] = useState<number | null>(null);
+  const [nbSaving, setNbSaving] = useState(false);
+  const [nbSaveError, setNbSaveError] = useState("");
+  // Criar um novo caderno sem sair do diálogo de destino (antes só existia o
+  // caderno padrão automático — sem forma de criar um novo aqui).
+  const [nbNewCollectionOpen, setNbNewCollectionOpen] = useState(false);
+  const [nbDestNewCollectionTitle, setNbNewCollectionTitle] = useState("");
+  const [nbNewCollectionParentId, setNbNewCollectionParentId] = useState<number | null>(null);
+  const [nbCreatingCollection, setNbCreatingCollection] = useState(false);
+  // Recuperação sem custo extra de API (ver Registro — 2026-08-11 "geração
+  // perdida"): quando o documento gerou mas não gravou no banco, o conteúdo
+  // já gerado fica aqui para permitir "tentar guardar de novo" sem chamar o
+  // motor de IA outra vez.
+  const [pendingDocument, setPendingDocument] = useState<{
+    transcriptionId: number; engine: string; profile: string; document: any;
+    processingS: number | null; usage: { input_tokens?: number; output_tokens?: number } | null;
+  } | null>(null);
+  const [savingPendingDocument, setSavingPendingDocument] = useState(false);
   const [previewComposerOpen, setPreviewComposerOpen] = useState(false);
   const [formatEngines, setFormatEngines] = useState<FormatEngine[]>([]);
   const [formatEngineId, setFormatEngineId] = useState("");
@@ -790,6 +936,8 @@ function LibraryView({
     setPreviewComposerOpen(false);
     setPreviewStatus("");
     setPreviewValidationOk(null);
+    setNbDestOpen(null);
+    setNbSaveError("");
   }
 
   /** Abre um documento estruturado ja gerado (so leitura, ADF-01 passo 2). */
@@ -810,6 +958,112 @@ function LibraryView({
       setError(String(e));
     } finally {
       setOpeningDocId(null);
+    }
+  }
+
+  /** Abre o seletor de destino ("seleção de destino" da fatia 4) antes de
+   * gravar. Carrega a árvore de coleções, com a coleção padrão pré-selecionada
+   * (a raiz kind='notebook' — a mesma que notebook_ensure_default_collection
+   * cria/devolve no worker). */
+  async function openSaveDialog(documentId: number) {
+    setNbDestOpen(documentId);
+    setNbSaveError("");
+    setNbNewCollectionOpen(false);
+    setNbNewCollectionTitle("");
+    setNbNewCollectionParentId(null);
+    setNbCollectionsLoading(true);
+    try {
+      const raw = await invoke<string>("notebook_tree", { user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "error") {
+        setNbSaveError(obj.message);
+      } else {
+        const cols: NBCollection[] = obj.collections || [];
+        const notesList: NBNote[] = obj.notes || [];
+        // Publica no store partilhado (não só nesta vista) — o NotebooksView
+        // beneficia da mesma atualização fresca se estiver montado.
+        nbTreeSet(cols, notesList);
+        const def = cols.find((c) => c.parent_id === null && c.kind === "notebook");
+        setNbSelectedCollectionId(def ? def.id : (cols[0]?.id ?? null));
+      }
+    } catch (e) {
+      setNbSaveError(String(e));
+    } finally {
+      setNbCollectionsLoading(false);
+    }
+  }
+
+  /** Cria um caderno (ou pasta) novo sem sair do diálogo de destino — a
+   * hierarquia já existe no Caderno (pasta/projeto/caderno/secção via
+   * `collections.kind` + `parent_id`); isto só dá acesso a ela aqui também. */
+  async function createDestinationCollection() {
+    if (!nbDestNewCollectionTitle.trim()) return;
+    setNbCreatingCollection(true);
+    setNbSaveError("");
+    try {
+      const raw = await invoke<string>("notebook_collection_create", {
+        title: nbDestNewCollectionTitle.trim(),
+        parentId: nbNewCollectionParentId,
+        kind: "notebook",
+        user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok" || obj.id) {
+        const newCol: NBCollection = {
+          id: obj.id, parent_id: nbNewCollectionParentId, kind: "notebook",
+          title: nbDestNewCollectionTitle.trim(), position: 0, created_at: new Date().toISOString(),
+        };
+        // Publica no store partilhado — é isto que faz a coleção nova
+        // aparecer já na árvore do Caderno, sem esperar reload nenhum
+        // (bug relatado: "criei o TESTE e não apareceu no Notebook").
+        nbTreeUpdate((prev) => ({ ...prev, collections: [...prev.collections, newCol] }));
+        setNbSelectedCollectionId(obj.id);
+        setNbNewCollectionOpen(false);
+        setNbNewCollectionTitle("");
+      } else {
+        setNbSaveError(obj.message || t("nbDestNewCollectionFail"));
+      }
+    } catch (e) {
+      setNbSaveError(String(e));
+    } finally {
+      setNbCreatingCollection(false);
+    }
+  }
+
+  async function confirmSaveToNotebook() {
+    if (nbDestOpen == null) return;
+    setNbSaving(true);
+    setNbSaveError("");
+    try {
+      const raw = await invoke<string>("notebook_save_document", {
+        documentId: nbDestOpen, collectionId: nbSelectedCollectionId, user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        if (docDetail && docDetail.id === nbDestOpen) setDocDetail({ ...docDetail, notebook_note_id: obj.id });
+        setDetail((prev) => prev ? {
+          ...prev,
+          documents: (prev.documents || []).map((d) => d.id === nbDestOpen ? { ...d, notebook_note_id: obj.id } : d),
+        } : prev);
+        setNbDestOpen(null);
+        // o backend já devolve a nota completa nesta resposta — grava-a já
+        // na cache local ANTES de navegar, para o Caderno pintar o conteúdo
+        // na hora (é a primeira vez que esta nota existe, nunca teria cache
+        // sem isto, e o utilizador via sempre um "Loading..." logo a seguir
+        // a "guardado com sucesso" por causa disso).
+        if (obj.note) writeNbNoteCache(obj.note as NBNoteDetail);
+        // o Leonardo esperava, com razão, ir direto para o Caderno depois de
+        // gravar — antes disto ficava-se na prévia da Biblioteca, sem
+        // qualquer sinal visível de que a gravação (e a ligação à coleção
+        // nova) tinha sequer acontecido.
+        onOpenInNotebook(obj.id);
+      } else {
+        setNbSaveError(obj.message || t("nbSaveToNotebookFail"));
+      }
+    } catch (e) {
+      setNbSaveError(String(e));
+    } finally {
+      setNbSaving(false);
     }
   }
 
@@ -889,6 +1143,43 @@ function LibraryView({
     }
   }
 
+  /** Recuperação (ver Registro — 2026-08-11): guarda um documento que já foi
+   * gerado (custo de API já pago) mas cuja gravação inicial falhou — não
+   * chama a IA de novo, só reenvia o JSON já em memória. */
+  async function retrySavePendingDocument() {
+    if (!pendingDocument) return;
+    setSavingPendingDocument(true);
+    setError("");
+    try {
+      const raw = await invoke<string>("document_save", {
+        transcriptionId: pendingDocument.transcriptionId,
+        engine: pendingDocument.engine,
+        profile: pendingDocument.profile,
+        payload: JSON.stringify({
+          document: pendingDocument.document,
+          processing_s: pendingDocument.processingS,
+          usage: pendingDocument.usage,
+        }),
+        user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        const documentId = Number(obj.document_id);
+        const transcriptId = pendingDocument.transcriptionId;
+        setPendingDocument(null);
+        setPreviewStatus(t("previewGenerated"));
+        await openItem(transcriptId);
+        if (Number.isFinite(documentId) && documentId > 0) await openDocument(documentId);
+      } else {
+        setPreviewStatus(obj.message || t("previewSaveRetryFail"));
+      }
+    } catch (e) {
+      setPreviewStatus(t("previewSaveRetryFail") + " " + String(e));
+    } finally {
+      setSavingPendingDocument(false);
+    }
+  }
+
   useEffect(() => {
     const unlistenEvent = listen<string>("document://event", (event) => {
       let obj: any;
@@ -906,9 +1197,23 @@ function LibraryView({
         setPreviewStatus(obj.ok ? t("previewValidationOk") : t("previewValidationFail"));
       } else if (obj.type === "format_result") {
         setPreviewGenerating(false);
-        setPreviewStatus(t("previewGenerated"));
         const documentId = Number(obj.document_id);
         const transcriptId = detail?.id;
+        if (obj.saved === false) {
+          // Gerado (custo de API já pago) mas não gravado no banco — guarda
+          // o documento em memória para "tentar guardar de novo" sem chamar
+          // a IA outra vez (ver Registro — 2026-08-11).
+          setPreviewStatus(t("previewGeneratedNotSaved"));
+          if (transcriptId) {
+            setPendingDocument({
+              transcriptionId: transcriptId, engine: obj.engine, profile: obj.profile,
+              document: obj.document, processingS: obj.processing_s ?? null, usage: obj.usage ?? null,
+            });
+          }
+          return;
+        }
+        setPreviewStatus(t("previewGenerated"));
+        setPendingDocument(null);
         if (transcriptId) {
           void (async () => {
             await openItem(transcriptId);
@@ -1030,14 +1335,84 @@ function LibraryView({
   // detalhe do transcript, e o "voltar" dela devolve ao transcript de origem.
   if (detail && docDetail) {
     return (
-      <DocumentReader
-        doc={docDetail}
-        t={t}
-        locale={locale}
-        onBack={() => setDocDetail(null)}
-        engineLabel={engLabel}
-        fmtDate={fmtDate}
-      />
+      <>
+        <DocumentReader
+          doc={docDetail}
+          t={t}
+          locale={locale}
+          onBack={() => { setDocDetail(null); setNbDestOpen(null); setNbSaveError(""); }}
+          engineLabel={engLabel}
+          fmtDate={fmtDate}
+          onSaveToNotebook={() => openSaveDialog(docDetail.id)}
+          onOpenInNotebook={onOpenInNotebook}
+          savingToNotebook={nbSaving && nbDestOpen === docDetail.id}
+        />
+        {nbDestOpen != null && (
+          <div className="modal-overlay" role="presentation">
+            <section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="nb-save-title">
+              <h2 id="nb-save-title">{t("nbChooseDestination")}</h2>
+              {nbCollectionsLoading ? (
+                <div className="nb-loading">{t("nbLoading")}</div>
+              ) : (
+                <>
+                  <label className="nb-dest-label">
+                    <span>{t("nbDestinationLabel")}</span>
+                    <select
+                      value={nbSelectedCollectionId ?? ""}
+                      onChange={(e) => setNbSelectedCollectionId(e.currentTarget.value ? Number(e.currentTarget.value) : null)}
+                    >
+                      {nbCollections.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                    </select>
+                  </label>
+                  {!nbNewCollectionOpen ? (
+                    <button className="secondary nb-new-collection-toggle" onClick={() => setNbNewCollectionOpen(true)}>
+                      <Plus size={14} aria-hidden="true" /> {t("nbDestNewCollection")}
+                    </button>
+                  ) : (
+                    <div className="nb-new-collection-form">
+                      <input
+                        placeholder={t("nbDestNewCollectionTitle")}
+                        value={nbDestNewCollectionTitle}
+                        onChange={(e) => setNbNewCollectionTitle(e.target.value)}
+                      />
+                      <label className="nb-dest-label">
+                        <span>{t("nbDestNewCollectionParent")}</span>
+                        <select
+                          value={nbNewCollectionParentId ?? ""}
+                          onChange={(e) => setNbNewCollectionParentId(e.currentTarget.value ? Number(e.currentTarget.value) : null)}
+                        >
+                          <option value="">{t("nbDestNewCollectionRoot")}</option>
+                          {nbCollections.filter((c) => c.kind !== "notebook").map((c) => (
+                            <option key={c.id} value={c.id}>{c.title}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="telemetry-consent-actions">
+                        <button
+                          disabled={!nbDestNewCollectionTitle.trim() || nbCreatingCollection}
+                          onClick={createDestinationCollection}
+                        >
+                          {nbCreatingCollection ? <><span className="spinner" /> {t("nbSaving")}</> : t("nbDestNewCollectionCreate")}
+                        </button>
+                        <button className="secondary" onClick={() => setNbNewCollectionOpen(false)} disabled={nbCreatingCollection}>
+                          {t("cancel")}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              {nbSaveError && <div className="key-warn" role="alert">{nbSaveError}</div>}
+              <div className="telemetry-consent-actions">
+                <button onClick={confirmSaveToNotebook} disabled={nbSaving || nbCollectionsLoading || nbSelectedCollectionId == null}>
+                  {nbSaving ? <><span className="spinner" /> {t("nbSaving")}</> : t("nbSaveConfirm")}
+                </button>
+                <button className="secondary" onClick={() => setNbDestOpen(null)} disabled={nbSaving}>{t("cancel")}</button>
+              </div>
+            </section>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -1112,6 +1487,14 @@ function LibraryView({
           )}
         </div>
         <section className="preview-section" aria-labelledby="preview-section-title">
+          {pendingDocument && pendingDocument.transcriptionId === detail.id && (
+            <div className="key-warn preview-pending-save" role="alert">
+              <span>{t("previewPendingSaveHint")}</span>
+              <button disabled={savingPendingDocument} onClick={retrySavePendingDocument}>
+                {savingPendingDocument ? t("nbSaving") : t("previewPendingSaveRetry")}
+              </button>
+            </div>
+          )}
           <div className="preview-section-head">
             <div className="preview-section-copy">
               <span className="preview-kicker">{t("previewKicker")}</span>
@@ -1422,11 +1805,11 @@ function LibraryView({
   );
 }
 
-// ADF-02 fatia 3 (fundação `notebooks`, ver docs/NOTEBOOK_ARCHITECTURE.md
-// secções 6, 7 e 14): árvore de coleções (pasta/projeto/caderno/secção) +
-// nota vazia. Deliberadamente simples — sem editor rico (fatia 5), sem
-// "Salvar no Caderno" a partir da prévia (fatia 4): só criar/abrir/editar/
-// apagar uma nota de texto simples dentro da árvore.
+// ADF-02 (ver docs/NOTEBOOK_ARCHITECTURE.md secções 6, 7, 9 e 14): árvore de
+// coleções (pasta/projeto/caderno/secção) + notas com editor rico essencial
+// (fatia 5: negrito/itálico/sublinhado/destaque/títulos/listas + versões
+// recuperáveis) e anotações/referências ancoradas (fatia 6). "Salvar no
+// Caderno" a partir da prévia é a fatia 4, tratada noutro componente.
 type NBCollection = {
   id: number;
   parent_id: number | null;
@@ -1448,11 +1831,236 @@ type NBNoteDetail = {
   title: string | null;
   body: string | null;
 };
+// fatia 6 ("Anotações e referências", ver NOTEBOOK_ARCHITECTURE.md secção 9):
+// âncora híbrida simplificada nesta primeira passagem — block_id fica null
+// (a nota inteira nesta fatia ainda não tem blocos com ID próprio; o editor
+// é uma única área rica), start/end_offset e' contra o texto simples da
+// nota inteira. Suficiente para "comentar um trecho" sem esperar pelo
+// modelo de blocos completo.
+type NBAnnotation = {
+  id: number;
+  block_id: string | null;
+  start_offset: number | null;
+  end_offset: number | null;
+  selected_text: string | null;
+  context_snippet: string | null;
+  body: string;
+  status: "valid" | "moved" | "broken";
+  resolved_at: string | null;
+  created_at: string;
+};
+type NBReference = {
+  id: number;
+  title: string | null;
+  url: string | null;
+  note_text: string | null;
+  created_at: string;
+};
+type NBVersion = { id: number; created_at: string; title: string | null };
+// Backlinks (11/08/2026): ligação direcionada nota→nota. `outgoing` é para
+// onde esta nota aponta; `incoming` são os "backlinks" — quem aponta para
+// esta nota — já resolvidos com o título da outra nota.
+type NBLinkItem = { id: number; note_id: number; title: string | null; created_at: string };
+// fatia 7 ("Dicionário e glossário"): source fica sempre "manual" nesta
+// primeira passagem — sem provedor externo de dicionário ligado ainda.
+type NBKeyword = { id: number; term: string; created_at: string };
+type NBGlossaryEntry = {
+  id: number; term: string; definition: string; source: string; language: string | null; created_at: string;
+};
+// fatia 8 ("Exportação e pacote para IA"): camadas selecionáveis.
+type NBExportLayer = "body" | "annotations" | "references" | "glossary" | "links" | "lineage";
 
-function NotebooksView({ active }: { active: boolean }) {
+// Sanitização mínima do HTML do editor rico (fatia 5) — sem dependência
+// externa: remove tudo fora de um allowlist curto e despe atributos, exceto
+// background-color (usado pelo destaque). O corpo nunca vem de fora da app
+// (é sempre o que o próprio contentEditable produziu), mas mesmo assim não
+// se confia cegamente em innerHTML vindo de execCommand.
+const NB_ALLOWED_TAGS = new Set([
+  "P", "BR", "B", "STRONG", "I", "EM", "U", "MARK", "H1", "H2", "H3",
+  "UL", "OL", "LI", "DIV", "SPAN",
+]);
+function nbSanitizeHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  function clean(node: Node) {
+    Array.from(node.childNodes).forEach((child) => {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const el = child as HTMLElement;
+        if (!NB_ALLOWED_TAGS.has(el.tagName)) {
+          const parent = el.parentNode;
+          if (parent) {
+            while (el.firstChild) parent.insertBefore(el.firstChild, el);
+            parent.removeChild(el);
+          }
+          return;
+        }
+        const bg = el.style.backgroundColor;
+        Array.from(el.attributes).forEach((attr) => el.removeAttribute(attr.name));
+        if (bg) el.style.backgroundColor = bg;
+        clean(el);
+      } else if (child.nodeType !== Node.TEXT_NODE && child.nodeType !== Node.COMMENT_NODE) {
+        node.removeChild(child);
+      } else if (child.nodeType === Node.COMMENT_NODE) {
+        node.removeChild(child);
+      }
+    });
+  }
+  clean(doc.body);
+  return doc.body.innerHTML;
+}
+function nbEscapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// --- Modelo de blocos com ID estável (11/08/2026) -------------------------
+// Até aqui `note_contents.body` era um blob único de HTML — sem forma de
+// dizer "este comentário pertence a ESTE parágrafo". Agora o corpo guardado
+// é uma lista JSON de blocos `{id, tag, html}`: cada filho direto do editor
+// carrega um `data-bid` estável (gerado uma vez, preservado enquanto o nó
+// DOM existir — o browser não recria o <p> só porque a pessoa digitou nele).
+// Isto NÃO troca de biblioteca de editor (continua contentEditable nativo,
+// zero dependência nova — decisão de risco de build, ver PROJECT_CONTEXT.md)
+// — só formaliza a fronteira de cada bloco para anotações/versões poderem
+// referenciar um trecho específico em vez da nota inteira.
+type NBBlock = { id: string; tag: string; html: string };
+const NB_BLOCK_TAGS = new Set(["P", "H1", "H2", "H3", "UL", "OL", "DIV"]);
+
+function nbNewBlockId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+/** Devolve o data-bid do elemento, atribuindo um novo se ainda não tiver —
+ * mutação idempotente: chamar de novo no mesmo nó devolve sempre o mesmo id. */
+function nbBlockIdOf(el: HTMLElement): string {
+  let id = el.getAttribute("data-bid");
+  if (!id) {
+    id = nbNewBlockId();
+    el.setAttribute("data-bid", id);
+  }
+  return id;
+}
+/** Serializa os filhos diretos do editor em blocos {id, tag, html} —
+ * chamado ao guardar. Atribui id a blocos novos (ex.: parágrafo criado com
+ * Enter) no próprio DOM, para ficar estável se o utilizador continuar a
+ * editar/selecionar antes do próximo guardado. */
+function nbSerializeBlocks(root: HTMLElement): NBBlock[] {
+  const blocks: NBBlock[] = [];
+  for (const child of Array.from(root.children)) {
+    const el = child as HTMLElement;
+    const tag = NB_BLOCK_TAGS.has(el.tagName) ? el.tagName : "P";
+    blocks.push({ id: nbBlockIdOf(el), tag, html: nbSanitizeHtml(el.innerHTML) });
+  }
+  return blocks;
+}
+/** Corpo → HTML pronto para `editorRef.innerHTML`, com `data-bid` em cada
+ * bloco. Aceita três formatos, do mais novo ao mais antigo (retrocompatível
+ * com notas já criadas antes desta mudança):
+ *  1. JSON de blocos (formato atual) — cada bloco vira `<tag data-bid=…>`.
+ *  2. Blob de HTML solto (fatias 5–8 iniciais) — cada elemento de topo vira
+ *     um bloco novo, com id atribuído agora (nunca existiu antes).
+ *  3. Texto simples (fatias 3/4, ou "Salvar no Caderno") — cada parágrafo
+ *     separado por linha em branco vira um bloco `<p>`.
+ */
+function nbBodyToEditableHtml(body: string | null): string {
+  const raw = (body || "").trim();
+  if (!raw) return `<p data-bid="${nbNewBlockId()}"></p>`;
+
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.every((b) => b && typeof b === "object" && "html" in b)) {
+        const blocks = parsed as NBBlock[];
+        if (blocks.length) {
+          return blocks
+            .map((b) => {
+              const tag = NB_BLOCK_TAGS.has((b.tag || "").toUpperCase()) ? b.tag.toUpperCase() : "P";
+              const id = b.id || nbNewBlockId();
+              return `<${tag} data-bid="${id}">${nbSanitizeHtml(b.html || "")}</${tag}>`;
+            })
+            .join("");
+        }
+      }
+    } catch {
+      // não era JSON de blocos válido — cai para os formatos mais antigos abaixo.
+    }
+  }
+
+  if (raw.includes("<") && /<\/?[a-z][\s\S]*>/i.test(raw)) {
+    const doc = new DOMParser().parseFromString(nbSanitizeHtml(raw), "text/html");
+    const children = Array.from(doc.body.children);
+    if (children.length) {
+      return children
+        .map((el) => {
+          const tag = NB_BLOCK_TAGS.has(el.tagName) ? el.tagName : "P";
+          return `<${tag} data-bid="${nbNewBlockId()}">${(el as HTMLElement).innerHTML}</${tag}>`;
+        })
+        .join("");
+    }
+    return `<p data-bid="${nbNewBlockId()}">${doc.body.innerHTML}</p>`;
+  }
+
+  const paras = raw.split(/\n{2,}/).filter((p) => p.trim());
+  if (!paras.length) return `<p data-bid="${nbNewBlockId()}"></p>`;
+  return paras
+    .map((p) => `<p data-bid="${nbNewBlockId()}">${nbEscapeHtml(p).replace(/\n/g, "<br/>")}</p>`)
+    .join("");
+}
+/** Offset (contra o texto simples do nó `root`) do ponto (node, offset) de
+ * um Range — usado tanto para o offset dentro de um bloco (root = o bloco)
+ * como, no fallback multi-bloco, contra a nota inteira (root = o editor). */
+function nbTextOffset(root: Node, target: Node, targetOffset: number): number {
+  let count = 0;
+  function walk(n: Node): boolean {
+    if (n === target) {
+      count += targetOffset;
+      return true;
+    }
+    if (n.nodeType === Node.TEXT_NODE) {
+      count += (n.textContent || "").length;
+      return false;
+    }
+    for (const child of Array.from(n.childNodes)) {
+      if (walk(child)) return true;
+    }
+    return false;
+  }
+  walk(root);
+  return count;
+}
+/** Acha o bloco de topo (filho direto do editor) que contém `node` e devolve
+ * o offset relativo a ESSE bloco — não à nota inteira. Se a seleção
+ * atravessar mais de um bloco (start e end em blocos diferentes), quem chama
+ * decide o fallback (âncora a nível de nota, `block_id: null`). */
+function nbFindBlock(root: HTMLElement, node: Node): HTMLElement | null {
+  let cur: Node | null = node;
+  while (cur && cur.parentNode !== root) cur = cur.parentNode;
+  return cur instanceof HTMLElement ? cur : null;
+}
+
+function NotebooksView({
+  active, openRequest, onOpenRequestHandled,
+}: {
+  active: boolean;
+  openRequest: NotebookOpenRequest | null;
+  onOpenRequestHandled: () => void;
+}) {
   const { t } = useLang();
-  const [collections, setCollections] = useState<NBCollection[]>([]);
-  const [notes, setNotes] = useState<NBNote[]>([]);
+  // Fase C (análise arquitetural 2026-08-13): coleções/notas já não são
+  // useState local — vêm do store partilhado `nbTree*`, a mesma fonte que a
+  // Biblioteca (diálogo "Salvar no Caderno") lê. `setCollections`/`setNotes`
+  // abaixo são wrappers finos para manter o resto desta função inalterado.
+  const { collections, notes } = useSyncExternalStore(nbTreeSubscribe, nbTreeGetSnapshot);
+  const setCollections = useCallback((updater: NBCollection[] | ((prev: NBCollection[]) => NBCollection[])) => {
+    nbTreeUpdate((prev) => ({
+      ...prev,
+      collections: typeof updater === "function" ? (updater as (p: NBCollection[]) => NBCollection[])(prev.collections) : updater,
+    }));
+  }, []);
+  const setNotes = useCallback((updater: NBNote[] | ((prev: NBNote[]) => NBNote[])) => {
+    nbTreeUpdate((prev) => ({
+      ...prev,
+      notes: typeof updater === "function" ? (updater as (p: NBNote[]) => NBNote[])(prev.notes) : updater,
+    }));
+  }, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -1461,15 +2069,116 @@ function NotebooksView({ active }: { active: boolean }) {
   const [selectedNoteId, setSelectedNoteId] = useState<number | null>(null);
   const [noteDetail, setNoteDetail] = useState<NBNoteDetail | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
-  const [noteBody, setNoteBody] = useState("");
   const [noteLoading, setNoteLoading] = useState(false);
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteDirty, setNoteDirty] = useState(false);
   const [confirmDeleteNote, setConfirmDeleteNote] = useState(false);
   const [confirmDeleteCollection, setConfirmDeleteCollection] = useState<number | null>(null);
+  const [confirmDeleteNoteRow, setConfirmDeleteNoteRow] = useState<number | null>(null);
+  // fatia 5 (editor rico): body deixou de viver em state — o contentEditable
+  // é a fonte da verdade em memória; só se lê o DOM ao guardar/selecionar.
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  // Colunas redimensionáveis (árvore | editor | painel lateral) — o Leonardo
+  // pediu para poder arrastar a fronteira em vez de larguras fixas. Guarda-se
+  // por sessão do dispositivo (localStorage), com limites para não colapsar
+  // ou esticar ao ponto de ficar inutilizável.
+  const NB_SIDEBAR_MIN = 200, NB_SIDEBAR_MAX = 480, NB_SIDEBAR_DEFAULT = 280;
+  const NB_PANEL_MIN = 220, NB_PANEL_MAX = 460, NB_PANEL_DEFAULT = 260;
+  const [nbSidebarWidth, setNbSidebarWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("upexnote-nb-sidebar-width"));
+    return Number.isFinite(saved) && saved >= NB_SIDEBAR_MIN && saved <= NB_SIDEBAR_MAX ? saved : NB_SIDEBAR_DEFAULT;
+  });
+  const [nbSidePanelWidth, setNbSidePanelWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("upexnote-nb-panel-width"));
+    return Number.isFinite(saved) && saved >= NB_PANEL_MIN && saved <= NB_PANEL_MAX ? saved : NB_PANEL_DEFAULT;
+  });
+  function startResize(which: "sidebar" | "panel") {
+    return (downEvent: ReactMouseEvent) => {
+      downEvent.preventDefault();
+      const startX = downEvent.clientX;
+      const startWidth = which === "sidebar" ? nbSidebarWidth : nbSidePanelWidth;
+      const min = which === "sidebar" ? NB_SIDEBAR_MIN : NB_PANEL_MIN;
+      const max = which === "sidebar" ? NB_SIDEBAR_MAX : NB_PANEL_MAX;
+      function onMove(moveEvent: MouseEvent) {
+        // o painel lateral fica à direita — arrastar para a esquerda deve
+        // alargá-lo, por isso o delta entra invertido nesse caso.
+        const delta = which === "sidebar" ? moveEvent.clientX - startX : startX - moveEvent.clientX;
+        const next = Math.min(max, Math.max(min, startWidth + delta));
+        if (which === "sidebar") setNbSidebarWidth(next); else setNbSidePanelWidth(next);
+      }
+      function onUp() {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        // a persistência em si corre no useEffect (abaixo), reagindo ao
+        // estado já atualizado — aqui só se larga os listeners.
+      }
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+  }
+  useEffect(() => {
+    localStorage.setItem("upexnote-nb-sidebar-width", String(nbSidebarWidth));
+  }, [nbSidebarWidth]);
+  useEffect(() => {
+    localStorage.setItem("upexnote-nb-panel-width", String(nbSidePanelWidth));
+  }, [nbSidePanelWidth]);
+  // fatia 6 (anotações/referências) + fatia 5 (versões): painel lateral.
+  const [nbPanelOpen, setNbPanelOpen] = useState(true);
+  const [nbPanelTab, setNbPanelTab] = useState<
+    "annotations" | "references" | "links" | "glossary" | "export" | "versions"
+  >("annotations");
+  const [annotations, setAnnotations] = useState<NBAnnotation[]>([]);
+  const [references, setReferences] = useState<NBReference[]>([]);
+  // Backlinks
+  const [outgoingLinks, setOutgoingLinks] = useState<NBLinkItem[]>([]);
+  const [incomingLinks, setIncomingLinks] = useState<NBLinkItem[]>([]);
+  const [linkTargetId, setLinkTargetId] = useState("");
+  const [savingLink, setSavingLink] = useState(false);
+  const [versions, setVersions] = useState<NBVersion[]>([]);
+  const [versionsLoaded, setVersionsLoaded] = useState(false);
+  const [savingVersion, setSavingVersion] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState<number | null>(null);
+  const [selectionInfo, setSelectionInfo] = useState<
+    { blockId: string | null; start: number; end: number; text: string; context: string } | null
+  >(null);
+  const [annotationDraft, setAnnotationDraft] = useState("");
+  const [savingAnnotation, setSavingAnnotation] = useState(false);
+  // Popup flutuante ao selecionar texto no corpo da nota (pedido explícito do
+  // Leonardo: selecionar/clicar com o botão direito na palavra deve abrir um
+  // balãozinho ali mesmo, com "Dicionário" e "Comentário" — não só a aba lateral).
+  const [selectionRect, setSelectionRect] = useState<{ top: number; left: number; bottom: number } | null>(null);
+  const [selectionMenu, setSelectionMenu] = useState<"comment" | "dictionary" | null>(null);
+  const [dictDefinition, setDictDefinition] = useState("");
+  const [dictLanguage, setDictLanguage] = useState("pt-BR");
+  const [dictLoading, setDictLoading] = useState(false);
+  const [dictError, setDictError] = useState("");
+  const [savingDictEntry, setSavingDictEntry] = useState(false);
+  const [refTitle, setRefTitle] = useState("");
+  const [refUrl, setRefUrl] = useState("");
+  const [refNote, setRefNote] = useState("");
+  const [savingReference, setSavingReference] = useState(false);
+  // fatia 7 (dicionário/glossário)
+  const [keywords, setKeywords] = useState<NBKeyword[]>([]);
+  const [glossary, setGlossary] = useState<NBGlossaryEntry[]>([]);
+  const [kwTerm, setKwTerm] = useState("");
+  const [savingKeyword, setSavingKeyword] = useState(false);
+  const [glTerm, setGlTerm] = useState("");
+  const [glDefinition, setGlDefinition] = useState("");
+  const [glLanguage, setGlLanguage] = useState("");
+  const [glSource, setGlSource] = useState<string | null>(null);
+  const [glLookupLoading, setGlLookupLoading] = useState(false);
+  const [glLookupError, setGlLookupError] = useState("");
+  const [savingGlossary, setSavingGlossary] = useState(false);
+  // fatia 8 (exportação e pacote para IA): um único "Exportar" gera um .zip
+  // com os 3 ficheiros (.md cru, .docx formatado, prompt para IA) e pergunta
+  // onde guardar via diálogo nativo — nada fica só na área de transferência.
+  const [exportLayers, setExportLayers] = useState<Set<NBExportLayer>>(new Set(["body"]));
+  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
 
-  async function load() {
-    setLoading(true);
+  async function load(fromCache?: boolean) {
+    if (!fromCache) setLoading(true);
     setError("");
     try {
       // Garante a coleção padrão antes de listar — primeira utilização nunca
@@ -1478,17 +2187,20 @@ function NotebooksView({ active }: { active: boolean }) {
       const raw = await invoke<string>("notebook_tree", { user: getSession()?.id ?? null });
       const obj = JSON.parse(raw);
       if (obj.type === "error") {
-        setError(obj.message);
+        if (!fromCache) setError(obj.message);
       } else {
-        setCollections(obj.collections || []);
-        setNotes(obj.notes || []);
+        const cols: NBCollection[] = obj.collections || [];
+        const notesList: NBNote[] = obj.notes || [];
+        // nbTreeSet publica no store partilhado (grava cache internamente) —
+        // a Biblioteca vê esta atualização de imediato, sem F5 manual.
+        nbTreeSet(cols, notesList);
         setExpanded((prev) => {
           if (prev.size) return prev;
-          return new Set((obj.collections || []).filter((c: NBCollection) => c.parent_id === null).map((c: NBCollection) => c.id));
+          return new Set(cols.filter((c) => c.parent_id === null).map((c) => c.id));
         });
       }
     } catch (e) {
-      setError(String(e));
+      if (!fromCache) setError(String(e));
     } finally {
       setLoading(false);
     }
@@ -1497,9 +2209,39 @@ function NotebooksView({ active }: { active: boolean }) {
   useEffect(() => {
     if (active && !loadedOnce) {
       setLoadedOnce(true);
-      load();
+      // Mostra já o que ficou da última vez (sem esperar o túnel/DB) — o
+      // load() a seguir é a atualização em fundo, silenciosa se falhar.
+      const cached = readNbTreeCache();
+      if (cached) {
+        nbTreeSet(cached.collections, cached.notes);
+        setExpanded((prev) => {
+          if (prev.size) return prev;
+          return new Set(cached.collections.filter((c) => c.parent_id === null).map((c) => c.id));
+        });
+      }
+      load(Boolean(cached));
     }
   }, [active, loadedOnce]);
+
+  // "Abrir no Caderno" (fatia 4): chegada de outra aba com uma nota já
+  // identificada — abre direto, sem o utilizador ter de a procurar na árvore.
+  useEffect(() => {
+    if (!active || !openRequest) return;
+    let cancelled = false;
+    void (async () => {
+      // um pedido "abrir no caderno" vindo de outra aba (Biblioteca) pode
+      // trazer uma coleção nova criada há segundos (p.ex. no diálogo de
+      // "Salvar no Caderno") — esta instância da árvore já pode estar
+      // montada há muito e nunca mais recarregada (loadedOnce só corre uma
+      // vez), por isso sem isto a coleção/nota nova não aparecia até um F5
+      // manual. Aqui vale a pena pagar por um load() real, não em cache.
+      await Promise.all([openNote(openRequest.noteId), load()]);
+      if (!cancelled) onOpenRequestHandled();
+    })();
+    return () => { cancelled = true; };
+    // nonce representa um pedido deliberado, mesmo quando o id se repete.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, openRequest?.nonce]);
 
   function toggleExpanded(id: number) {
     setExpanded((prev) => {
@@ -1510,29 +2252,128 @@ function NotebooksView({ active }: { active: boolean }) {
     });
   }
 
+  async function loadAnnotations(noteId: number) {
+    try {
+      const raw = await invoke<string>("notebook_annotation_list", { noteId, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "notebook_annotation_list") setAnnotations(obj.items || []);
+    } catch { /* painel lateral — falha aqui não deve travar a leitura da nota */ }
+  }
+
+  async function loadReferences(noteId: number) {
+    try {
+      const raw = await invoke<string>("notebook_reference_list", { noteId, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "notebook_reference_list") setReferences(obj.items || []);
+    } catch { /* idem */ }
+  }
+
+  async function loadLinks(noteId: number) {
+    try {
+      const raw = await invoke<string>("notebook_links", { noteId, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "notebook_links") {
+        setOutgoingLinks(obj.outgoing || []);
+        setIncomingLinks(obj.incoming || []);
+      }
+    } catch { /* idem */ }
+  }
+
+  async function loadVersions(noteId: number) {
+    try {
+      const raw = await invoke<string>("notebook_note_versions", { noteId, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "notebook_note_versions") setVersions(obj.versions || []);
+      setVersionsLoaded(true);
+    } catch { /* idem */ }
+  }
+
+  async function loadKeywords(noteId: number) {
+    try {
+      const raw = await invoke<string>("notebook_keyword_list", { noteId, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "notebook_keyword_list") setKeywords(obj.items || []);
+    } catch { /* painel lateral */ }
+  }
+
+  async function loadGlossary(noteId: number) {
+    try {
+      const raw = await invoke<string>("notebook_glossary_list", { noteId, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "notebook_glossary_list") setGlossary(obj.items || []);
+    } catch { /* idem */ }
+  }
+
   async function openNote(id: number) {
+    // sem isto, um erro antigo (p.ex. "Nota #2 não encontrada" de uma nota já
+    // apagada) ficava pendurado no ecrã por cima do conteúdo de uma nota
+    // diferente, válida, aberta a seguir — o erro nunca era limpo ao trocar.
+    setError("");
     setSelectedNoteId(id);
-    setNoteLoading(true);
     setNoteDetail(null);
     setConfirmDeleteNote(false);
+    setAnnotations([]);
+    setReferences([]);
+    setOutgoingLinks([]);
+    setIncomingLinks([]);
+    setLinkTargetId("");
+    setVersions([]);
+    setVersionsLoaded(false);
+    setSelectionInfo(null);
+    setAnnotationDraft("");
+    setKeywords([]);
+    setGlossary([]);
+    setExportStatus("");
+    // Mostra já o corpo da última vez que esta nota foi aberta nesta sessão
+    // (sem esperar o túnel/DB) — só entra em "a carregar" se não houver nada
+    // em cache; o pedido fresco corre sempre por trás e substitui em silêncio.
+    const cached = readNbNoteCache(id);
+    if (cached) {
+      setNoteDetail(cached);
+      setNoteTitle(cached.title || "");
+      setNoteDirty(false);
+    } else {
+      setNoteLoading(true);
+    }
     try {
-      const raw = await invoke<string>("notebook_note_item", { id, user: getSession()?.id ?? null });
+      // Análise arquitetural 2026-08-13, fase B: antes eram 6 invokes
+      // separados (item + anotações + referências + links + keywords +
+      // glossário), cada um um processo/handshake próprio — agora é 1 só.
+      const raw = await invoke<string>("notebook_note_open", { id, user: getSession()?.id ?? null });
       const obj = JSON.parse(raw);
-      if (obj.type === "notebook_note_item") {
-        const item = obj.item as NBNoteDetail;
+      if (obj.type === "notebook_note_open") {
+        const item = obj.note as NBNoteDetail;
         setNoteDetail(item);
         setNoteTitle(item.title || "");
-        setNoteBody(item.body || "");
         setNoteDirty(false);
-      } else {
+        writeNbNoteCache(item);
+        // o contentEditable ainda não está montado neste render (noteDetail
+        // acabou de mudar) — o useEffect abaixo (keyed em noteDetail?.id)
+        // grava o HTML assim que a div existir.
+        setAnnotations(obj.annotations || []);
+        setReferences(obj.references || []);
+        setOutgoingLinks(obj.links?.outgoing || []);
+        setIncomingLinks(obj.links?.incoming || []);
+        setKeywords(obj.keywords || []);
+        setGlossary(obj.glossary || []);
+      } else if (!cached) {
         setError(obj.message || t("nbOpenFail"));
       }
     } catch (e) {
-      setError(String(e));
+      if (!cached) setError(String(e));
     } finally {
       setNoteLoading(false);
     }
   }
+
+  // Injeta o corpo (convertido/sanitizado) no contentEditable assim que a
+  // nota muda — não dá para fazer isto inline no render porque a div é
+  // "não controlada" de propósito (execCommand mexe no DOM diretamente).
+  useEffect(() => {
+    if (noteDetail && editorRef.current) {
+      editorRef.current.innerHTML = nbBodyToEditableHtml(noteDetail.body);
+    }
+  }, [noteDetail?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function createNote(collectionId: number) {
     setBusyCollectionId(collectionId);
@@ -1543,8 +2384,20 @@ function NotebooksView({ active }: { active: boolean }) {
       });
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
-        await load();
-        await openNote(obj.id);
+        // insere já a nota nova na árvore em memória (sem esperar por um
+        // "notebook_tree" completo) e abre-a de imediato — o load() completo
+        // corre a seguir, em fundo, só para repor ordenação/metadados exatos.
+        const optimistic: NBNote = {
+          id: obj.id, collection_id: collectionId, title: null,
+          created_at: new Date().toISOString(), edited_at: null,
+        };
+        setNotes((prev) => {
+          const next = [...prev, optimistic];
+          writeNbTreeCache(collections, next);
+          return next;
+        });
+        void openNote(obj.id);
+        void load(true);
       } else {
         setError(obj.message || t("nbCreateFail"));
       }
@@ -1566,7 +2419,16 @@ function NotebooksView({ active }: { active: boolean }) {
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
         if (parentId !== null) setExpanded((prev) => new Set(prev).add(parentId));
-        await load();
+        const optimistic: NBCollection = {
+          id: obj.id, parent_id: parentId, kind, title: title.trim(),
+          position: collections.length, created_at: new Date().toISOString(),
+        };
+        setCollections((prev) => {
+          const next = [...prev, optimistic];
+          writeNbTreeCache(next, notes);
+          return next;
+        });
+        void load(true);
       } else {
         setError(obj.message || t("nbCreateFail"));
       }
@@ -1586,7 +2448,19 @@ function NotebooksView({ active }: { active: boolean }) {
           setSelectedNoteId(null);
           setNoteDetail(null);
         }
-        await load();
+        // apagar uma coleção arrasta as notas dela — limpa as caches delas e
+        // tira tudo da árvore já, em memória, tal como no apagar de notas.
+        // Nota (fase C): coleções e notas mudam NUMA só publicação no store
+        // partilhado — duas chamadas encadeadas (setCollections → setNotes)
+        // seriam reentrantes sobre o mesmo estado do módulo e uma pisava a
+        // outra (a de fora sobrepunha o "notes" já sem as notas apagadas).
+        notes.filter((n) => n.collection_id === id).forEach((n) => removeNbNoteCache(n.id));
+        nbTreeUpdate((prev) => ({
+          ...prev,
+          collections: prev.collections.filter((c) => c.id !== id && c.parent_id !== id),
+          notes: prev.notes.filter((n) => n.collection_id !== id),
+        }));
+        void load(true);
       } else {
         setError(obj.message || t("nbDeleteFail"));
       }
@@ -1597,17 +2471,31 @@ function NotebooksView({ active }: { active: boolean }) {
 
   async function saveNote() {
     if (!noteDetail) return;
+    // fatia 5/6 (blocos com id estável): serializa os blocos ANTES de
+    // guardar — é aqui que um parágrafo novo (criado por Enter/lista/
+    // título) ganha o seu data-bid definitivo.
+    const blocks = editorRef.current ? nbSerializeBlocks(editorRef.current) : [];
+    const bodyJson = JSON.stringify(blocks);
     setNoteSaving(true);
     setError("");
     try {
       const raw = await invoke<string>("notebook_note_update", {
-        id: noteDetail.id, title: noteTitle, body: noteBody, user: getSession()?.id ?? null,
+        id: noteDetail.id, title: noteTitle, body: bodyJson, user: getSession()?.id ?? null,
       });
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
         setNoteDirty(false);
-        setNoteDetail({ ...noteDetail, title: noteTitle, body: noteBody });
-        await load();
+        const updated = { ...noteDetail, title: noteTitle, body: bodyJson };
+        setNoteDetail(updated);
+        writeNbNoteCache(updated);
+        // só o título aparece na árvore — atualiza-o em memória em vez de
+        // esperar por um "notebook_tree" completo pelo túnel SSH a cada
+        // "Save" (era a maior causa da demora sentida a editar notas).
+        setNotes((prev) => {
+          const next = prev.map((n) => (n.id === noteDetail.id ? { ...n, title: noteTitle } : n));
+          writeNbTreeCache(collections, next);
+          return next;
+        });
       } else {
         setError(obj.message || t("nbSaveFail"));
       }
@@ -1620,20 +2508,669 @@ function NotebooksView({ active }: { active: boolean }) {
 
   async function deleteNote() {
     if (!noteDetail) return;
+    await deleteNoteRow(noteDetail.id);
+    setConfirmDeleteNote(false);
+  }
+
+  /** Apagar uma nota diretamente na lista, sem a ter de abrir primeiro
+   * (o utilizador pediu um atalho de edição/remoção junto de cada nota). */
+  async function deleteNoteRow(id: number) {
     setError("");
     try {
-      const raw = await invoke<string>("notebook_note_delete", { id: noteDetail.id, user: getSession()?.id ?? null });
+      const raw = await invoke<string>("notebook_note_delete", { id, user: getSession()?.id ?? null });
       const obj = JSON.parse(raw);
       if (obj.type === "ok") {
-        setSelectedNoteId(null);
-        setNoteDetail(null);
-        setConfirmDeleteNote(false);
-        await load();
+        if (selectedNoteId === id) {
+          setSelectedNoteId(null);
+          setNoteDetail(null);
+        }
+        setConfirmDeleteNoteRow(null);
+        // limpa a cópia em cache — senão reabrir este id mais tarde (troca de
+        // nota, "abrir no caderno" com um pedido velho, etc.) ressuscitava o
+        // conteúdo já apagado antes do pedido fresco confirmar o 404.
+        removeNbNoteCache(id);
+        // atualização otimista: tira a nota da árvore já, em memória, em vez
+        // de esperar por um "notebook_tree" completo pelo túnel SSH — é o
+        // que estava a tornar o apagar lento e a sensação de "travado".
+        setNotes((prev) => {
+          const next = prev.filter((n) => n.id !== id);
+          writeNbTreeCache(collections, next);
+          return next;
+        });
+        // reconciliação em fundo, sem bloquear a UI — corrige qualquer
+        // divergência (posição, outra sessão a editar a mesma conta, etc.)
+        // sem o utilizador ter de esperar por ela.
+        void load(true);
       } else {
         setError(obj.message || t("nbDeleteFail"));
       }
     } catch (e) {
       setError(String(e));
+    }
+  }
+
+  // --- fatia 5: formatação e versões -------------------------------------
+
+  function nbExec(cmd: string, value?: string) {
+    editorRef.current?.focus();
+    document.execCommand(cmd, false, value);
+    setNoteDirty(true);
+  }
+
+  async function saveVersion() {
+    if (!noteDetail) return;
+    // guarda primeiro (senão a versão fica com o corpo antigo em disco).
+    await saveNote();
+    setSavingVersion(true);
+    try {
+      const raw = await invoke<string>("notebook_note_version_create", {
+        noteId: noteDetail.id, user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") await loadVersions(noteDetail.id);
+      else setError(obj.message || t("nbVersionSaveFail"));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSavingVersion(false);
+    }
+  }
+
+  async function restoreVersion(versionId: number) {
+    if (!noteDetail) return;
+    setRestoringVersionId(versionId);
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_note_version_restore", {
+        noteId: noteDetail.id, versionId, user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        await openNote(noteDetail.id);
+        await loadVersions(noteDetail.id);
+      } else {
+        setError(obj.message || t("nbVersionRestoreFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRestoringVersionId(null);
+    }
+  }
+
+  // --- fatia 6: anotações e referências ------------------------------------
+
+  function closeSelectionPopup() {
+    setSelectionInfo(null);
+    setSelectionRect(null);
+    setSelectionMenu(null);
+    setAnnotationDraft("");
+    setDictDefinition(""); setDictError(""); setDictLanguage("pt-BR");
+  }
+
+  function handleEditorSelect() {
+    const sel = window.getSelection();
+    const root = editorRef.current;
+    if (!sel || !root || sel.isCollapsed || sel.rangeCount === 0) {
+      closeSelectionPopup();
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    if (!root.contains(range.commonAncestorContainer)) {
+      closeSelectionPopup();
+      return;
+    }
+    const text = sel.toString();
+    if (!text.trim()) {
+      closeSelectionPopup();
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    setSelectionRect({ top: rect.top, left: rect.left + rect.width / 2, bottom: rect.bottom });
+    setSelectionMenu(null);
+    setDictDefinition(""); setDictError(""); setDictLanguage("pt-BR");
+    // Âncora real por bloco (fatia 5/6): se início e fim da seleção caem no
+    // MESMO bloco de topo, a âncora usa o id desse bloco + offset relativo a
+    // ele — sobrevive a edições em OUTROS parágrafos da nota. Seleção que
+    // atravessa vários blocos cai no fallback antigo (block_id null, offset
+    // contra a nota inteira) — simplificação aceite por ora.
+    const startBlock = nbFindBlock(root, range.startContainer);
+    const endBlock = nbFindBlock(root, range.endContainer);
+    let blockId: string | null = null;
+    let start: number;
+    let end: number;
+    if (startBlock && startBlock === endBlock) {
+      blockId = nbBlockIdOf(startBlock);
+      start = nbTextOffset(startBlock, range.startContainer, range.startOffset);
+      end = nbTextOffset(startBlock, range.endContainer, range.endOffset);
+    } else {
+      start = nbTextOffset(root, range.startContainer, range.startOffset);
+      end = nbTextOffset(root, range.endContainer, range.endOffset);
+    }
+    const full = root.textContent || "";
+    const wholeStart = nbTextOffset(root, range.startContainer, range.startOffset);
+    const context = full.slice(Math.max(0, wholeStart - 30), Math.min(full.length, wholeStart + text.length + 30));
+    setSelectionInfo({ blockId, start, end, text, context });
+  }
+
+  async function submitAnnotation() {
+    if (!noteDetail || !selectionInfo || !annotationDraft.trim()) return;
+    setSavingAnnotation(true);
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_annotation_create", {
+        noteId: noteDetail.id,
+        body: annotationDraft.trim(),
+        blockId: selectionInfo.blockId,
+        startOffset: selectionInfo.start,
+        endOffset: selectionInfo.end,
+        selectedText: selectionInfo.text,
+        contextSnippet: selectionInfo.context,
+        user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        closeSelectionPopup();
+        await loadAnnotations(noteDetail.id);
+      } else {
+        setError(obj.message || t("nbAnnotationSaveFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSavingAnnotation(false);
+    }
+  }
+
+  async function toggleAnnotationResolved(a: NBAnnotation) {
+    if (!noteDetail) return;
+    try {
+      const raw = await invoke<string>("notebook_annotation_resolve", {
+        id: a.id, reopen: a.resolved_at != null, user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") await loadAnnotations(noteDetail.id);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function deleteAnnotation(id: number) {
+    if (!noteDetail) return;
+    try {
+      const raw = await invoke<string>("notebook_annotation_delete", { id, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") await loadAnnotations(noteDetail.id);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function submitReference() {
+    if (!noteDetail || (!refTitle.trim() && !refUrl.trim())) return;
+    setSavingReference(true);
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_reference_create", {
+        noteId: noteDetail.id,
+        title: refTitle.trim() || null,
+        url: refUrl.trim() || null,
+        noteText: refNote.trim() || null,
+        user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        setRefTitle(""); setRefUrl(""); setRefNote("");
+        await loadReferences(noteDetail.id);
+      } else {
+        setError(obj.message || t("nbReferenceSaveFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSavingReference(false);
+    }
+  }
+
+  async function deleteReference(id: number) {
+    if (!noteDetail) return;
+    try {
+      const raw = await invoke<string>("notebook_reference_delete", { id, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") await loadReferences(noteDetail.id);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  // --- Backlinks -----------------------------------------------------------
+
+  async function submitLink() {
+    if (!noteDetail || !linkTargetId) return;
+    setSavingLink(true);
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_link_create", {
+        fromNoteId: noteDetail.id,
+        toNoteId: Number(linkTargetId),
+        user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        setLinkTargetId("");
+        await loadLinks(noteDetail.id);
+      } else {
+        setError(obj.message || t("nbLinkSaveFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSavingLink(false);
+    }
+  }
+
+  async function deleteLink(id: number) {
+    if (!noteDetail) return;
+    try {
+      const raw = await invoke<string>("notebook_link_delete", { id, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") await loadLinks(noteDetail.id);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  // --- fatia 7: dicionário e glossário -------------------------------------
+
+  async function submitKeyword() {
+    if (!noteDetail || !kwTerm.trim()) return;
+    setSavingKeyword(true);
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_keyword_create", {
+        noteId: noteDetail.id, term: kwTerm.trim(), user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        setKwTerm("");
+        await loadKeywords(noteDetail.id);
+      } else {
+        setError(obj.message || t("nbKeywordSaveFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSavingKeyword(false);
+    }
+  }
+
+  async function deleteKeyword(id: number) {
+    if (!noteDetail) return;
+    try {
+      const raw = await invoke<string>("notebook_keyword_delete", { id, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") await loadKeywords(noteDetail.id);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function submitGlossary() {
+    if (!noteDetail || !glTerm.trim() || !glDefinition.trim()) return;
+    setSavingGlossary(true);
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_glossary_create", {
+        noteId: noteDetail.id, term: glTerm.trim(), definition: glDefinition.trim(),
+        source: glSource, language: glLanguage.trim() || null, user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        setGlTerm(""); setGlDefinition(""); setGlLanguage(""); setGlSource(null); setGlLookupError("");
+        await loadGlossary(noteDetail.id);
+      } else {
+        setError(obj.message || t("nbGlossarySaveFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSavingGlossary(false);
+    }
+  }
+
+  // Fase 7 (glossário): consulta um provedor externo de dicionário (dictionaryapi.dev)
+  // em vez de exigir digitação manual da definição — pedido explícito do utilizador
+  // ("glossary ou dicionario ... teria que consumir alguma api de dicionario").
+  async function fetchDictionaryDefinitions(term: string, langCode: string): Promise<string[] | null> {
+    const res = await fetch(
+      `https://api.dictionaryapi.dev/api/v2/entries/${encodeURIComponent(langCode)}/${encodeURIComponent(term)}`,
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const entry = Array.isArray(data) ? data[0] : null;
+    const meanings: string[] = [];
+    for (const m of entry?.meanings ?? []) {
+      const def = m?.definitions?.[0]?.definition;
+      if (def) meanings.push(m.partOfSpeech ? `(${m.partOfSpeech}) ${def}` : def);
+      if (meanings.length >= 3) break;
+    }
+    return meanings.length > 0 ? meanings : null;
+  }
+
+  function normalizeLangCode(raw: string): string {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.toLowerCase() === "pt") return "pt-BR";
+    return trimmed;
+  }
+
+  async function lookupGlossaryTerm() {
+    const term = glTerm.trim();
+    if (!term) return;
+    setGlLookupLoading(true);
+    setGlLookupError("");
+    const langCode = normalizeLangCode(glLanguage);
+    try {
+      const meanings = await fetchDictionaryDefinitions(term, langCode);
+      if (!meanings) {
+        setGlLookupError(t("nbGlossaryLookupNotFound"));
+        return;
+      }
+      setGlDefinition(meanings.join("\n"));
+      setGlLanguage(langCode);
+      setGlSource("dictionaryapi.dev");
+    } catch {
+      setGlLookupError(t("nbGlossaryLookupFail"));
+    } finally {
+      setGlLookupLoading(false);
+    }
+  }
+
+  // Popup flutuante ao selecionar texto (pedido explícito do Leonardo): em vez
+  // de abrir só a aba lateral, selecionar/clicar direito na palavra abre um
+  // balãozinho ali mesmo, oferecendo "Dicionário" (busca e mostra a definição,
+  // com botão para guardar como entrada de glossário ligada a esta nota) e
+  // "Comentário" (abre a caixa de anotação — ver submitAnnotation).
+  async function lookupSelectionDictionary() {
+    if (!selectionInfo) return;
+    const term = selectionInfo.text.trim();
+    if (!term) return;
+    setDictLoading(true);
+    setDictError("");
+    const langCode = normalizeLangCode(dictLanguage);
+    try {
+      const meanings = await fetchDictionaryDefinitions(term, langCode);
+      if (!meanings) {
+        setDictError(t("nbGlossaryLookupNotFound"));
+        return;
+      }
+      setDictDefinition(meanings.join("\n"));
+      setDictLanguage(langCode);
+    } catch {
+      setDictError(t("nbGlossaryLookupFail"));
+    } finally {
+      setDictLoading(false);
+    }
+  }
+
+  async function saveSelectionToGlossary() {
+    if (!noteDetail || !selectionInfo || !dictDefinition.trim()) return;
+    setSavingDictEntry(true);
+    setError("");
+    try {
+      const raw = await invoke<string>("notebook_glossary_create", {
+        noteId: noteDetail.id, term: selectionInfo.text.trim(), definition: dictDefinition.trim(),
+        source: "dictionaryapi.dev", language: dictLanguage.trim() || null, user: getSession()?.id ?? null,
+      });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") {
+        closeSelectionPopup();
+        await loadGlossary(noteDetail.id);
+      } else {
+        setError(obj.message || t("nbGlossarySaveFail"));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSavingDictEntry(false);
+    }
+  }
+
+  async function deleteGlossaryEntry(id: number) {
+    if (!noteDetail) return;
+    try {
+      const raw = await invoke<string>("notebook_glossary_delete", { id, user: getSession()?.id ?? null });
+      const obj = JSON.parse(raw);
+      if (obj.type === "ok") await loadGlossary(noteDetail.id);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  // --- fatia 8: exportação e pacote para IA --------------------------------
+
+  function toggleExportLayer(layer: NBExportLayer) {
+    setExportLayers((prev) => {
+      const next = new Set(prev);
+      if (next.has(layer)) next.delete(layer);
+      else next.add(layer);
+      return next;
+    });
+  }
+
+  const NB_DOCX_INK = "1F3864"; // azul-marinho — títulos/regras
+  const NB_DOCX_ACCENT = "2E74B5"; // azul mais claro — subtítulos/H3
+  const NB_DOCX_MUTED = "6B7280"; // cinza — legendas/rodapé
+
+  // Uma linha do corpo pode ser o repr de uma lista Python despejado como
+  // texto (ex.: '["a", "b"]') em vez de bullets de verdade — acontece quando
+  // uma nota nasce de um campo de lista formatado que nunca passou por
+  // `_notebook_body_to_text`. Isto é uma falha de dados a montante (fora do
+  // âmbito desta correção), mas o exportador não devia mostrar `[",",...]`
+  // cru num documento "bonito" — por isso tenta expandir para bullets reais
+  // antes de desistir e mostrar a linha tal e qual.
+  function tryExpandBracketList(line: string): string[] | null {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+        return parsed.map((s) => s.trim()).filter(Boolean);
+      }
+    } catch { /* não era JSON válido — mostra a linha como veio */ }
+    return null;
+  }
+
+  // Converte o markdown simples que `notebook_note_export` devolve (só usa
+  // "# "/"## "/"### " para títulos e "- " para listas — ver
+  // `_notebook_body_to_text`/`notebook_note_export` em db.py) num documento
+  // .docx com um layout de verdade — título destacado, regra fina, secções
+  // com espaçamento e cor consistentes, texto justificado, bullets reais e
+  // rodapé com número de página. A PRIMEIRA linha ("# Título") vira o
+  // cabeçalho do documento em vez de um heading normal.
+  // Pedido do Leonardo (2026-08-14): o idioma do documento exportado tem de
+  // seguir o idioma da reunião/transcrição de origem, não ficar preso ao
+  // português — `lang` vem do campo "language" que `notebook_note_export`
+  // já devolve no backend (db.py), calculado a partir de `transcriptions.language`.
+  const NB_DOCX_STRINGS: Record<string, { exportedFrom: (date: string) => string; footer: (a: any, b: any) => any[]; locale: string }> = {
+    pt: {
+      exportedFrom: (date) => `Exportado do UpexNote — ${date}`,
+      footer: (current, total) => [
+        new TextRun({ text: "UpexNote — Página ", size: 16, color: NB_DOCX_MUTED }),
+        current,
+        new TextRun({ text: " de ", size: 16, color: NB_DOCX_MUTED }),
+        total,
+      ],
+      locale: "pt-BR",
+    },
+    en: {
+      exportedFrom: (date) => `Exported from UpexNote — ${date}`,
+      footer: (current, total) => [
+        new TextRun({ text: "UpexNote — Page ", size: 16, color: NB_DOCX_MUTED }),
+        current,
+        new TextRun({ text: " of ", size: 16, color: NB_DOCX_MUTED }),
+        total,
+      ],
+      locale: "en-US",
+    },
+    es: {
+      exportedFrom: (date) => `Exportado desde UpexNote — ${date}`,
+      footer: (current, total) => [
+        new TextRun({ text: "UpexNote — Página ", size: 16, color: NB_DOCX_MUTED }),
+        current,
+        new TextRun({ text: " de ", size: 16, color: NB_DOCX_MUTED }),
+        total,
+      ],
+      locale: "es-ES",
+    },
+  };
+
+  function buildExportDocx(markdown: string, lang: string): Document {
+    const strings = NB_DOCX_STRINGS[lang] || NB_DOCX_STRINGS.pt;
+    const lines = markdown.split("\n");
+    const titleLine = lines[0]?.startsWith("# ") ? lines[0].slice(2) : (noteTitle || t("nbUntitled"));
+    const bodyLines = lines[0]?.startsWith("# ") ? lines.slice(1) : lines;
+    const today = new Date().toLocaleDateString(strings.locale);
+
+    const children: Paragraph[] = [
+      new Paragraph({
+        spacing: { after: 60 },
+        children: [new TextRun({ text: titleLine, bold: true, size: 44, color: NB_DOCX_INK })],
+      }),
+      new Paragraph({
+        spacing: { after: 160 },
+        children: [new TextRun({ text: strings.exportedFrom(today), italics: true, size: 18, color: NB_DOCX_MUTED })],
+      }),
+      new Paragraph({
+        spacing: { after: 240 },
+        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: NB_DOCX_INK, space: 1 } },
+        children: [],
+      }),
+    ];
+
+    for (const rawLine of bodyLines) {
+      const line = rawLine.trimEnd();
+      if (!line.trim()) {
+        children.push(new Paragraph({ text: "" }));
+        continue;
+      }
+      const bracketItems = tryExpandBracketList(line);
+      if (bracketItems) {
+        for (const item of bracketItems) {
+          children.push(new Paragraph({ text: item, bullet: { level: 0 }, spacing: { after: 60 } }));
+        }
+        continue;
+      }
+      if (line.startsWith("### ")) {
+        children.push(new Paragraph({
+          spacing: { before: 200, after: 100 },
+          children: [new TextRun({ text: line.slice(4), bold: true, size: 24, color: NB_DOCX_ACCENT })],
+        }));
+      } else if (line.startsWith("## ")) {
+        children.push(new Paragraph({
+          spacing: { before: 300, after: 120 },
+          border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: "D9DEE7", space: 4 } },
+          children: [new TextRun({ text: line.slice(3), bold: true, size: 28, color: NB_DOCX_INK })],
+        }));
+      } else if (line.startsWith("# ")) {
+        children.push(new Paragraph({
+          spacing: { before: 320, after: 140 },
+          children: [new TextRun({ text: line.slice(2), bold: true, size: 32, color: NB_DOCX_INK })],
+        }));
+      } else if (line.startsWith("- ")) {
+        children.push(new Paragraph({ text: line.slice(2), bullet: { level: 0 }, spacing: { after: 60 } }));
+      } else {
+        children.push(new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
+          spacing: { after: 140, line: 300 },
+          children: [new TextRun({ text: line, size: 22 })],
+        }));
+      }
+    }
+
+    return new Document({
+      sections: [{
+        properties: {
+          page: { margin: { top: convertInchesToTwip(0.9), bottom: convertInchesToTwip(0.9), left: convertInchesToTwip(1), right: convertInchesToTwip(1) } },
+        },
+        footers: {
+          default: new Footer({
+            children: [new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: strings.footer(
+                new TextRun({ children: [PageNumber.CURRENT], size: 16, color: NB_DOCX_MUTED }),
+                new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 16, color: NB_DOCX_MUTED }),
+              ),
+            })],
+          }),
+        },
+        children,
+      }],
+    });
+  }
+
+  // Um único botão "Exportar" gera os 3 ficheiros que o Leonardo pediu num
+  // só .zip (pedido explícito: "1º md com o conteúdo exato, 2º docx
+  // consolidado bem desenhado, 3º prompt para colar noutra IA — talvez num
+  // zip"): o .md é o conteúdo cru tal como está no editor + tudo o que foi
+  // adicionado (mesma fonte que o "Exportar" antigo usava, sem qualquer
+  // limpeza — é suposto ser exato); o .docx é a versão bonita do MESMO
+  // conteúdo; o prompt vem do endpoint de pacote para IA que já existia.
+  async function exportBundle() {
+    if (!noteDetail || exportLayers.size === 0) return;
+    setExporting(true);
+    setError("");
+    setExportStatus("");
+    try {
+      const [exportRaw, packageRaw] = await Promise.all([
+        invoke<string>("notebook_export", {
+          noteId: noteDetail.id, layers: Array.from(exportLayers).join(","), format: "markdown",
+          user: getSession()?.id ?? null,
+        }),
+        invoke<string>("notebook_context_package_create", {
+          noteId: noteDetail.id, layers: Array.from(exportLayers).join(","), user: getSession()?.id ?? null,
+        }),
+      ]);
+      const exportObj = JSON.parse(exportRaw);
+      if (exportObj.type !== "notebook_export") {
+        setError(exportObj.message || t("nbExportFail"));
+        return;
+      }
+      const packageObj = JSON.parse(packageRaw);
+      if (packageObj.type !== "ok") {
+        setError(packageObj.message || t("nbPackageFail"));
+        return;
+      }
+
+      const suggestedName = (noteTitle || t("nbUntitled")).replace(/[\\/:*?"<>|]/g, "_");
+      // Foco explícito na janela antes do diálogo nativo: em janelas sem
+      // decorações (esta app usa "decorations": false) já se viu o diálogo
+      // de guardar do Windows abrir sem receber foco — isto é uma tentativa
+      // de mitigação, não uma correção confirmada (não há como testar num
+      // Windows real nesta sessão).
+      try { await getCurrentWindow().setFocus(); } catch { /* melhor esforço */ }
+      const path = await save({
+        title: t("nbExportSaveTitle"),
+        defaultPath: `${suggestedName}.zip`,
+        filters: [{ name: "Zip", extensions: ["zip"] }],
+      });
+      if (!path) return;
+
+      const doc = buildExportDocx(exportObj.content, exportObj.language || "pt");
+      const docxBlob = await Packer.toBlob(doc);
+      const docxBytes = new Uint8Array(await docxBlob.arrayBuffer());
+
+      const zip = new JSZip();
+      zip.file(`${suggestedName}.md`, exportObj.content as string);
+      zip.file(`${suggestedName}.docx`, docxBytes);
+      zip.file(`${suggestedName} - prompt para IA.md`, packageObj.prompt as string);
+      const zipBytes = await zip.generateAsync({ type: "uint8array" });
+
+      await invoke("write_binary_file", { path, data: Array.from(zipBytes) });
+      setExportStatus(t("nbExportSaved", { path }));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -1677,11 +3214,26 @@ function NotebooksView({ active }: { active: boolean }) {
         {isOpen && (
           <div className="nb-node-children">
             {items.map((n) => (
-              <button key={n.id} className={"nb-note-row" + (selectedNoteId === n.id ? " active" : "")}
-                style={{ marginLeft: (depth + 1) * 14 }} onClick={() => openNote(n.id)}>
-                <StickyNoteIcon />
-                <span>{n.title || t("nbUntitled")}</span>
-              </button>
+              <div key={n.id} className="nb-note-row-wrap" style={{ marginLeft: (depth + 1) * 14 }}>
+                <button className={"nb-note-row" + (selectedNoteId === n.id ? " active" : "")}
+                  onClick={() => openNote(n.id)}>
+                  <StickyNoteIcon />
+                  <span>{n.title || t("nbUntitled")}</span>
+                </button>
+                <span className="nb-note-row-actions">
+                  <button className="nb-icon-btn" title={t("nbEditNote")}
+                    onClick={(e) => { e.stopPropagation(); openNote(n.id); requestAnimationFrame(() => titleInputRef.current?.focus()); }}><Pencil size={13} /></button>
+                  <button className="nb-icon-btn nb-icon-danger" title={t("nbDeleteNote")}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteNoteRow(n.id); }}><Trash2 size={13} /></button>
+                </span>
+                {confirmDeleteNoteRow === n.id && (
+                  <div className="nb-confirm">
+                    <span>{t("nbDeleteNoteConfirm")}</span>
+                    <button className="btn-danger-solid" onClick={() => deleteNoteRow(n.id)}>{t("nbDelete")}</button>
+                    <button onClick={() => setConfirmDeleteNoteRow(null)}>{t("cancel")}</button>
+                  </div>
+                )}
+              </div>
             ))}
             {kids.map((k) => renderCollection(k, depth + 1))}
           </div>
@@ -1692,7 +3244,7 @@ function NotebooksView({ active }: { active: boolean }) {
 
   return (
     <div className="nb-workspace">
-      <div className="nb-sidebar">
+      <div className="nb-sidebar" style={{ width: nbSidebarWidth, flex: `0 0 ${nbSidebarWidth}px` }}>
         <div className="nb-sidebar-header">
           <h3>{t("navNotebooks")}</h3>
           <button className="nb-icon-btn" title={t("nbNewCollection")} onClick={() => createCollection(null, "notebook")}>
@@ -1709,6 +3261,7 @@ function NotebooksView({ active }: { active: boolean }) {
           <div className="nb-tree">{childrenOf(null).map((c) => renderCollection(c, 0))}</div>
         )}
       </div>
+      <div className="nb-resizer" onMouseDown={startResize("sidebar")} title={t("nbResizeHint")} />
       <div className="nb-editor">
         {error && <div className="nb-error">{error}</div>}
         {!selectedNoteId ? (
@@ -1717,17 +3270,448 @@ function NotebooksView({ active }: { active: boolean }) {
           <div className="nb-loading">{t("nbLoading")}</div>
         ) : noteDetail ? (
           <div className="nb-note-editor">
-            <input
-              className="nb-note-title-input"
-              value={noteTitle}
-              placeholder={t("nbNoteTitlePlaceholder")}
-              onChange={(e) => { setNoteTitle(e.target.value); setNoteDirty(true); }}
-            />
-            <textarea
-              className="nb-note-body-input"
-              value={noteBody}
-              onChange={(e) => { setNoteBody(e.target.value); setNoteDirty(true); }}
-            />
+            <div className="nb-note-toprow">
+              <input
+                ref={titleInputRef}
+                className="nb-note-title-input"
+                value={noteTitle}
+                placeholder={t("nbNoteTitlePlaceholder")}
+                onChange={(e) => { setNoteTitle(e.target.value); setNoteDirty(true); }}
+              />
+              <button
+                className="nb-icon-btn"
+                title={t("nbTogglePanel")}
+                onClick={() => setNbPanelOpen((v) => !v)}
+              >
+                <PanelRight size={15} />
+              </button>
+            </div>
+
+            {/* fatia 5 — barra de formatação mínima: negrito, itálico,
+                sublinhado, destaque, título e listas. Sem escolha de fonte/
+                cor livre nesta fatia (fora de escopo da arquitetura). */}
+            <div className="nb-toolbar">
+              <button type="button" title={t("nbFmtBold")} onMouseDown={(e) => e.preventDefault()} onClick={() => nbExec("bold")}><Bold size={14} /></button>
+              <button type="button" title={t("nbFmtItalic")} onMouseDown={(e) => e.preventDefault()} onClick={() => nbExec("italic")}><Italic size={14} /></button>
+              <button type="button" title={t("nbFmtUnderline")} onMouseDown={(e) => e.preventDefault()} onClick={() => nbExec("underline")}><Underline size={14} /></button>
+              <button type="button" title={t("nbFmtHighlight")} onMouseDown={(e) => e.preventDefault()} onClick={() => nbExec("hiliteColor", "#fef08a")}><Highlighter size={14} /></button>
+              <span className="nb-toolbar-sep" />
+              <button type="button" title={t("nbFmtHeading")} onMouseDown={(e) => e.preventDefault()} onClick={() => nbExec("formatBlock", "H2")}><Heading2 size={14} /></button>
+              <button type="button" title={t("nbFmtParagraph")} onMouseDown={(e) => e.preventDefault()} onClick={() => nbExec("formatBlock", "P")}>¶</button>
+              <span className="nb-toolbar-sep" />
+              <button type="button" title={t("nbFmtBulletList")} onMouseDown={(e) => e.preventDefault()} onClick={() => nbExec("insertUnorderedList")}><ListIcon size={14} /></button>
+              <button type="button" title={t("nbFmtNumberList")} onMouseDown={(e) => e.preventDefault()} onClick={() => nbExec("insertOrderedList")}><ListOrdered size={14} /></button>
+              <span className="nb-toolbar-sep" />
+              <button type="button" title={t("nbSaveVersion")} disabled={savingVersion} onClick={saveVersion}>
+                <History size={14} /> {savingVersion ? t("nbSaving") : t("nbSaveVersion")}
+              </button>
+            </div>
+
+            <div className="nb-editor-row">
+              <div
+                ref={editorRef}
+                className="nb-note-body-rich"
+                contentEditable
+                suppressContentEditableWarning
+                onInput={() => setNoteDirty(true)}
+                onMouseUp={handleEditorSelect}
+                onKeyUp={handleEditorSelect}
+                onContextMenu={(e) => {
+                  handleEditorSelect();
+                  const sel = window.getSelection();
+                  if (sel && !sel.isCollapsed && sel.toString().trim()) e.preventDefault();
+                }}
+              />
+              {nbPanelOpen && (
+                <div className="nb-resizer" onMouseDown={startResize("panel")} title={t("nbResizeHint")} />
+              )}
+              {nbPanelOpen && (
+                <div className="nb-side-panel" style={{ width: nbSidePanelWidth, flex: `0 0 ${nbSidePanelWidth}px` }}>
+                  <div className="nb-side-tabs">
+                    <button
+                      className={nbPanelTab === "annotations" ? "active" : ""}
+                      title={`${t("nbTabAnnotations")} (${annotations.filter((a) => !a.resolved_at).length})`}
+                      onClick={() => setNbPanelTab("annotations")}
+                    >
+                      <MessageSquarePlus size={15} />
+                      {annotations.filter((a) => !a.resolved_at).length > 0 && (
+                        <span className="nb-tab-badge">{annotations.filter((a) => !a.resolved_at).length}</span>
+                      )}
+                    </button>
+                    <button
+                      className={nbPanelTab === "references" ? "active" : ""}
+                      title={`${t("nbTabReferences")} (${references.length})`}
+                      onClick={() => setNbPanelTab("references")}
+                    >
+                      <Link2 size={15} />
+                      {references.length > 0 && <span className="nb-tab-badge">{references.length}</span>}
+                    </button>
+                    <button
+                      className={nbPanelTab === "links" ? "active" : ""}
+                      title={`${t("nbTabLinks")} (${outgoingLinks.length + incomingLinks.length})`}
+                      onClick={() => setNbPanelTab("links")}
+                    >
+                      <Tag size={15} />
+                      {(outgoingLinks.length + incomingLinks.length) > 0 && (
+                        <span className="nb-tab-badge">{outgoingLinks.length + incomingLinks.length}</span>
+                      )}
+                    </button>
+                    <button
+                      className={nbPanelTab === "glossary" ? "active" : ""}
+                      title={`${t("nbTabGlossary")} (${glossary.length + keywords.length})`}
+                      onClick={() => setNbPanelTab("glossary")}
+                    >
+                      <BookOpen size={15} />
+                      {(glossary.length + keywords.length) > 0 && (
+                        <span className="nb-tab-badge">{glossary.length + keywords.length}</span>
+                      )}
+                    </button>
+                    <button
+                      className={nbPanelTab === "export" ? "active" : ""}
+                      title={t("nbTabExport")}
+                      onClick={() => setNbPanelTab("export")}
+                    >
+                      <Download size={15} />
+                    </button>
+                    <button
+                      className={nbPanelTab === "versions" ? "active" : ""}
+                      title={t("nbTabVersions")}
+                      onClick={() => { setNbPanelTab("versions"); if (!versionsLoaded && noteDetail) loadVersions(noteDetail.id); }}
+                    >
+                      <History size={15} />
+                    </button>
+                  </div>
+
+                  {nbPanelTab === "annotations" && (
+                    <div className="nb-side-body">
+                      {selectionInfo && (
+                        <div className="nb-annotation-draft">
+                          <div className="nb-annotation-quote">"{selectionInfo.text}"</div>
+                          <textarea
+                            className="nb-annotation-input"
+                            placeholder={t("nbAnnotationPlaceholder")}
+                            value={annotationDraft}
+                            onChange={(e) => setAnnotationDraft(e.target.value)}
+                          />
+                          <div className="nb-annotation-draft-actions">
+                            <button disabled={!annotationDraft.trim() || savingAnnotation} onClick={submitAnnotation}>
+                              {savingAnnotation ? t("nbSaving") : t("nbAnnotationAdd")}
+                            </button>
+                            <button onClick={() => { setSelectionInfo(null); setAnnotationDraft(""); }}>{t("cancel")}</button>
+                          </div>
+                        </div>
+                      )}
+                      {!selectionInfo && <div className="nb-side-hint">{t("nbAnnotationHint")}</div>}
+                      {annotations.length === 0 ? (
+                        <div className="nb-empty">{t("nbAnnotationEmpty")}</div>
+                      ) : (
+                        <ul className="nb-annotation-list">
+                          {annotations.map((a) => (
+                            <li key={a.id} className={a.resolved_at ? "resolved" : ""}>
+                              {a.selected_text && <div className="nb-annotation-quote">"{a.selected_text}"</div>}
+                              <div className="nb-annotation-body">{a.body}</div>
+                              <div className="nb-annotation-row-actions">
+                                <button title={a.resolved_at ? t("nbAnnotationReopen") : t("nbAnnotationResolve")} onClick={() => toggleAnnotationResolved(a)}>
+                                  <CircleCheckBig size={13} />
+                                </button>
+                                <button className="nb-icon-danger" title={t("nbDelete")} onClick={() => deleteAnnotation(a.id)}>
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {nbPanelTab === "references" && (
+                    <div className="nb-side-body">
+                      <div className="nb-reference-form">
+                        <input placeholder={t("nbReferenceTitle")} value={refTitle} onChange={(e) => setRefTitle(e.target.value)} />
+                        <input placeholder={t("nbReferenceUrl")} value={refUrl} onChange={(e) => setRefUrl(e.target.value)} />
+                        <textarea placeholder={t("nbReferenceNote")} value={refNote} onChange={(e) => setRefNote(e.target.value)} />
+                        <button disabled={(!refTitle.trim() && !refUrl.trim()) || savingReference} onClick={submitReference}>
+                          {savingReference ? t("nbSaving") : t("nbReferenceAdd")}
+                        </button>
+                      </div>
+                      {references.length === 0 ? (
+                        <div className="nb-empty">{t("nbReferenceEmpty")}</div>
+                      ) : (
+                        <ul className="nb-reference-list">
+                          {references.map((r) => (
+                            <li key={r.id}>
+                              <div className="nb-reference-title">{r.title || r.url}</div>
+                              {r.url && <div className="nb-reference-url">{r.url}</div>}
+                              {r.note_text && <div className="nb-reference-note">{r.note_text}</div>}
+                              <button className="nb-icon-danger" title={t("nbDelete")} onClick={() => deleteReference(r.id)}>
+                                <Trash2 size={13} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {nbPanelTab === "links" && (
+                    <div className="nb-side-body">
+                      <div className="nb-link-form">
+                        <select value={linkTargetId} onChange={(e) => setLinkTargetId(e.target.value)}>
+                          <option value="">{t("nbLinkPick")}</option>
+                          {notes.filter((n) => n.id !== noteDetail?.id).map((n) => (
+                            <option key={n.id} value={n.id}>{n.title || t("nbUntitled")}</option>
+                          ))}
+                        </select>
+                        <button disabled={!linkTargetId || savingLink} onClick={submitLink}>
+                          {savingLink ? t("nbSaving") : t("nbLinkAdd")}
+                        </button>
+                      </div>
+                      <div className="nb-link-group-label">{t("nbLinkOutgoing")}</div>
+                      {outgoingLinks.length === 0 ? (
+                        <div className="nb-empty">{t("nbLinkEmpty")}</div>
+                      ) : (
+                        <ul className="nb-link-list">
+                          {outgoingLinks.map((l) => (
+                            <li key={l.id}>
+                              <button className="nb-link-nav" onClick={() => openNote(l.note_id)}>
+                                {l.title || t("nbUntitled")}
+                              </button>
+                              <button className="nb-icon-danger" title={t("nbDelete")} onClick={() => deleteLink(l.id)}>
+                                <Trash2 size={13} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="nb-link-group-label">{t("nbLinkIncoming")}</div>
+                      {incomingLinks.length === 0 ? (
+                        <div className="nb-empty">{t("nbLinkEmpty")}</div>
+                      ) : (
+                        <ul className="nb-link-list">
+                          {incomingLinks.map((l) => (
+                            <li key={l.id}>
+                              <button className="nb-link-nav" onClick={() => openNote(l.note_id)}>
+                                {l.title || t("nbUntitled")}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {nbPanelTab === "glossary" && (
+                    <div className="nb-side-body">
+                      <div className="nb-reference-form">
+                        <input placeholder={t("nbKeywordPlaceholder")} value={kwTerm} onChange={(e) => setKwTerm(e.target.value)} />
+                        <button disabled={!kwTerm.trim() || savingKeyword} onClick={submitKeyword}>
+                          <Tag size={13} /> {savingKeyword ? t("nbSaving") : t("nbKeywordAdd")}
+                        </button>
+                      </div>
+                      {keywords.length > 0 && (
+                        <div className="nb-keyword-chips">
+                          {keywords.map((k) => (
+                            <span key={k.id} className="nb-keyword-chip">
+                              {k.term}
+                              <button title={t("nbDelete")} onClick={() => deleteKeyword(k.id)}><Trash2 size={11} /></button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div className="nb-reference-form">
+                        <div className="nb-glossary-lookup-row">
+                          <input
+                            placeholder={t("nbGlossaryTerm")}
+                            value={glTerm}
+                            onChange={(e) => { setGlTerm(e.target.value); setGlSource(null); setGlLookupError(""); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); lookupGlossaryTerm(); } }}
+                          />
+                          <button
+                            type="button"
+                            className="nb-glossary-lookup-btn nb-glossary-lookup-btn-icon"
+                            title={glLookupLoading ? t("nbGlossaryLookupLoading") : t("nbGlossaryLookup")}
+                            disabled={!glTerm.trim() || glLookupLoading}
+                            onClick={lookupGlossaryTerm}
+                          >
+                            <BookOpen size={14} />
+                          </button>
+                        </div>
+                        {glLookupError && <div className="nb-side-hint">{glLookupError}</div>}
+                        <textarea
+                          placeholder={t("nbGlossaryDefinition")}
+                          value={glDefinition}
+                          onChange={(e) => { setGlDefinition(e.target.value); setGlSource(null); }}
+                        />
+                        <input placeholder={t("nbGlossaryLanguage")} value={glLanguage} onChange={(e) => { setGlLanguage(e.target.value); setGlSource(null); }} />
+                        {glSource && <div className="nb-side-hint">{t("nbGlossarySourceApi")}: {glSource}</div>}
+                        <button disabled={!glTerm.trim() || !glDefinition.trim() || savingGlossary} onClick={submitGlossary}>
+                          {savingGlossary ? t("nbSaving") : t("nbGlossaryAdd")}
+                        </button>
+                      </div>
+                      {glossary.length === 0 ? (
+                        <div className="nb-empty">{t("nbGlossaryEmpty")}</div>
+                      ) : (
+                        <ul className="nb-reference-list">
+                          {glossary.map((g) => (
+                            <li key={g.id}>
+                              <div className="nb-reference-title">
+                                {g.term}
+                                {g.source && g.source !== "manual" && (
+                                  <span className="nb-glossary-source-tag" title={`${t("nbGlossarySourceApi")}: ${g.source}`}>
+                                    <BookOpen size={10} />
+                                  </span>
+                                )}
+                              </div>
+                              <div className="nb-reference-note">{g.definition}</div>
+                              {g.language && <div className="nb-reference-url">{g.language}</div>}
+                              <button className="nb-icon-danger" title={t("nbDelete")} onClick={() => deleteGlossaryEntry(g.id)}>
+                                <Trash2 size={13} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {nbPanelTab === "export" && (
+                    <div className="nb-side-body">
+                      <div className="nb-side-hint">{t("nbExportLayersHint")}</div>
+                      <div className="nb-layer-checks">
+                        {(["body", "annotations", "references", "glossary", "links", "lineage"] as NBExportLayer[]).map((layer) => (
+                          <label key={layer}>
+                            <input
+                              type="checkbox"
+                              checked={exportLayers.has(layer)}
+                              onChange={() => toggleExportLayer(layer)}
+                            />
+                            {t(("nbLayer_" + layer) as never)}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="nb-export-action-card">
+                        <div className="nb-export-action-head">
+                          <FileText size={14} />
+                          <strong>{t("nbExportDocTitle")}</strong>
+                        </div>
+                        <div className="nb-side-hint">{t("nbExportDocHint")}</div>
+                        <ul className="nb-export-bundle-list">
+                          <li>{t("nbExportBundleMd")}</li>
+                          <li>{t("nbExportBundleDocx")}</li>
+                          <li>{t("nbExportBundlePrompt")}</li>
+                        </ul>
+                        <button disabled={exportLayers.size === 0 || exporting} onClick={exportBundle}>
+                          <Download size={13} /> {exporting ? t("nbSaving") : t("nbExportRun")}
+                        </button>
+                        {exporting && (
+                          <div className="nb-export-progress">
+                            <span className="nb-export-spinner" />
+                            {t("nbExportGenerating")}
+                          </div>
+                        )}
+                        {exportStatus && <div className="nb-side-hint nb-export-status">{exportStatus}</div>}
+                      </div>
+                    </div>
+                  )}
+
+                  {nbPanelTab === "versions" && (
+                    <div className="nb-side-body">
+                      {versions.length === 0 ? (
+                        <div className="nb-empty">{t("nbVersionEmpty")}</div>
+                      ) : (
+                        <ul className="nb-version-list">
+                          {versions.map((v) => (
+                            <li key={v.id}>
+                              <span>{fmtDate(v.created_at)}</span>
+                              <button disabled={restoringVersionId === v.id} onClick={() => restoreVersion(v.id)}>
+                                {restoringVersionId === v.id ? t("nbSaving") : t("nbVersionRestore")}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {selectionInfo && selectionRect && (
+              <div
+                className="nb-selection-popup"
+                style={{ top: Math.max(8, selectionRect.top - 8), left: selectionRect.left }}
+              >
+                {selectionMenu === null && (
+                  <div className="nb-selection-toolbar">
+                    <button title={t("nbSelDictionary")} onClick={() => setSelectionMenu("dictionary")}>
+                      <BookOpen size={14} />
+                    </button>
+                    <button title={t("nbSelComment")} onClick={() => setSelectionMenu("comment")}>
+                      <MessageSquarePlus size={14} />
+                    </button>
+                    <button title={t("cancel")} onClick={closeSelectionPopup}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+                {selectionMenu === "dictionary" && (
+                  <div className="nb-selection-card">
+                    <div className="nb-selection-card-head">
+                      <strong>{selectionInfo.text}</strong>
+                      <button className="nb-icon-plain" onClick={closeSelectionPopup}><X size={13} /></button>
+                    </div>
+                    {!dictDefinition && (
+                      <button className="nb-glossary-lookup-btn" disabled={dictLoading} onClick={lookupSelectionDictionary}>
+                        <BookOpen size={13} /> {dictLoading ? t("nbGlossaryLookupLoading") : t("nbGlossaryLookup")}
+                      </button>
+                    )}
+                    {dictError && <div className="nb-side-hint">{dictError}</div>}
+                    {dictDefinition && (
+                      <>
+                        <textarea
+                          className="nb-annotation-input"
+                          value={dictDefinition}
+                          onChange={(e) => setDictDefinition(e.target.value)}
+                        />
+                        <input
+                          placeholder={t("nbGlossaryLanguage")}
+                          value={dictLanguage}
+                          onChange={(e) => setDictLanguage(e.target.value)}
+                        />
+                        <div className="nb-annotation-draft-actions">
+                          <button disabled={savingDictEntry} onClick={saveSelectionToGlossary}>
+                            {savingDictEntry ? t("nbSaving") : t("nbGlossaryAdd")}
+                          </button>
+                          <button onClick={closeSelectionPopup}>{t("cancel")}</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                {selectionMenu === "comment" && (
+                  <div className="nb-selection-card">
+                    <div className="nb-selection-card-head">
+                      <span className="nb-annotation-quote">"{selectionInfo.text}"</span>
+                      <button className="nb-icon-plain" onClick={closeSelectionPopup}><X size={13} /></button>
+                    </div>
+                    <textarea
+                      className="nb-annotation-input"
+                      placeholder={t("nbAnnotationPlaceholder")}
+                      value={annotationDraft}
+                      onChange={(e) => setAnnotationDraft(e.target.value)}
+                    />
+                    <div className="nb-annotation-draft-actions">
+                      <button disabled={!annotationDraft.trim() || savingAnnotation} onClick={submitAnnotation}>
+                        {savingAnnotation ? t("nbSaving") : t("nbAnnotationAdd")}
+                      </button>
+                      <button onClick={closeSelectionPopup}>{t("cancel")}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="nb-note-editor-actions">
               <button disabled={!noteDirty || noteSaving} onClick={saveNote}>
                 {noteSaving ? t("nbSaving") : t("nbSave")}
@@ -4492,6 +6476,7 @@ function App() {
   }, [session]);
   const [view, setView] = useState<View>("transcribe");
   const [libraryOpenRequest, setLibraryOpenRequest] = useState<LibraryOpenRequest | null>(null);
+  const [notebookOpenRequest, setNotebookOpenRequest] = useState<NotebookOpenRequest | null>(null);
   const [adminExpanded, setAdminExpanded] = useState(true);
   const [adminSection, setAdminSection] = useState<AdminSection>("users");
   // Histórico de vistas para as setas voltar/avançar da barra de título
@@ -4527,6 +6512,13 @@ function App() {
   useEffect(() => {
     localStorage.setItem("upexnote-sidebar", collapsed ? "collapsed" : "open");
   }, [collapsed]);
+  // O utilizador pediu que, ao entrar no Caderno, o menu principal recolha
+  // sozinho (mais espaço para a árvore de notas) — só recolhe, nunca reabre
+  // sozinho, para não lutar contra um recolher/expandir manual do utilizador.
+  useEffect(() => {
+    if (view === "notebooks") setCollapsed(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   const [engines, setEngines] = useState<Engine[]>([]);
   const [engineId, setEngineId] = useState<string>("");
@@ -4709,6 +6701,13 @@ function App() {
       });
     }
     navTo("library");
+  }
+
+  /** "Abrir no Caderno" (fatia 4, "abertura") — navega para a aba Notebooks
+   * e abre a nota diretamente, venha o pedido de onde vier. */
+  function openInNotebook(noteId: number) {
+    setNotebookOpenRequest({ noteId, nonce: Date.now() });
+    navTo("notebooks");
   }
 
   const navItems: { id: View; icon: ReactNode; label: string }[] = [
@@ -4993,11 +6992,16 @@ function App() {
               active={view === "library"}
               openRequest={libraryOpenRequest}
               onOpenRequestHandled={() => setLibraryOpenRequest(null)}
+              onOpenInNotebook={openInNotebook}
             />
           </div>
 
           <div className={"view-pane" + (view === "notebooks" ? "" : " hidden")}>
-            <NotebooksView active={view === "notebooks"} />
+            <NotebooksView
+              active={view === "notebooks"}
+              openRequest={notebookOpenRequest}
+              onOpenRequestHandled={() => setNotebookOpenRequest(null)}
+            />
           </div>
 
           {getSession()?.role !== "admin" && <div className={"view-pane" + (view === "support" ? "" : " hidden")}>
