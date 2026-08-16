@@ -1274,6 +1274,38 @@ textarea.edit-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px va
   margin-top: 4px;
   opacity: 0.85;
 }
+.login-mode-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.login-mode-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ctl);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.login-mode-card:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+.login-mode-card.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 .social-btn {
   display: flex;
   align-items: center;

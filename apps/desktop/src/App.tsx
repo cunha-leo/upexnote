@@ -21,7 +21,7 @@ import {
   Search, ArrowLeft, ArrowRight, Minus, Square, X, LogOut, ShieldCheck,
   Eye, EyeOff, CircleCheck, CircleX, MessageCircle, ChevronDown, ChevronRight, Pencil, Archive, Trash2,
   Users, Activity, FileText, BarChart3, LifeBuoy, RefreshCw, UserRound,
-  Database, Table2, Columns3, KeyRound, LockKeyhole, Filter, ChevronsLeft, ChevronsRight, Plus, Play, Code2,
+  Database, Table2, Columns3, KeyRound, LockKeyhole, Filter, ChevronsLeft, ChevronsRight, Plus, Play, Code2, HardDrive, Cloud,
   Save, FolderOpen, ArchiveRestore, Clock3, Copy, Network, BookOpen,
   Bold, Italic, Underline, Highlighter, Heading2, List as ListIcon, ListOrdered,
   MessageSquarePlus, Link2, History, PanelRight, CircleCheckBig, Download, Tag,
@@ -4438,6 +4438,26 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         </div>
       ) : (
       <div className="login-card">
+        {(screen === "login" || screen === "create") && (
+          <div className="login-mode-selector">
+            <button
+              className={"login-mode-card" + (target === "user" ? " active" : "")}
+              onClick={() => { setErr(""); setNotice(""); setAdminPw(""); setTarget("user"); }}
+              disabled={busy !== ""}
+            >
+              <HardDrive size={20} aria-hidden="true" />
+              <span>{t("loginModeLocal")}</span>
+            </button>
+            <button
+              className={"login-mode-card" + (target === "admin" ? " active" : "")}
+              onClick={() => { setErr(""); setNotice(""); setTarget("admin"); }}
+              disabled={busy !== ""}
+            >
+              <Cloud size={20} aria-hidden="true" />
+              <span>{t("loginModeCloud")}</span>
+            </button>
+          </div>
+        )}
         <h1 className="pg-title">
           {screen === "create" ? t("loginCreateTitle") : screen === "precad" ? t("loginPrecadTitle")
             : screen === "resetComplete" ? t("loginResetNewTitle")
@@ -4658,7 +4678,8 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         </div>
       </div>
       )}
-      {screen !== "welcome" && screen !== "adminMfa" && screen !== "adminTotpEnroll" && (
+      {screen !== "welcome" && screen !== "adminMfa" && screen !== "adminTotpEnroll"
+        && screen !== "login" && screen !== "create" && (
         <button
           className="link-btn login-admin"
           onClick={() => {
