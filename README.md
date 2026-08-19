@@ -2,7 +2,9 @@
 
 > Transcreva, organize e explore suas conversas.
 
-UpexNote é o produto local-first de transcrição, contexto e estudo do ecossistema UpexFlow. A versão desktop atual é **0.28.0**.
+UpexNote é o produto local-first de transcrição, contexto e estudo do ecossistema UpexFlow. A aplicação está em evolução contínua e já avançou além de parte da documentação e dos materiais visuais atualmente disponíveis neste repositório.
+
+> **Nota sobre a documentação:** alguns documentos, capturas de tela e materiais visuais ainda refletem versões anteriores da aplicação. A documentação técnica e visual será atualizada progressivamente para acompanhar o estado mais recente do produto.
 
 ## Estado atual
 
