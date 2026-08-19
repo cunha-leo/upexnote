@@ -4,6 +4,17 @@
 
 UpexNote é o produto local-first de transcrição, contexto e estudo do ecossistema UpexFlow. A aplicação está em evolução contínua e já avançou além de parte da documentação e dos materiais visuais atualmente disponíveis neste repositório.
 
+Hoje o UpexNote já reúne, numa única aplicação Windows, uma cadeia completa que vai da transcrição ao estudo e à reutilização do conteúdo:
+
+- transcrição de áudio e vídeo com múltiplos motores, preservação separada de `raw` e `clean` e validações/benchmarks próprios de qualidade, custo, latência e diarização;
+- **Prévia estruturada** para transformar o transcript em conteúdo organizado e legível, preservando a origem e o processamento utilizado;
+- **Caderno (Notebooks)** com árvore de projetos/pastas/cadernos/seções, notas editáveis, anotações, comentários, referências, links entre notas, glossário/dicionário e exportação em `.md`, `.docx` e pacote de contexto/prompt para outras IAs;
+- **Administration** com Users, Activity, Audit, Telemetry, Support e **Data Studio**, incluindo catálogo PostgreSQL, Visual Builder, SQL Editor, Saved Queries, consultas parametrizadas, mutações protegidas e diagramas ER;
+- identidade e segurança com e-mail/senha, Google, GitHub, recuperação de senha, MFA administrativo, proteção de credenciais e telemetria consentida sem conteúdo privado;
+- experiência de produto com temas, tipografia, densidade, zoom, acessibilidade, responsividade e interface em PT/EN/ES.
+
+O fluxo principal já permite partir de uma transcrição, gerar uma prévia formatada, levar o conteúdo para o Caderno, editar e estudar o material e exportá-lo para uso externo ou continuidade em outras ferramentas de IA.
+
 > **Nota sobre a documentação:** alguns documentos, capturas de tela e materiais visuais ainda refletem versões anteriores da aplicação. A documentação técnica e visual será atualizada progressivamente para acompanhar o estado mais recente do produto.
 
 ## Estado atual
