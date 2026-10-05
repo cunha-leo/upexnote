@@ -29,7 +29,7 @@ A aplicação está em evolução e refinamento contínuos, com outras funcional
 
 O perfil administrador também utiliza os recursos do usuário e conta com controles adicionais de segurança, registros de atividade, suporte e Data Studio. **O acesso à área administrativa é restrito a contas autorizadas.**
 
-https://github.com/user-attachments/assets/3339a74f-f241-4b33-bff7-afadd63d8c1c
+https://github.com/user-attachments/assets/8aa30273-ce92-40df-be98-ac86d3ce65bb
 
 Os vídeos demonstram o estado atual do projeto. A publicação do código e dessas demonstrações não implica disponibilização pública da aplicação nem acesso à infraestrutura administrativa.
 
