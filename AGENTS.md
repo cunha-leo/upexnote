@@ -1,5 +1,7 @@
 # AGENTS.md — UpexNote
 
+> **Valores reais de infraestrutura:** este repositório público usa marcadores (`<VPS_HOST>`, `<DB_PORT>`, `<SSH_USER>`, `<CHAVE_SSH_VPS>`, `<USER>`, `<LINK_DRIVE_PRIVADO>` etc.). A tabela de equivalência está em `docs/private/INFRA_LOCAL.md`, arquivo local ignorado pelo Git. Antes de operar SSH, banco, caminhos locais ou links do Drive, leia esse arquivo; se não existir, peça ao Leonardo — não invente valores.
+
 Este arquivo tem duas camadas obrigatórias, nesta ordem. A ordem é a mesma exigida por `docs/CONTEXT_ORCHESTRATION.md`: primeiro a camada humana e decisória (quem é Leonardo e o estado vivo das decisões), depois a camada técnica do repositório e da aplicação.
 
 1. **PARTE 1 — Bootstrap LIFE** (protocolo de leitura do Dossiê, Contexto Vivo e Fio Condutor no Google Drive).

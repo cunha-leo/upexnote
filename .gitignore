@@ -62,3 +62,6 @@ services/worker/transcription/tunnel_state.json
 # Limpeza de sessao (Cowork) - nao versionar
 _to_delete/
 scripts/package-lock.json
+
+# Valores reais de infraestrutura (privado)
+docs/private/
