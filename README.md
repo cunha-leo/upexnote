@@ -25,7 +25,7 @@ https://github.com/user-attachments/assets/05e21e98-199f-4ca4-a918-dd9bd62a5e38
 
 A aplicação está em evolução e refinamento contínuos, com outras funcionalidades em desenvolvimento. Esta demonstração registra o fluxo disponível em outubro de 2026.
 
-### Demonstração administrativa · acesso restrito · 1 min 51 s
+### Demonstração administrativa · acesso restrito · 1 min 32 s
 
 O perfil administrador também utiliza os recursos do usuário e conta com controles adicionais de segurança, registros de atividade, suporte e Data Studio. **O acesso à área administrativa é restrito a contas autorizadas.**
 
