@@ -33,7 +33,7 @@ Não o reduzir a solicitante, aprovador, “dono da ideia”, testador manual ou
 
 ## 3. Estado exato do Git e do worktree
 
-- Repositório: `C:\Users\cunha\Projects\upexflow\upexnote`.
+- Repositório: `C:\Users\<USER>\Projects\upexflow\upexnote`.
 - Branch: `main`.
 - `HEAD = origin/main = 4bea41ab58be22bee5939b327c843c767e6e69ab` antes do fechamento desta fatia.
 - O worktree está **intencionalmente sujo** com a implementação completa da v0.30.0 e sua documentação.
@@ -164,7 +164,7 @@ Depois das capturas:
 
 Estas regras existem para evitar que uma limpeza do Claude interrompa recursos de outro agente ou destrua evidência:
 
-1. **Não tocar em `C:\Users\cunha\.codex\`**, seus plugins, caches, skills, sessões, runtimes ou arquivos de memória/execução.
+1. **Não tocar em `C:\Users\<USER>\.codex\`**, seus plugins, caches, skills, sessões, runtimes ou arquivos de memória/execução.
 2. **Não apagar, mover ou recriar `AGENTS.md`, `.agents/` ou uma futura `.codex/` dentro do repositório.** `.agents/` existe atualmente e está vazio; deve ser preservado.
 3. **Não executar `git clean -fd`, `git clean -fdx`, `git reset --hard`, `git checkout -- .`, `git restore .` ou equivalentes.**
 4. **Não executar exclusão recursiva ampla** no repositório, na home, no AppData, no Temp ou em diretórios de ferramentas.
@@ -204,13 +204,13 @@ Assuma a continuidade do UpexNote a partir do worktree local atual, sem limpar, 
 Leia integralmente e siga, nesta ordem:
 
 1. G:\My Drive\DocumentsDesktop\03-Life\01-Prompt Start\PROMPT_START_UPEXNOTE.md
-2. C:\Users\cunha\Projects\upexflow\upexnote\AGENTS.md
-3. C:\Users\cunha\Projects\upexflow\upexnote\docs\CONTEXT_ORCHESTRATION.md
-4. C:\Users\cunha\Projects\upexflow\upexnote\docs\PROJECT_CONTEXT.md
-5. C:\Users\cunha\Projects\upexflow\upexnote\docs\FEATURE_VALIDATION_AND_ROADMAP.md
-6. C:\Users\cunha\Projects\upexflow\upexnote\docs\UX_PRODUCT_STANDARD.md
-7. C:\Users\cunha\Projects\upexflow\upexnote\docs\NOTEBOOK_ARCHITECTURE.md
-8. C:\Users\cunha\Projects\upexflow\upexnote\docs\HANDOFF_CLAUDE_2026-08-09_UPEXNOTE_V030.md
+2. C:\Users\<USER>\Projects\upexflow\upexnote\AGENTS.md
+3. C:\Users\<USER>\Projects\upexflow\upexnote\docs\CONTEXT_ORCHESTRATION.md
+4. C:\Users\<USER>\Projects\upexflow\upexnote\docs\PROJECT_CONTEXT.md
+5. C:\Users\<USER>\Projects\upexflow\upexnote\docs\FEATURE_VALIDATION_AND_ROADMAP.md
+6. C:\Users\<USER>\Projects\upexflow\upexnote\docs\UX_PRODUCT_STANDARD.md
+7. C:\Users\<USER>\Projects\upexflow\upexnote\docs\NOTEBOOK_ARCHITECTURE.md
+8. C:\Users\<USER>\Projects\upexflow\upexnote\docs\HANDOFF_CLAUDE_2026-08-09_UPEXNOTE_V030.md
 
 Execute integralmente o bootstrap LIFE indicado pelo ponto de entrada e respeite a autoria, capacidade, identidade profissional e método de construção de Leonardo Cunha registrados no Dossiê e nos documentos do produto.
 
@@ -218,7 +218,7 @@ Depois confira apenas de forma não destrutiva `git status --short`, `git diff -
 
 Sua atividade exclusiva é continuar do estado descrito no handoff: validar visualmente a instalação real v0.30.0 no transcript #23 e documento #9, sem clicar em Gerar prévia, sem chamar API paga e sem alterar dados. Se o controle desktop não funcionar, peça as capturas a Leonardo e avalie-as; não invente evidência.
 
-Proteja o ambiente compartilhado: não toque em C:\Users\cunha\.codex, plugins, caches, sessions, runtimes, AGENTS.md ou .agents; não rode git clean/reset/restore; não faça exclusões recursivas; não encerre processos node/cargo/python/PowerShell de forma genérica; não apague o worker empacotado, o instalador, AppData, storage, bancos ou screenshots. O erro anterior do Computer Use foi EnumWindows 0x80070003 e não há evidência de relação com o repositório.
+Proteja o ambiente compartilhado: não toque em C:\Users\<USER>\.codex, plugins, caches, sessions, runtimes, AGENTS.md ou .agents; não rode git clean/reset/restore; não faça exclusões recursivas; não encerre processos node/cargo/python/PowerShell de forma genérica; não apague o worker empacotado, o instalador, AppData, storage, bancos ou screenshots. O erro anterior do Computer Use foi EnumWindows 0x80070003 e não há evidência de relação com o repositório.
 
 Depois da evidência real, atualize somente os registros pendentes nos documentos, rode as verificações finais e prepare um commit local claro. Não faça push sem minha autorização explícita. Pare antes de implementar configuração padrão do motor ou qualquer parte do schema/notebooks/Caderno.
 ```

@@ -1,5 +1,7 @@
 # UpexNote — Contexto Vivo do Projeto
 
+> **Nota de anonimização (outubro de 2026):** nesta versão pública, host, porta, usuário SSH, nome/caminho da chave, usuário do Windows e links privados do Drive foram substituídos por marcadores (`<VPS_HOST>`, `<DB_PORT>`, `<SSH_USER>`, `<CHAVE_SSH_VPS>`, `<USER>`, `<LINK_DRIVE_PRIVADO>`). A arquitetura, a sequência de decisões e os procedimentos permanecem iguais; só os valores reais de infraestrutura foram omitidos. Nenhuma senha ou chave privada consta nesta documentação.
+
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
 **Última atualização:** 14 de agosto de 2026 (v0.44.0 — exportação do Caderno segue o idioma da reunião/transcrição de origem)
@@ -7,7 +9,7 @@
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
-**Raiz local de desenvolvimento:** `C:\Users\cunha\Projects\upexflow\upexnote` (disco local; ver Registro 2026-07-12 (c) sobre a saída do Google Drive)
+**Raiz local de desenvolvimento:** `C:\Users\<USER>\Projects\upexflow\upexnote` (disco local; ver Registro 2026-07-12 (c) sobre a saída do Google Drive)
 
 ---
 
@@ -182,7 +184,7 @@ O navegador sozinho pode pedir microfone e compartilhamento de tela/aba, mas nã
 ### Estrutura local atual
 
 ```text
-C:\Users\cunha\Projects\upexflow\upexnote
+C:\Users\<USER>\Projects\upexflow\upexnote
 ├─ apps/desktop/        interface do UpexNote (Tauri + React)
 ├─ services/worker/     pipelines locais e integração de mídia (Python)
 ├─ docs/                documentação de produto e engenharia
@@ -213,7 +215,7 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 
 ### Disco local (desenvolvimento)
 
-- Raiz de desenvolvimento: `C:\Users\cunha\Projects\upexflow\upexnote` (disco local, fora de qualquer sincronização em nuvem).
+- Raiz de desenvolvimento: `C:\Users\<USER>\Projects\upexflow\upexnote` (disco local, fora de qualquer sincronização em nuvem).
 - **O código NÃO fica no Google Drive.** A partir de 2026-07-12, o desenvolvimento saiu do Drive (ver Registro (c)): o Google Drive File Stream não suporta as escritas do `node_modules`/build e o `git`+GitHub já é a sincronização real.
 - Opcionalmente, derivados finais (TXT, Markdown, JSON, exportações) podem ser copiados para o Drive à parte, mas nunca a pasta de trabalho com toolchain de build.
 
@@ -239,14 +241,14 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbook permite a qualquer IA diagnosticar e restabelecer o acesso à VPS **sem conhecimento prévio**. Regra de ouro: **nunca pedir, usar ou manusear a password da VPS** — o acesso é sempre por chave SSH instalada pelo próprio utilizador.
 
 **Estado normal (máquina já autorizada):**
-- Chave privada em `~/.ssh/upexnote_vps` (Windows: `C:\Users\<user>\.ssh\upexnote_vps`). NUNCA vai para Git, Drive, chat ou logs.
-- Ligar: `ssh -i ~/.ssh/upexnote_vps root@vps.upexflow.com`
-- Teste rápido: `ssh -i ~/.ssh/upexnote_vps -o BatchMode=yes root@vps.upexflow.com "echo ok"` → deve responder `ok`.
+- Chave privada em `~/.ssh/<CHAVE_SSH_VPS>` (Windows: `C:\Users\<USER>\.ssh\<CHAVE_SSH_VPS>`). NUNCA vai para Git, Drive, chat ou logs.
+- Ligar: `ssh -i ~/.ssh/<CHAVE_SSH_VPS> <SSH_USER>@<VPS_HOST>`
+- Teste rápido: `ssh -i ~/.ssh/<CHAVE_SSH_VPS> -o BatchMode=yes <SSH_USER>@<VPS_HOST> "echo ok"` → deve responder `ok`.
 
 **Se der `Permission denied (publickey,password)` — a máquina NÃO tem privilégios. Recuperar assim:**
-1. Verificar se a chave existe (`~/.ssh/upexnote_vps`). Se não existir, gerar (sem passphrase, nome neutro da máquina):
-   `ssh-keygen -t ed25519 -f ~/.ssh/upexnote_vps -N '' -C "upexnote-dev-<maquina>-<AAAAMMDD>"`
-2. Mostrar ao utilizador o conteúdo da chave PÚBLICA (`~/.ssh/upexnote_vps.pub`) e dar-lhe esta instrução, simples e completa:
+1. Verificar se a chave existe (`~/.ssh/<CHAVE_SSH_VPS>`). Se não existir, gerar (sem passphrase, nome neutro da máquina):
+   `ssh-keygen -t ed25519 -f ~/.ssh/<CHAVE_SSH_VPS> -N '' -C "upexnote-dev-<maquina>-<AAAAMMDD>"`
+2. Mostrar ao utilizador o conteúdo da chave PÚBLICA (`~/.ssh/<CHAVE_SSH_VPS>.pub`) e dar-lhe esta instrução, simples e completa:
    > Abre o painel da **Hostinger** → a tua VPS → **Browser terminal** (funciona mesmo sem SSH) e cola:
    > `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '<CONTEÚDO DO .pub>' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo INSTALADA`
 3. Quando o utilizador confirmar, repetir o teste do passo "Estado normal". Só avançar com trabalho na VPS depois do `ok`.
@@ -278,10 +280,10 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 - Git local inicializado na branch `main`.
 - Repositório privado GitHub criado e primeiro commit publicado.
 - Documentos iniciais: `README.md`, `ARCHITECTURE.md`, `PRODUCT.md` e este contexto vivo.
-- Pipelines de transcrição migrados de `C:\Users\cunha\Project\scripts\` para `services/worker/transcription/`, sem alterar a lógica de nenhum motor (ver Registro 2026-07-12 abaixo).
+- Pipelines de transcrição migrados de `C:\Users\<USER>\Project\scripts\` para `services/worker/transcription/`, sem alterar a lógica de nenhum motor (ver Registro 2026-07-12 abaixo).
 - Ponto de entrada do worker criado: CLI NDJSON (`transcription.cli`) com comandos `engines`, `transcribe`, `set-key`, `check-key` — pronta para o shell Tauri lançar como sidecar.
 - Interface iniciada: scaffold Tauri 2 + React/TS em `apps/desktop`. Toolchain (Rust/C++/Node 24) instalado e validado.
-- Desenvolvimento movido do Google Drive para disco local (`C:\Users\cunha\Projects\upexflow\upexnote`); GitHub é a sincronização.
+- Desenvolvimento movido do Google Drive para disco local (`C:\Users\<USER>\Projects\upexflow\upexnote`); GitHub é a sincronização.
 - **Primeira interface funcional:** transcrição de ponta a ponta feita dentro da app (React↔Rust↔worker), com progresso ao vivo e vista de resultado. Validado com gravação real (ver Registro (d)).
 - Seletor de ficheiro nativo; organização do storage por dia/motor (ver Registro (e)).
 - **Durabilidade/histórico no Postgres da VPS** (serviço dedicado `upexnote-db`), escrita best-effort a cada transcrição (ver Registros (f)/(g)/(h)).
@@ -295,8 +297,8 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 - **Recuperação de senha validada de ponta a ponta (v0.19.0):** pedido genérico → e-mail SMTP → código de 6 dígitos → token de uso único → nova senha no formato PBKDF2 já usado pelo login → login bem-sucedido. Eventos `password_reset_requested` e `password_reset_completed` confirmados em `access_events`, sem expor dados sensíveis.
 - **UX de campos sensíveis (v0.19.1, VALIDADA pelo utilizador):** controlo mostrar/ocultar com Lucide em login, elevação admin, criação de conta e credenciais; validação visual real de comprimento mínimo e igualdade da confirmação; estados de espera específicos no reset/login. Mantido `type="text"` + máscara CSS + paste intercetado por compatibilidade com a WebView2. Instalador v0.19.1 gerado, copiado para o Desktop e instalado.
 - **MFA administrativo publicado e validado (v0.20.0):** entrada admin exige identidade + senha administrativa + **TOTP OU código por e-mail**; o e-mail permanece sempre como recuperação. QR Code `otpauth://` compatível com qualquer autenticador, segredo TOTP cifrado no servidor, sessões opacas revogáveis, rate limit e 5 tentativas. Definições → Segurança permite configurar/substituir o autenticador de conta existente sem invalidar o antigo antes da confirmação. Operações administrativas e visão global da Biblioteca exigem sessão MFA central válida; autoelevação de role foi removida. API 0.2.0 reimplantada no EasyPanel, instalador v0.20.0 aplicado e fluxo real aprovado pelo utilizador.
-- **Backup externo e firewall resiliente a restart do Docker (2026-07-22):** dump diário às 03:30 UTC continua local por 14 dias e agora é copiado para o Google Drive pessoal em `Projects/upexflow/upexnote/storage/backups/postgres`, com validação gzip e checksum; 9 dumps históricos confirmados sem diferenças. O `docker.service` ganhou drop-in que reagenda `upexnote-firewall.service` após cada start/restart, preservando o DROP total da porta 55433 em IPv4/IPv6. Implementação versionada em `ops/vps/`; sem n8n, sem porta nova e sem retenção destrutiva no Drive.
-- **Cópia local dos transcripts centralizada no Google Drive pessoal (2026-07-23):** a instalação passou a usar `G:\My Drive\Projects\upexflow\upexnote\storage\transcripts` como `storage_dir`; 22 artefactos locais foram copiados, validados individualmente por SHA-256 e só então removidos de `C:\Users\cunha\Documents\UpexNote\storage\transcripts`. O destino contém 24 ficheiros (22 migrados + 2 históricos), sem colisões. A pasta fantasma `OneDrive\Documentos\TrancriptAutomation` foi diagnosticada como projeto antigo salvo no Codex, não como rotina do UpexNote.
+- **Backup externo e firewall resiliente a restart do Docker (2026-07-22):** dump diário às 03:30 UTC continua local por 14 dias e agora é copiado para o Google Drive pessoal em `Projects/upexflow/upexnote/storage/backups/postgres`, com validação gzip e checksum; 9 dumps históricos confirmados sem diferenças. O `docker.service` ganhou drop-in que reagenda `upexnote-firewall.service` após cada start/restart, preservando o DROP total da porta <DB_PORT> em IPv4/IPv6. Implementação versionada em `ops/vps/`; sem n8n, sem porta nova e sem retenção destrutiva no Drive.
+- **Cópia local dos transcripts centralizada no Google Drive pessoal (2026-07-23):** a instalação passou a usar `G:\My Drive\Projects\upexflow\upexnote\storage\transcripts` como `storage_dir`; 22 artefactos locais foram copiados, validados individualmente por SHA-256 e só então removidos de `C:\Users\<USER>\Documents\UpexNote\storage\transcripts`. O destino contém 24 ficheiros (22 migrados + 2 históricos), sem colisões. A pasta fantasma `OneDrive\Documentos\TrancriptAutomation` foi diagnosticada como projeto antigo salvo no Codex, não como rotina do UpexNote.
 - **Cliente OAuth próprio do rclone aplicado (2026-07-23):** criado no projeto Google Cloud `upexnote` o cliente de computador `UpexNote rclone Backup — VPS`. As credenciais foram lidas do JSON baixado localmente e gravadas apenas em `/root/.config/rclone/rclone.conf` (modo 600); o remoto `upexnote-drive:` continuou acessível e deixou de emitir o aviso de descontinuação do cliente partilhado. Destino, cron (03:30 UTC), retenção e script de backup não foram alterados.
 - **Visibilidade e aprendizagem dos jobs da VPS (2026-07-23):** documentados em `ops/vps/README.md` os comandos Unix de consulta do cron, logs, backups e pesquisa por `grep`, distinguindo-os da execução manual que cria um dump. Decisão de produto: futuros jobs podem ser scripts próprios com identificador, logs e índices, sem depender de n8n; n8n continua uma opção posterior de orquestração visual, não um requisito.
 - **Regra de departamentos por schema (2026-07-23):** cada domínio funcional novo recebe schema PostgreSQL próprio em inglês. O suporte ficará em `support` e seguirá hub-and-spoke: matriz `support.tickets` + satélites de metadados, descrição, comentários, anexos, estados, notificações e auditoria. Não misturar novos departamentos (ex.: estudo/chat) no schema atual nem em `public`; preservar dados e permitir evolução sem reconstrução do banco.
@@ -314,7 +316,7 @@ O utilizador trabalha com várias IAs e várias máquinas possíveis. Este runbo
 
 1. **MINI-API — webhooks:** definir os eventos externos reais e então implementar emissão/receção autenticada; telemetria e token de instalação já foram entregues. Nada de conteúdo de transcripts e nada de n8n dentro deste serviço.
 2. **Roteiro de produto (fases 3-6):** contexto/decisões/ações/riscos, material de estudo (fluxos/tabelas/quiz), chat ancorado no material. A Biblioteca (fase 2) está feita — ver Registro 2026-07-14 (d).
-3. **Higiene do workspace Codex:** abrir/registar `C:\Users\cunha\Projects\upexflow\upexnote` como projeto do Codex e deixar de usar o projeto salvo `TrancriptAutomation`; depois apagar definitivamente a pasta antiga, que contém apenas `.git` e `.agents` vazios. Enquanto esta tarefa continuar vinculada ao caminho antigo, apagá-lo é apenas temporário e ele pode ser recriado pelo ambiente.
+3. **Higiene do workspace Codex:** abrir/registar `C:\Users\<USER>\Projects\upexflow\upexnote` como projeto do Codex e deixar de usar o projeto salvo `TrancriptAutomation`; depois apagar definitivamente a pasta antiga, que contém apenas `.git` e `.agents` vazios. Enquanto esta tarefa continuar vinculada ao caminho antigo, apagá-lo é apenas temporário e ele pode ser recriado pelo ambiente.
 
 ### Backlog de melhorias da Biblioteca (levantado 2026-07-14, IDEIAS — não agendado, não implementar sem confirmar)
 
@@ -368,7 +370,7 @@ Os comandos Tauri `library*` eram síncronos com IO bloqueante (spawn do worker 
 **Nota transversal (itens 5-8):** formam uma superfície coerente de **Preferências/Aparência** nas Definições (tema, densidade, zoom, fonte, idioma) — padrão de app Electron maduro. Motivação do utilizador: vê o UpexNote a crescer muito (edições, formatação, NotebookLM/APIs de resumo, secção de notas pessoais) e quer uma base bonita, moderna e configurável desde já.
 
 13-C. **IDENTIDADE COMPLETA — Fase 1c (ESPECIFICADA pelo utilizador em 2026-07-18, prioridade nº 1 da próxima sessão; a v0.13.0 é só o esqueleto visual).** Crítica do utilizador à v0.13.0: "clube simples de login… CRUD de escola" — a identidade tem de ser nível produto maduro, não gate provisório. Especificação COMPLETA (palavras dele, estruturadas):
-   - **Tabela `users` no banco do modo ativo** (SQLite local / Postgres VPS — a conta admin dele nasce no central, semente do multi-tenant da Fase 2): `id`, **`user_id`/username ÚNICO** (gerado no pré-cadastro com verificação de disponibilidade no banco + SUGESTÕES quando ocupado — ex.: "cunhaleonardo"), `email` único, `nome`, `sobrenome`, **`telefone`** (campo existe; autenticação por SMS DESCARTADA — custo de API), **`auth_provider`** (email / google / github — COMO a pessoa entrou fica registado) + `provider_id` + permissões/escopos concedidos no OAuth, `password_salt`/`password_hash` (NULL para contas OAuth; senha NUNCA visível/em claro), **`role`** (user/admin), `created_at`, `updated_at`, `last_login_at`. CRUD completo do perfil (update de nome/telefone/etc.).
+   - **Tabela `users` no banco do modo ativo** (SQLite local / Postgres VPS — a conta admin dele nasce no central, semente do multi-tenant da Fase 2): `id`, **`user_id`/username ÚNICO** (gerado no pré-cadastro com verificação de disponibilidade no banco + SUGESTÕES quando ocupado — ex.: "<usuario>"), `email` único, `nome`, `sobrenome`, **`telefone`** (campo existe; autenticação por SMS DESCARTADA — custo de API), **`auth_provider`** (email / google / github — COMO a pessoa entrou fica registado) + `provider_id` + permissões/escopos concedidos no OAuth, `password_salt`/`password_hash` (NULL para contas OAuth; senha NUNCA visível/em claro), **`role`** (user/admin), `created_at`, `updated_at`, `last_login_at`. CRUD completo do perfil (update de nome/telefone/etc.).
    - **Login social REAL:** botões "Entrar com Google" e "Entrar com GitHub" — OAuth nativo de desktop (PKCE + loopback no browser: clica → página de autenticação do provedor → permissões → volta à app). VIÁVEL SEM SERVIDOR próprio e SEM custo; requer registo único (grátis) de OAuth apps pelo dono (Google Cloud Console + GitHub Settings) — passo guiado.
    - **Pré-cadastro pós-OAuth:** primeira entrada por Google/GitHub → tela pede nome/sobrenome (opcional, pré-preenchido do provedor) + gera/valida o user_id único com sugestões. Como toda app moderna.
    - **Admin = segundo fator, não perfil de cadastro:** o que eleva a admin é prova de posse (ex.: credenciais reais do banco/VPS) — separado do método de login. Qualquer utilizador entra por qualquer método; admin é elevação.
@@ -1096,7 +1098,7 @@ npm.cmd run tauri build
 - `npm.cmd run build`, `cargo check` e compilação Python aprovados.
 - Testes do worker: 4 aprovados. Testes da API: 12 aprovados.
 - Worker sidecar e instalador NSIS de produção gerados; instalação silenciosa concluída com código `0`.
-- Executável instalado em `C:\Users\cunha\AppData\Local\UpexNote\upexnote.exe`, versão de produto `0.24.0`; abertura e versão da tela inicial confirmadas visualmente. A validação autenticada não usou credenciais artificiais porque a sessão local estava desconectada.
+- Executável instalado em `C:\Users\<USER>\AppData\Local\UpexNote\upexnote.exe`, versão de produto `0.24.0`; abertura e versão da tela inicial confirmadas visualmente. A validação autenticada não usou credenciais artificiais porque a sessão local estava desconectada.
 
 ### Decisão
 - Informações do perfil continuam a ser lidas da identidade existente; não foi criado domínio, schema ou armazenamento de avatar nesta etapa. Foto personalizada permanece evolução futura.
@@ -1129,10 +1131,10 @@ npm.cmd run tauri build
 ### Registro — 2026-07-23 (a): destino local dos transcripts no Drive + diagnóstico do workspace fantasma
 
 ### O que mudou
-- Auditadas separadamente a aplicação e a pasta `C:\Users\cunha\OneDrive\Documentos\TrancriptAutomation`. Não existe referência a `TrancriptAutomation`, `TranscriptAutomation` ou ao caminho do OneDrive no código atual do UpexNote.
+- Auditadas separadamente a aplicação e a pasta `C:\Users\<USER>\OneDrive\Documentos\TrancriptAutomation`. Não existe referência a `TrancriptAutomation`, `TranscriptAutomation` ou ao caminho do OneDrive no código atual do UpexNote.
 - O diretório antigo continha somente `.git` e `.agents` vazios, ambos criados junto com o workspace em 2026-07-22. Nenhuma tarefa agendada ou entrada de arranque do Windows referencia esse caminho.
 - A lista de projetos do Codex confirmou a causa: `TrancriptAutomation` continua registado como projeto local e é a raiz desta tarefa. Portanto, a recriação não vem do worker, do Git do UpexNote ou de uma transcrição; vem do vínculo do ambiente Codex ao workspace antigo.
-- A configuração da instalação não tinha `storage_dir` personalizado: apesar de `storage_mode=vps`, a cópia em ficheiro continuava no padrão `C:\Users\cunha\Documents\UpexNote\storage\transcripts`. Os 22 artefactos ali existentes foram copiados para `G:\My Drive\Projects\upexflow\upexnote\storage\transcripts`.
+- A configuração da instalação não tinha `storage_dir` personalizado: apesar de `storage_mode=vps`, a cópia em ficheiro continuava no padrão `C:\Users\<USER>\Documents\UpexNote\storage\transcripts`. Os 22 artefactos ali existentes foram copiados para `G:\My Drive\Projects\upexflow\upexnote\storage\transcripts`.
 - Depois da cópia, cada par origem/destino foi comparado por SHA-256. Com 22/22 correspondências e zero colisões, a pasta de origem local foi removida. O comando oficial `set-settings` do worker gravou o Google Drive como destino padrão; organização por dia/motor permanece ativa.
 
 ### Evidência / teste
@@ -1143,7 +1145,7 @@ npm.cmd run tauri build
 - `get-settings` do worker instalado após a alteração: `storage_dir=G:\My Drive\Projects\upexflow\upexnote\storage\transcripts`, `storage_dir_custom=true`, `organize_by_day_engine=true`, `storage_mode=vps`. O `%APPDATA%\UpexNote\settings.json` real foi relido depois e confirmou persistência.
 
 ### Decisão
-- Separar código, dados e workspace: código ativo continua em `C:\Users\cunha\Projects\upexflow\upexnote` + GitHub; transcripts ficam na pasta sincronizada do Google Drive e fora do Git; `TrancriptAutomation` não deve ser usado como projeto nem como destino de dados.
+- Separar código, dados e workspace: código ativo continua em `C:\Users\<USER>\Projects\upexflow\upexnote` + GitHub; transcripts ficam na pasta sincronizada do Google Drive e fora do Git; `TrancriptAutomation` não deve ser usado como projeto nem como destino de dados.
 - Não hardcodar o caminho pessoal no produto. A instalação usa a opção de pasta padrão já existente em `settings.json`, alterada pela CLI/UI oficial; o padrão de fábrica continua portátil para outras máquinas.
 - Em operações de produção no Windows, alterar/verificar settings pelo worker empacotado ou pela UI. O Python instalado pela Microsoft Store virtualiza `%APPDATA%` no seu `LocalCache` e pode dar uma confirmação enganosa quando se executa o módulo fonte diretamente.
 - Não apagar o workspace fantasma durante uma tarefa ainda vinculada a ele, porque o Codex pode recriá-lo. A remoção definitiva ocorre depois de abrir/registar o repositório real como projeto do Codex.
@@ -1154,7 +1156,7 @@ npm.cmd run tauri build
 - Sem chamada paga, n8n, alteração na VPS, banco, firewall ou API.
 
 ### Próximo passo
-- Reabrir o trabalho no Codex com `C:\Users\cunha\Projects\upexflow\upexnote` como raiz; remover o projeto/pasta `TrancriptAutomation`; então retomar os papéis nº 3 e 4 da MINI-API ou a prioridade escolhida pelo utilizador.
+- Reabrir o trabalho no Codex com `C:\Users\<USER>\Projects\upexflow\upexnote` como raiz; remover o projeto/pasta `TrancriptAutomation`; então retomar os papéis nº 3 e 4 da MINI-API ou a prioridade escolhida pelo utilizador.
 
 ### Registro — 2026-07-22 (a): backup off-site + firewall após restart do Docker
 
@@ -1170,7 +1172,7 @@ npm.cmd run tauri build
 - Execução manual do novo job em 2026-07-22: `backup local e off-site confirmado`; validação do dump do dia: **0 diferenças, 1 ficheiro correspondente**.
 - `bash -n` aprovou o script. A primeira execução revelou que `rclone check` não aceita ficheiro único combinado com filtro; a verificação foi corrigida para diretório + nome do dia e o teste completo passou.
 - `systemd-analyze verify docker.service upexnote-firewall.service`: sem erros. `docker.service` reconhece o drop-in e o `ExecStartPost`; `upexnote-firewall.service` terminou com `ExecMainStatus=0`, estado `active/exited`.
-- Regras finais confirmadas: DROP da porta publicada `55433` em `DOCKER-USER` tanto no `iptables` quanto no `ip6tables`. O hook será exercitado naturalmente no próximo restart do Docker, sem provocar downtime apenas para teste.
+- Regras finais confirmadas: DROP da porta publicada `<DB_PORT>` em `DOCKER-USER` tanto no `iptables` quanto no `ip6tables`. O hook será exercitado naturalmente no próximo restart do Docker, sem provocar downtime apenas para teste.
 
 ### Decisão
 - **Sem n8n:** backup de infraestrutura é responsabilidade direta de cron + `pg_dump` + `rclone`; tem menos dependências, menor superfície de falha e não mistura o projeto `upexflow` do EasyPanel com o `upexnote`.
@@ -1266,7 +1268,7 @@ npm.cmd run tauri build
 - Refinar a UX dos campos sensíveis/espera (entregue em v0.19.1) e avançar para o 3º fator da elevação admin.
 
 ### ✅ VALIDAÇÃO FINAL DA SESSÃO 2026-07-19 (utilizador, v0.18.4)
-- **Tudo aprovado:** GitHub Device Flow completo (código em destaque na app → página do GitHub → autorizado → pré-cadastro admin → conta criada); consola mostra os **2 admins** dele — `cunhaleonardo.en` (google, dono das 10 transcrições) e `cunhaleonardo.pt` (github) — multi-admin conforme desenhado, auditoria distingue as identidades. Google pessoal+admin ✔, e-mail+senha ✔, arranque solto ✔, aba Administração ✔.
+- **Tudo aprovado:** GitHub Device Flow completo (código em destaque na app → página do GitHub → autorizado → pré-cadastro admin → conta criada); consola mostra os **2 admins** dele — `<usuario_admin_1>` (google, dono das 10 transcrições) e `<usuario_admin_2>` (github) — multi-admin conforme desenhado, auditoria distingue as identidades. Google pessoal+admin ✔, e-mail+senha ✔, arranque solto ✔, aba Administração ✔.
 - **PRÓXIMA SESSÃO (prioridade nº 1): mini-API na VPS** (FastAPI/EasyPanel) — (1) reset de senha por código de e-mail (remetente: domínio do utilizador, alias no-reply@); (2) 3º fator da elevação admin (código e-mail OU TOTP — a senha do banco sozinha deixa de chegar); (3) telemetria/eventos das instalações de terceiros; (4) opt-ins de backup discutidos (pasta sincronizada já tem nudge no onboarding). É o início da API única da Fase 2/item 14C.
 
 ### Registro — 2026-07-19 (h): código do Device Flow em destaque — v0.18.4
@@ -1367,7 +1369,7 @@ npm.cmd run tauri build
 ### Registro — 2026-07-18: review de ponta a ponta do utilizador à identidade + correções — v0.14.2
 
 ### O que o utilizador VALIDOU (testes reais dele)
-- Login-first correto; senha errada → mensagem certa. Criar conta transporta o e-mail da tentativa; user_id normaliza e valida disponibilidade ("cunhaleonardo ✓").
+- Login-first correto; senha errada → mensagem certa. Criar conta transporta o e-mail da tentativa; user_id normaliza e valida disponibilidade ("<usuario> ✓").
 - **Separação de modos comprovada na prática:** como utilizador comum viu SÓ a transcrição feita nesse modo (SQLite, 1 linha); como admin viu as 10+ do Postgres/VPS. Aparência/tipografia/temas/idioma/pasta: "tudo muito bom".
 
 ### Correções aplicadas (v0.14.2, frontend)
@@ -1676,13 +1678,13 @@ O utilizador viu a v0.6.0 e continuou insatisfeito: "continua com cara de Bootst
 
 ### O que mudou
 - **A allowlist de IP do Registro (b) durou horas e foi substituída de propósito:** o utilizador viaja constantemente, usa VPN e vai mudar-se para Portugal — amarrar o acesso a um IP era o modelo errado ("segurança e liberdade de acesso aonde eu for"). O modelo certo: **túnel SSH com chave**, que funciona de qualquer rede/IP/VPN.
-- **Worker:** `db.py` abre túnel SSH (lib `sshtunnel`; `paramiko` fixado em `>=3,<4` — o 5.x removeu `DSSKey` e quebra o sshtunnel 0.4) quando o `db_config.json` tem a secção `"ssh"` (host/port/user/key — a chave é o caminho para `~/.ssh/upexnote_vps`, NÃO um segredo no ficheiro). Fecho da ligação via `close_connection()` (fecha ligação E túnel). Sem secção `ssh`, liga direto como antes.
-- **Firewall da VPS:** o script `/usr/local/sbin/upexnote-firewall.sh` agora faz DROP total na 55433 (IPv4+IPv6) — **sem exceções, sem allowlist para gerir**. A secção "Como mudar o IP autorizado" do Registro (b) está OBSOLETA.
-- **DBeaver:** passa a usar o túnel embutido (aba SSH: `root@vps.upexflow.com:22`, chave `upexnote_vps`; aba Main: host `127.0.0.1:55433`).
+- **Worker:** `db.py` abre túnel SSH (lib `sshtunnel`; `paramiko` fixado em `>=3,<4` — o 5.x removeu `DSSKey` e quebra o sshtunnel 0.4) quando o `db_config.json` tem a secção `"ssh"` (host/port/user/key — a chave é o caminho para `~/.ssh/<CHAVE_SSH_VPS>`, NÃO um segredo no ficheiro). Fecho da ligação via `close_connection()` (fecha ligação E túnel). Sem secção `ssh`, liga direto como antes.
+- **Firewall da VPS:** o script `/usr/local/sbin/upexnote-firewall.sh` agora faz DROP total na <DB_PORT> (IPv4+IPv6) — **sem exceções, sem allowlist para gerir**. A secção "Como mudar o IP autorizado" do Registro (b) está OBSOLETA.
+- **DBeaver:** passa a usar o túnel embutido (aba SSH: `<SSH_USER>@<VPS_HOST>:22`, chave `<CHAVE_SSH_VPS>`; aba Main: host `127.0.0.1:<DB_PORT>`).
 
 ### Evidência / teste
 - Dev e worker congelado: `db-check` OK pelo túnel (8 linhas). Ligação direta à porta: `TcpTestSucceeded: False` até do IP do utilizador. A porta está fechada para o planeta; o único caminho é ter a chave SSH.
-- **DBeaver validado pelo utilizador (2026-07-14):** ligação `upexnote` reconfigurada com túnel SSH embutido (aba SSH: `vps.upexflow.com:22`, user `root`, chave `C:\Users\cunha\.ssh\upexnote_vps`; aba Principal: host `localhost:55433`, user `postgres`). "Testar conexão" → Conectado (PostgreSQL 17.10). Cadeado SSH visível no painel.
+- **DBeaver validado pelo utilizador (2026-07-14):** ligação `upexnote` reconfigurada com túnel SSH embutido (aba SSH: `<VPS_HOST>:22`, user `<SSH_USER>`, chave `C:\Users\<USER>\.ssh\<CHAVE_SSH_VPS>`; aba Principal: host `localhost:<DB_PORT>`, user `postgres`). "Testar conexão" → Conectado (PostgreSQL 17.10). Cadeado SSH visível no painel.
 - Nota de dev descoberta no processo: o Python da MS Store **virtualiza** `%APPDATA%` (lê/escreve em `...\PythonSoftwareFoundation...\LocalCache\Roaming` em vez da pasta real) — em modo dev, o settings/config do worker pode divergir do que o worker congelado vê. Em produção (exe congelado) está tudo na pasta real.
 
 ### Impacto em dados, custo ou privacidade
@@ -1695,7 +1697,7 @@ O utilizador viu a v0.6.0 e continuou insatisfeito: "continua com cara de Bootst
 ### Registro — 2026-07-14 (b): VPS endurecida — firewall na porta do Postgres + backup diário
 
 ### O que mudou
-- **Firewall:** a porta pública `55433` (Postgres `upexnote-db`) está agora restrita ao IP do utilizador. Regras na cadeia `DOCKER-USER` (a única que o Docker respeita — o UFW é ignorado pelo Docker, razão pela qual tentativas anteriores falharam), aplicadas por `/usr/local/sbin/upexnote-firewall.sh` e reaplicadas a cada arranque pelo serviço systemd `upexnote-firewall.service`. IPv4 e IPv6 cobertos (a porta estava publicada nos dois).
+- **Firewall:** a porta pública `<DB_PORT>` (Postgres `upexnote-db`) está agora restrita ao IP do utilizador. Regras na cadeia `DOCKER-USER` (a única que o Docker respeita — o UFW é ignorado pelo Docker, razão pela qual tentativas anteriores falharam), aplicadas por `/usr/local/sbin/upexnote-firewall.sh` e reaplicadas a cada arranque pelo serviço systemd `upexnote-firewall.service`. IPv4 e IPv6 cobertos (a porta estava publicada nos dois).
 - **Backup:** dump diário às 03:30 UTC (`/etc/cron.d/upexnote-backup` → `/usr/local/sbin/upexnote-backup.sh`): `pg_dump` da base `upexnote` para `/root/backups/upexnote/upexnote-<data>.sql.gz`, rotação de 14 dias, log em `/var/log/upexnote-backup.log`.
 - **Acesso SSH por chave** estabelecido para a máquina de desenvolvimento (ver runbook na secção 8): chave adicionada pelo utilizador via painel Hostinger (Chaves SSH), sem password a circular.
 
@@ -1859,13 +1861,13 @@ No mesmo dia, a allowlist de IP foi substituída por túnel SSH e a porta fechad
 ### Registro — 2026-07-12 (h): Postgres ligado e verificado (serviço dedicado)
 
 ### O que mudou
-- Criado um **serviço Postgres dedicado** no EasyPanel (projeto `upexnote`, serviço `upexnote-db`) — isolado do `lmsc`, visível e gerível pelo utilizador (a abordagem de "base dentro do container existente" foi abandonada). Porta pública `55433` em `vps.upexflow.com`, base `upexnote`, user `postgres` (superuser só deste container isolado).
+- Criado um **serviço Postgres dedicado** no EasyPanel (projeto `upexnote`, serviço `upexnote-db`) — isolado do `lmsc`, visível e gerível pelo utilizador (a abordagem de "base dentro do container existente" foi abandonada). Porta pública `<DB_PORT>` em `<VPS_HOST>`, base `upexnote`, user `postgres` (superuser só deste container isolado).
 - App liga-se por TCP direto: `db.py` lê `db_config.json` (gitignored) e a password do Windows Credential Manager (`UPEXNOTE_PG_PASSWORD`). Novo comando `db-check`. Escrita best-effort no `transcribe` após o ficheiro local.
 
 ### Evidência / teste
 - `db-check`: "Ligação OK. Tabela 'transcriptions' pronta." A tabela foi criada automaticamente.
 - Escrita verificada: inserção de uma linha de teste (id #1) + apagada; tabela limpa (0 linhas).
-- Utilizador vê a base `upexnote` e a tabela `transcriptions` no DBeaver (ligação `vps.upexflow.com:55433`).
+- Utilizador vê a base `upexnote` e a tabela `transcriptions` no DBeaver (ligação `<VPS_HOST>:<DB_PORT>`).
 
 ### Decisão
 - Serviço dedicado (container próprio) em vez de partilhar o Postgres do `lmsc`: isolamento real, backups próprios, visível. Como é isolado, a app usa o `postgres` desse container sem risco de tocar noutras apps — sem necessidade de role/schema extra.
@@ -1885,7 +1887,7 @@ No mesmo dia, a allowlist de IP foi substituída por túnel SSH e a porta fechad
 
 ### Estado da infraestrutura (confirmado pelo utilizador)
 - Postgres a correr no EasyPanel (serviço `lmsc-db`), superuser `postgres`, base existente `lmsc` (outra app, Prisma — não mexer).
-- Porta **exposta publicamente** (host externo do tipo `vps.upexflow.com`, porta alta). A app liga direto por TCP — sem túnel SSH.
+- Porta **exposta publicamente** (host externo do tipo `<VPS_HOST>`, porta alta). A app liga direto por TCP — sem túnel SSH.
 - Detalhes de ligação (host/porta/base/user) ficam num **config local ignorado pelo Git** (não no repositório). Password no Windows Credential Manager (o utilizador introduz; a IA nunca lhe toca).
 
 ### Decisão de setup
@@ -1964,7 +1966,7 @@ No mesmo dia, a allowlist de IP foi substituída por túnel SSH e a porta fechad
 
 ### O que mudou
 - Criado o scaffold da interface em `apps/desktop`: Tauri 2 + React + TypeScript + Vite (nome do pacote/crate `upexnote`, produto `UpexNote`, identificador `com.upexflow.upexnote`).
-- **Desenvolvimento saiu do Google Drive.** A raiz mudou de `G:\My Drive\Projects\upexflow\upexnote` para `C:\Users\cunha\Projects\upexflow\upexnote` (disco local). Motivo: `npm install` falha no Google Drive File Stream com `EBADF`/`TAR_ENTRY_ERROR` — o sistema de ficheiros virtual não aguenta as milhares de escritas do `node_modules`. Isto bloqueia qualquer build de JS no Drive, não só o Tauri.
+- **Desenvolvimento saiu do Google Drive.** A raiz mudou de `G:\My Drive\Projects\upexflow\upexnote` para `C:\Users\<USER>\Projects\upexflow\upexnote` (disco local). Motivo: `npm install` falha no Google Drive File Stream com `EBADF`/`TAR_ENTRY_ERROR` — o sistema de ficheiros virtual não aguenta as milhares de escritas do `node_modules`. Isto bloqueia qualquer build de JS no Drive, não só o Tauri.
 - Método da mudança (sem perda): commit + push de tudo para o GitHub, depois `git clone` fresco para o disco local. O GitHub é agora, explicitamente, a fonte de verdade e a sincronização — não o Drive.
 
 ### Evidência / teste
@@ -2009,7 +2011,7 @@ No mesmo dia, a allowlist de IP foi substituída por túnel SSH e a porta fechad
 ### Registro — 2026-07-12 (a): migração dos pipelines
 
 ### O que mudou
-- Pipelines de transcrição migrados de `C:\Users\cunha\Project\scripts\` (protótipo Tkinter) para `services/worker/transcription/` neste repositório, como pacote Python (`assemblyai.py`, `whisper_openai.py`, `deepgram.py`, `gpt4o_openai.py`, `audio_chunks.py`, `transcript_utils.py`, `paths.py`, `credentials.py`, `registry.py`).
+- Pipelines de transcrição migrados de `C:\Users\<USER>\Project\scripts\` (protótipo Tkinter) para `services/worker/transcription/` neste repositório, como pacote Python (`assemblyai.py`, `whisper_openai.py`, `deepgram.py`, `gpt4o_openai.py`, `audio_chunks.py`, `transcript_utils.py`, `paths.py`, `credentials.py`, `registry.py`).
 - Destino dos transcripts gerados mudou de `resultados\<motor>\` (protótipo) para `storage/transcripts/<motor>/` (gitignorado), alinhado com a tabela de dados do `ARCHITECTURE.md`.
 - `credentials.py` passou a usar `SERVICE_NAME = "UpexNote"` no Windows Credential Manager (antes era `"TranscricaoReunioes"`) — chaves guardadas pelo protótipo antigo não são vistas automaticamente pelo novo worker; terão de ser reintroduzidas quando existir UI/CLI para tal.
 - Acoplamento ao Tkinter removido; `registry.py` expõe um `ENGINES` dict framework-agnostic para uma futura CLI/IPC usar.

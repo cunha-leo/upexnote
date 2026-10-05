@@ -45,7 +45,7 @@ Para reconstruir com fidelidade como Leonardo pensa, trabalha e decide, consulta
 
 - Repositório privado: `cunha-leo/upexnote`.
 - Branch principal: `main`.
-- Raiz local: `C:\Users\cunha\Projects\upexflow\upexnote`.
+- Raiz local: `C:\Users\<USER>\Projects\upexflow\upexnote`.
 - Versão instalada/desenvolvida documentada: `v0.28.0`.
 - Total observado em 28 de julho de 2026: 156 commits.
 - Último commit anterior à primeira versão deste dossiê: `22165e2`.
@@ -230,7 +230,7 @@ Abrir ou reutilizar uma aba no navegador interno do Codex para cada destino habi
 
 - Google Cloud/API do projeto UpexNote: `https://console.cloud.google.com/apis/credentials?project=upexnote&pli=1`;
 - GitHub: `https://github.com/cunha-leo`;
-- EasyPanel/VPS: `https://vps.upexflow.com/`;
+- EasyPanel/VPS: `<URL_PAINEL_EASYPANEL>`;
 - Hostinger hPanel: `https://hpanel.hostinger.com/`;
 - webmail da conta `contact@upexflow.com`, usando a sessão autenticada disponível.
 

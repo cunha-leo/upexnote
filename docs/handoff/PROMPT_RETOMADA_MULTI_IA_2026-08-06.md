@@ -25,22 +25,22 @@ BLOCO 1 — Camada humana e decisória (LIFE)
 
 1. AGENTS.md (protocolo LIFE)
    Local: G:\My Drive\DocumentsDesktop\03-Life\00- Manifesto&Decisions\AGENTS.md
-   Web: https://drive.google.com/file/d/1hQmOyDQeGO8TstT2gSRMstzs67I4kqup/view
+   Web: <LINK_DRIVE_PRIVADO>
    Ação: leia inteiro e execute o protocolo de inicialização LIFE nele descrito — ele manda localizar a versão mais alta dos 3 documentos abaixo dentro da pasta canônica antes de assumir qualquer versão fixa.
 
 2. Dossiê/Manifesto LIFE (versão mais alta na pasta — na data desta escrita é v1.1)
    Local: G:\My Drive\DocumentsDesktop\03-Life\00- Manifesto&Decisions\Dossie_Leonardo_Cunha_LIFE_v1.1.docx
-   Web: https://drive.google.com/file/d/1w2kt-lkk9bEt9h0uW7xTqAOVMpGQh0Gb/view
+   Web: <LINK_DRIVE_PRIVADO>
    Antes de ler, confira na pasta (local ou web) se existe versão mais alta que v1.1; se existir, use essa. Leia inteiro: todas as seções e apêndices, até a última linha.
 
 3. Contexto Vivo de Decisão (versão mais alta na pasta — na data desta escrita é v2.8)
    Local: G:\My Drive\DocumentsDesktop\03-Life\00- Manifesto&Decisions\Contexto_Vivo_Decisao_Portugal_Brasil_Leonardo_v2.8.docx
-   Web: https://drive.google.com/file/d/1aNIFmzRScLos5h_qEsysnyK3n9ypIDr5/view
+   Web: <LINK_DRIVE_PRIVADO>
    Antes de ler, confira se existe versão mais alta que v2.8; se existir, use essa. Leia inteiro: todas as partes (I a VI), todos os registros de decisão (RDs) em sequência, matriz de cenários e catálogo de fontes — não localizar por busca de palavra-chave.
 
 4. Fio Condutor — Objetivo Central LIFE (v1.0)
    Local: G:\My Drive\DocumentsDesktop\03-Life\00- Manifesto&Decisions\Fio_Condutor_Objetivo_Central_v1.0.md
-   Web: https://drive.google.com/file/d/1kRZ70tVILUZK8PaZ1a8JM9cngtYhQQmH/view
+   Web: <LINK_DRIVE_PRIVADO>
    Documento curto — leia inteiro, sem exceção.
 
 BLOCO 2 — Camada técnica UpexFlow/UpexNote (repositório de código)
@@ -48,36 +48,36 @@ BLOCO 2 — Camada técnica UpexFlow/UpexNote (repositório de código)
 Repositório: https://github.com/cunha-leo/upexnote (branch main). Se o repositório for privado e você não tiver acesso, diga isso explicitamente e peça pra Leonardo colar o conteúdo do arquivo ou dar acesso.
 
 5. docs/CONTEXT_ORCHESTRATION.md
-   Local: C:\Users\cunha\Projects\upexflow\upexnote\docs\CONTEXT_ORCHESTRATION.md
+   Local: C:\Users\<USER>\Projects\upexflow\upexnote\docs\CONTEXT_ORCHESTRATION.md
    Web: https://github.com/cunha-leo/upexnote/blob/main/docs/CONTEXT_ORCHESTRATION.md
    Leia inteiro e siga as coordenadas dele.
 
 6. AGENTS.md da raiz do repositório
-   Local: C:\Users\cunha\Projects\upexflow\upexnote\AGENTS.md
+   Local: C:\Users\<USER>\Projects\upexflow\upexnote\AGENTS.md
    Web: https://github.com/cunha-leo/upexnote/blob/main/AGENTS.md
 
 7. docs/PROJECT_CONTEXT.md
-   Local: C:\Users\cunha\Projects\upexflow\upexnote\docs\PROJECT_CONTEXT.md
+   Local: C:\Users\<USER>\Projects\upexflow\upexnote\docs\PROJECT_CONTEXT.md
    Web: https://github.com/cunha-leo/upexnote/blob/main/docs/PROJECT_CONTEXT.md
 
 8. docs/FEATURE_VALIDATION_AND_ROADMAP.md
-   Local: C:\Users\cunha\Projects\upexflow\upexnote\docs\FEATURE_VALIDATION_AND_ROADMAP.md
+   Local: C:\Users\<USER>\Projects\upexflow\upexnote\docs\FEATURE_VALIDATION_AND_ROADMAP.md
    Web: https://github.com/cunha-leo/upexnote/blob/main/docs/FEATURE_VALIDATION_AND_ROADMAP.md
 
 Para os 4 itens do Bloco 2: leia inteiro, do início ao fim, sem pular nada.
 
 BLOCO 3 — Documentação visual/funcional do UpexNote (Google Drive, pasta "Product Strategy & Validation")
 
-Pasta: https://drive.google.com/drive/folders/1rc10BnDk2P_XgLXjvp5xJVHyki2951Ip
+Pasta: <LINK_DRIVE_PRIVADO>
 Local: G:\My Drive\DocumentsDesktop\03-Life\04-Active Ventures\UpexFlow\UpexNote\Product Strategy & Validation\
 
 9. UpexNote_CONTINUIDADE_DOCUMENTACAO_VISUAL.md
    Local: G:\My Drive\DocumentsDesktop\03-Life\04-Active Ventures\UpexFlow\UpexNote\Product Strategy & Validation\UpexNote_CONTINUIDADE_DOCUMENTACAO_VISUAL.md
-   Web: https://drive.google.com/file/d/1oBF228zJl7t86bZu6kDNRb39or3uhBDw/view
+   Web: <LINK_DRIVE_PRIVADO>
 
 10. UpexNote_Documentacao_Funcional_Visual_v1.0_FINAL (o documento principal — mais importante dos dois, não pode ficar de fora)
     Local: G:\My Drive\DocumentsDesktop\03-Life\04-Active Ventures\UpexFlow\UpexNote\Product Strategy & Validation\UpexNote_Documentacao_Funcional_Visual_v1.0_FINAL
-    Web: https://drive.google.com/file/d/115uL4fiWH8LM_TtYvcToEFmsVmeJALsy/view
+    Web: <LINK_DRIVE_PRIVADO>
     Confira se existe versão mais alta que v1.0_FINAL na mesma pasta antes de ler; se houver, leia a mais recente.
 
 Para os 2 itens do Bloco 3: leia inteiro, sem pular nada — são o registro de continuidade visual/funcional do produto.
@@ -87,19 +87,19 @@ BLOCO 4 — Documentos de domínio obrigatórios da frente ativa (ADF-01/ADF-02)
 Todos dentro do mesmo repositório do Bloco 2 (mesmo local/web base):
 
 11. docs/UX_PRODUCT_STANDARD.md
-    Local: C:\Users\cunha\Projects\upexflow\upexnote\docs\UX_PRODUCT_STANDARD.md
+    Local: C:\Users\<USER>\Projects\upexflow\upexnote\docs\UX_PRODUCT_STANDARD.md
     Web: https://github.com/cunha-leo/upexnote/blob/main/docs/UX_PRODUCT_STANDARD.md
 
 12. docs/ARCHITECTURE.md
-    Local: C:\Users\cunha\Projects\upexflow\upexnote\docs\ARCHITECTURE.md
+    Local: C:\Users\<USER>\Projects\upexflow\upexnote\docs\ARCHITECTURE.md
     Web: https://github.com/cunha-leo/upexnote/blob/main/docs/ARCHITECTURE.md
 
 13. docs/PRODUCT.md
-    Local: C:\Users\cunha\Projects\upexflow\upexnote\docs\PRODUCT.md
+    Local: C:\Users\<USER>\Projects\upexflow\upexnote\docs\PRODUCT.md
     Web: https://github.com/cunha-leo/upexnote/blob/main/docs/PRODUCT.md
 
 14. docs/AI_MEDIA_EVOLUTION.md
-    Local: C:\Users\cunha\Projects\upexflow\upexnote\docs\AI_MEDIA_EVOLUTION.md
+    Local: C:\Users\<USER>\Projects\upexflow\upexnote\docs\AI_MEDIA_EVOLUTION.md
     Web: https://github.com/cunha-leo/upexnote/blob/main/docs/AI_MEDIA_EVOLUTION.md
 
 Os 4 são obrigatórios porque o próprio FEATURE_VALIDATION_AND_ROADMAP.md os lista como documentos obrigatórios da ADF-01 — não escolha só os que parecem mais óbvios. Se identificar que a tarefa toca outro documento especializado do repositório, peça esse também antes de responder.

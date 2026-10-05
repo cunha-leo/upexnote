@@ -34,8 +34,8 @@ O Dossiê sempre vem primeiro. O Contexto Vivo sempre vem depois. O Fio Condutor
 Use exclusivamente a pasta abaixo como fonte oficial:
 
 Pasta: 00- Manifesto&Decisions
-ID: 1mTd5Zv12Pniqs2-YqF0IfUC0KoY-Wpsb
-URL: https://drive.google.com/drive/folders/1mTd5Zv12Pniqs2-YqF0IfUC0KoY-Wpsb
+ID: <ID_DRIVE_PRIVADO>
+URL: <LINK_DRIVE_PRIVADO>
 
 Não escolher cópias homônimas existentes em outras pastas. Versões antigas de um mesmo documento devem ficar na subpasta `old` dessa pasta canônica, nunca soltas ao lado da versão atual.
 
@@ -159,10 +159,10 @@ Configuração conhecida nesta máquina Windows:
 
 ```text
 LibreOffice/soffice:
-C:\Users\cunha\AppData\Local\Programs\LibreOfficeCodex\program\soffice.exe
+C:\Users\<USER>\AppData\Local\Programs\LibreOfficeCodex\program\soffice.exe
 
 Poppler (pdfinfo/pdftoppm):
-C:\Users\cunha\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\poppler\Library\bin
+C:\Users\<USER>\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\poppler\Library\bin
 ```
 
 Se necessário, adicionar esses diretórios ao `PATH` do processo atual. No Windows, fornecer o perfil temporário do LibreOffice como URI válida `file:///C:/...`, preferencialmente gerada por `Path(...).resolve().as_uri()`, nunca como `file://C:\...`.
@@ -236,7 +236,7 @@ Ler `docs/ACCOUNT_CONTINUITY_HANDOFF.md` quando houver troca de conta, sessão o
 - Quando Leonardo disser "abra o ambiente", abrir ou reutilizar uma aba para cada destino habitual:
   - Google Cloud/API do projeto UpexNote: `https://console.cloud.google.com/apis/credentials?project=upexnote&pli=1`;
   - GitHub: `https://github.com/cunha-leo`;
-  - EasyPanel/VPS: `https://vps.upexflow.com/`;
+  - EasyPanel/VPS: `<URL_PAINEL_EASYPANEL>`;
   - Hostinger hPanel: `https://hpanel.hostinger.com/`;
   - webmail da conta `contact@upexflow.com`, usando a sessão autenticada disponível.
 - Reutilizar abas e sessões existentes quando possível, evitar duplicatas e deixar os destinos abertos para acompanhamento do utilizador.
@@ -245,7 +245,7 @@ Ler `docs/ACCOUNT_CONTINUITY_HANDOFF.md` quando houver troca de conta, sessão o
 
 ## 16. Infraestrutura de referência rápida
 
-- Raiz de desenvolvimento: `C:\Users\cunha\Projects\upexflow\upexnote` (disco local, fora de sincronização em nuvem — o código não fica no Google Drive).
+- Raiz de desenvolvimento: `C:\Users\<USER>\Projects\upexflow\upexnote` (disco local, fora de sincronização em nuvem — o código não fica no Google Drive).
 - GitHub: repositório privado `cunha-leo/upexnote`, branch principal `main`.
 - VPS: Hostinger KVM 2 com EasyPanel, PostgreSQL acessível via DBeaver/SSH; nunca usar para guardar biblioteca crescente de vídeo ou transcrição pesada.
-- Acesso SSH à VPS nunca usa password — sempre chave SSH (`~/.ssh/upexnote_vps`); ver runbook completo em `docs/PROJECT_CONTEXT.md`, seção 8, se a chave precisar ser recriada.
+- Acesso SSH à VPS nunca usa password — sempre chave SSH (`~/.ssh/<CHAVE_SSH_VPS>`); ver runbook completo em `docs/PROJECT_CONTEXT.md`, seção 8, se a chave precisar ser recriada.

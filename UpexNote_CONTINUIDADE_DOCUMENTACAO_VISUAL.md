@@ -176,10 +176,10 @@ Na máquina Windows de Leonardo, verificar primeiro estes caminhos já preparado
 
 ```text
 LibreOffice/soffice:
-C:\Users\cunha\AppData\Local\Programs\LibreOfficeCodex\program\soffice.exe
+C:\Users\<USER>\AppData\Local\Programs\LibreOfficeCodex\program\soffice.exe
 
 Poppler (pdfinfo/pdftoppm):
-C:\Users\cunha\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\poppler\Library\bin
+C:\Users\<USER>\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\poppler\Library\bin
 ```
 
 Se os comandos não forem encontrados, adicionar esses diretórios ao `PATH` do processo atual. Para o perfil temporário do LibreOffice no Windows, usar URI válida no formato `file:///C:/...`, preferencialmente gerada por `Path(...).resolve().as_uri()`, e não `file://C:\...`.
