@@ -15,6 +15,48 @@ Hoje o UpexNote já reúne, numa única aplicação Windows, uma cadeia completa
 
 O fluxo principal já permite partir de uma transcrição, gerar uma prévia formatada, levar o conteúdo para o Caderno, editar e estudar o material e exportá-lo para uso externo ou continuidade em outras ferramentas de IA.
 
+## Veja o UpexNote em uso
+
+### Demonstração do usuário · 1 min 32 s
+
+Do conteúdo original ao material de estudo: o vídeo percorre a transcrição, a Biblioteca, a geração de uma Prévia estruturada e o Caderno editável, além das opções de exportação e preferências da aplicação.
+
+[![Demonstração do UpexNote: Prévia estruturada e organização do conteúdo](docs/media/upexnote-user-demo-preview.jpg)](docs/media/upexnote-user-demo.mp4)
+
+**[Assistir à demonstração do usuário](docs/media/upexnote-user-demo.mp4)** · [Baixar o vídeo](https://raw.githubusercontent.com/cunha-leo/upexnote/main/docs/media/upexnote-user-demo.mp4)
+
+A aplicação está em evolução e refinamento contínuos, com outras funcionalidades em desenvolvimento. Esta demonstração registra o fluxo disponível em outubro de 2026.
+
+### Transcrições salvas automaticamente: RAW e clean
+
+Ao concluir a transcrição, o UpexNote salva separadamente dois arquivos `.txt`:
+
+- **RAW:** preserva o resultado original do motor, como referência imutável. Quando fornecidos pelo motor, inclui marcações de tempo e identificação de falantes.
+- **clean:** mantém uma versão derivada para leitura e organização do conteúdo, sem substituir o RAW.
+
+O destino fica sob controle do usuário. Nas **preferências de armazenamento**, é possível definir a pasta padrão e ativar a organização em subpastas por **data e motor**. Também é possível escolher outra pasta para uma transcrição específica; nesse caso, os arquivos são salvos diretamente no destino escolhido.
+
+Os nomes identificam a **origem, a data, o motor e o tipo**, mesmo quando todos os arquivos ficam em uma única pasta:
+
+```text
+nome_do_arquivo__2026-10-05__assemblyai__raw.txt
+nome_do_arquivo__2026-10-05__assemblyai__clean.txt
+```
+
+**Exemplo real dos arquivos RAW e clean salvos lado a lado:**
+
+![Arquivos RAW e clean gerados automaticamente na pasta escolhida pelo usuário](docs/media/upexnote-transcripts-raw-clean.png)
+
+**RAW aberto em um editor de texto, com marcações de tempo e falante:**
+
+![Exemplo de transcript RAW aberto fora da aplicação](docs/media/upexnote-transcript-raw-example.png)
+
+Os arquivos permanecem acessíveis na pasta escolhida e podem ser abertos fora da aplicação. O envio de conteúdo a motores de IA depende da escolha explícita do usuário. Se o destino escolhido estiver sincronizado com um serviço de nuvem, os arquivos também seguem as configurações desse serviço.
+
+### Demonstração administrativa
+
+O vídeo da área administrativa será acrescentado nesta seção após sua produção e validação, complementando o fluxo do usuário com os controles de administração e governança.
+
 > **Nota sobre a documentação:** alguns documentos, capturas de tela e materiais visuais ainda refletem versões anteriores da aplicação. A documentação técnica e visual será atualizada progressivamente para acompanhar o estado mais recente do produto.
 
 ## Estado atual
