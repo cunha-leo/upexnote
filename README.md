@@ -21,9 +21,7 @@ O fluxo principal já permite partir de uma transcrição, gerar uma prévia for
 
 Do conteúdo original ao material de estudo: o vídeo percorre a transcrição com escolha de motor, a Biblioteca, a geração de uma Prévia estruturada e o Caderno editável, além da exportação, das preferências e das opções de segurança, com legendas pontuais e trechos acelerados (sinalizados no vídeo).
 
-<video src="https://github.com/cunha-leo/upexnote/raw/main/docs/media/upexnote-user-demo.mp4" poster="docs/media/upexnote-user-demo-preview.jpg" controls muted width="100%"></video>
-
-[Abrir o vídeo diretamente](docs/media/upexnote-user-demo.mp4)
+https://github.com/user-attachments/assets/05e21e98-199f-4ca4-a918-dd9bd62a5e38
 
 A aplicação está em evolução e refinamento contínuos, com outras funcionalidades em desenvolvimento. Esta demonstração registra o fluxo disponível em outubro de 2026.
 
