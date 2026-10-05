@@ -25,6 +25,14 @@ https://github.com/user-attachments/assets/1e145dfb-04a9-4078-99f2-d3f439885d78
 
 A aplicação está em evolução e refinamento contínuos, com outras funcionalidades em desenvolvimento. Esta demonstração registra o fluxo disponível em outubro de 2026.
 
+### Demonstração administrativa · acesso restrito · 1 min 51 s
+
+O perfil administrador também utiliza os recursos do usuário e conta com controles adicionais de segurança, registros de atividade, suporte e Data Studio. **O acesso à área administrativa é restrito a contas autorizadas.**
+
+https://github.com/user-attachments/assets/3339a74f-f241-4b33-bff7-afadd63d8c1c
+
+Os vídeos demonstram o estado atual do projeto. A publicação do código e dessas demonstrações não implica disponibilização pública da aplicação nem acesso à infraestrutura administrativa.
+
 ### Transcrições salvas automaticamente: RAW e clean
 
 Ao concluir a transcrição, o UpexNote salva separadamente dois arquivos `.txt`:
@@ -50,10 +58,6 @@ nome_do_arquivo__2026-10-05__assemblyai__clean.txt
 ![Exemplo de transcript RAW aberto fora da aplicação](docs/media/upexnote-transcript-raw-example.png)
 
 Os arquivos permanecem acessíveis na pasta escolhida e podem ser abertos fora da aplicação. O envio de conteúdo a motores de IA depende da escolha explícita do usuário. Se o destino escolhido estiver sincronizado com um serviço de nuvem, os arquivos também seguem as configurações desse serviço.
-
-### Demonstração administrativa
-
-O vídeo da área administrativa será acrescentado nesta seção após sua produção e validação, complementando o fluxo do usuário com os controles de administração e governança.
 
 > **Nota sobre a documentação:** alguns documentos, capturas de tela e materiais visuais ainda refletem versões anteriores da aplicação. A documentação técnica e visual será atualizada progressivamente para acompanhar o estado mais recente do produto.
 
