@@ -209,6 +209,7 @@ Estas regras se aplicam a todo o repositório e complementam — nunca substitue
 - Administração usa menu lateral hierárquico; não transformar submódulos em navegação principal por abas horizontais.
 - Chamadas a motores de IA/cloud pagos exigem ação explícita do utilizador, fornecedor e custo visíveis antes de executar — nunca chamada automática oculta.
 - Não executar deploy, mudanças externas, push ou operações destrutivas sem autorização específica de Leonardo.
+- Material pessoal e editorial nunca entra no repositório: rascunhos e decisões de publicações (LinkedIn e outras redes), notas da série, prompts de retomada editoriais, estratégia de carreira e qualquer documento de trabalho que não faça parte do produto. Esses arquivos ficam apenas em `docs/private/` (ignorado pelo Git; subpasta `docs/private/linkedin/` para a série), na máquina de Leonardo e na sessão da IA. Antes de qualquer commit, conferir com `git status` que nenhum desses arquivos está listado; se estiver, mover para `docs/private/` em vez de versionar. O repositório guarda somente o produto, sua documentação técnica e os materiais públicos que o README referencia.
 
 ## 13. Disciplina de build e de entrega
 
