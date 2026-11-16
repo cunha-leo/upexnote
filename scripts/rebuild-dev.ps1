@@ -28,7 +28,7 @@
 
   Uso: clica com o botão direito neste ficheiro > "Executar com o PowerShell".
   Ou, num terminal PowerShell já aberto:
-      cd C:\Users\cunha\Projects\upexflow\upexnote
+      cd C:\Dev\upexnote
       .\scripts\rebuild-dev.ps1
 #>
 

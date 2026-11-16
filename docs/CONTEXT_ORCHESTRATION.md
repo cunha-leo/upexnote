@@ -1,5 +1,7 @@
 # UpexNote — Context Orchestration
 
+> **Atualização de 15/11/2026:** o protocolo vigente de contexto é o `PROMPT_START_UPEXNOTE.md` (Drive, pasta `01-Prompt Start`), apontado pela Parte 1 do `AGENTS.md`. A pasta canônica agora é `02-Life\00- Manifesto&Decisions`, e o Contexto Vivo e o Fio Condutor foram fundidos no Dossiê LIFE (v1.8). Os nomes, versões e caminhos abaixo são a linha de base histórica de 08/08/2026.
+
 > **Papel:** porta única e obrigatória de entrada para qualquer IA, agente, conta, ambiente ou sessão que precise compreender Leonardo, suas decisões e o projeto UpexFlow/UpexNote antes de propor ou executar trabalho.
 >
 > **Uso esperado:** Leonardo pode instruir apenas: **“Leia `docs/CONTEXT_ORCHESTRATION.md` e siga integralmente suas coordenadas antes de agir.”**

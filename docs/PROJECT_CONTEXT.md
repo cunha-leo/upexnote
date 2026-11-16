@@ -9,7 +9,7 @@
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
-**Raiz local de desenvolvimento:** `C:\Users\<USER>\Projects\upexflow\upexnote` (disco local; ver Registro 2026-07-12 (c) sobre a saída do Google Drive)
+**Raiz local de desenvolvimento:** `C:\Dev\upexnote` (disco local; ver Registro 2026-07-12 (c) sobre a saída do Google Drive)
 
 ---
 
@@ -184,7 +184,7 @@ O navegador sozinho pode pedir microfone e compartilhamento de tela/aba, mas nã
 ### Estrutura local atual
 
 ```text
-C:\Users\<USER>\Projects\upexflow\upexnote
+C:\Dev\upexnote
 ├─ apps/desktop/        interface do UpexNote (Tauri + React)
 ├─ services/worker/     pipelines locais e integração de mídia (Python)
 ├─ docs/                documentação de produto e engenharia
@@ -215,7 +215,7 @@ storage/transcripts/<AAAA-MM-DD>/<motor>/<origem>__<AAAA-MM-DD>__<motor>__<kind>
 
 ### Disco local (desenvolvimento)
 
-- Raiz de desenvolvimento: `C:\Users\<USER>\Projects\upexflow\upexnote` (disco local, fora de qualquer sincronização em nuvem).
+- Raiz de desenvolvimento: `C:\Dev\upexnote` (disco local, fora de qualquer sincronização em nuvem).
 - **O código NÃO fica no Google Drive.** A partir de 2026-07-12, o desenvolvimento saiu do Drive (ver Registro (c)): o Google Drive File Stream não suporta as escritas do `node_modules`/build e o `git`+GitHub já é a sincronização real.
 - Opcionalmente, derivados finais (TXT, Markdown, JSON, exportações) podem ser copiados para o Drive à parte, mas nunca a pasta de trabalho com toolchain de build.
 

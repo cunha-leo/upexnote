@@ -1,5 +1,7 @@
 # Prompt de entrada para a nova conta ChatGPT/Codex
 
+> **Atualização de 15/11/2026:** o protocolo vigente de contexto é o `PROMPT_START_UPEXNOTE.md` (Drive, pasta `01-Prompt Start`), apontado pela Parte 1 do `AGENTS.md`. A pasta canônica agora é `02-Life\00- Manifesto&Decisions`, e o Contexto Vivo e o Fio Condutor foram fundidos no Dossiê LIFE (v1.8). Os nomes, versões e caminhos abaixo são a linha de base histórica de 08/08/2026.
+
 Copie o bloco abaixo na primeira conversa do novo Codex depois de conectar ou abrir o repositório UpexNote.
 
 ```text

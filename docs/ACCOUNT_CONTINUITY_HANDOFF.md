@@ -1,5 +1,7 @@
 # UpexNote — dossiê de continuidade entre contas e agentes
 
+> **Atualização de 15/11/2026:** o protocolo vigente de contexto é o `PROMPT_START_UPEXNOTE.md` (Drive, pasta `01-Prompt Start`), apontado pela Parte 1 do `AGENTS.md`. A pasta canônica agora é `02-Life\00- Manifesto&Decisions`, e o Contexto Vivo e o Fio Condutor foram fundidos no Dossiê LIFE (v1.8). Os nomes, versões e caminhos abaixo são a linha de base histórica de 08/08/2026.
+
 > **Finalidade:** permitir que uma nova conta do ChatGPT/Codex continue o UpexNote com o máximo possível de contexto, método e sensibilidade de produto.
 >
 > **Segurança:** este documento não contém senhas, tokens, chaves, OAuth, conteúdo corporativo, áudio, vídeo ou transcrições privadas.
@@ -45,7 +47,7 @@ Para reconstruir com fidelidade como Leonardo pensa, trabalha e decide, consulta
 
 - Repositório privado: `cunha-leo/upexnote`.
 - Branch principal: `main`.
-- Raiz local: `C:\Users\<USER>\Projects\upexflow\upexnote`.
+- Raiz local: `C:\Dev\upexnote`.
 - Versão instalada/desenvolvida documentada: `v0.28.0`.
 - Total observado em 28 de julho de 2026: 156 commits.
 - Último commit anterior à primeira versão deste dossiê: `22165e2`.
