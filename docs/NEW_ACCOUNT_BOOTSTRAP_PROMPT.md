@@ -13,7 +13,7 @@ Primeiro, leia integralmente `docs/CONTEXT_ORCHESTRATION.md` e siga todas as coo
 
 A sequência obrigatória começa pelo ponto de entrada LIFE e UpexNote:
 
-1. localizar e ler integralmente `G:\My Drive\DocumentsDesktop\03-Life\01-Prompt Start\PROMPT_START_UPEXNOTE.md`;
+1. localizar e ler integralmente `G:\My Drive\DocumentsDesktop\02-Life\01-Prompt Start\PROMPT_START_UPEXNOTE.md`;
 2. executar todo o bootstrap obrigatório definido ali, inclusive a descoberta das versões canônicas mais recentes, sem substituir documentos por resumos, memória ou snippets;
 3. respeitar a ordem Dossiê LIFE → Contexto Vivo → Fio Condutor → camada temática UpexNote;
 4. quando o protocolo exigir documentos `DOCX`/`PDF`, executar também a renderização e revisão visual integral;

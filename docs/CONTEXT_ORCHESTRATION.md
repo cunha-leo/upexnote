@@ -61,7 +61,7 @@ Os documentos vivos estão localizados em:
 Google Drive
 └─ My Drive
    └─ DocumentsDesktop
-      └─ 03-Life
+      └─ 02-Life
          └─ 00- Manifesto&Decisions
 ```
 
