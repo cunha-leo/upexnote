@@ -81,7 +81,7 @@ Ler `docs/ACCOUNT_CONTINUITY_HANDOFF.md` quando houver troca de conta, sessão o
 
 ## 16. Infraestrutura de referência rápida
 
-- Raiz de desenvolvimento: `C:\Users\<USER>\Projects\upexflow\upexnote` (disco local, fora de sincronização em nuvem — o código não fica no Google Drive).
+- Raiz de desenvolvimento atual (confirmada em 24/11/2026): `C:\Dev\upexnote` (disco local, fora de sincronização em nuvem — o código não fica no Google Drive).
 - GitHub: repositório privado `cunha-leo/upexnote`, branch principal `main`.
 - VPS: Hostinger KVM 2 com EasyPanel, PostgreSQL acessível via DBeaver/SSH; nunca usar para guardar biblioteca crescente de vídeo ou transcrição pesada.
 - Acesso SSH à VPS nunca usa password — sempre chave SSH (`~/.ssh/<CHAVE_SSH_VPS>`); ver runbook completo em `docs/PROJECT_CONTEXT.md`, seção 8, se a chave precisar ser recriada.

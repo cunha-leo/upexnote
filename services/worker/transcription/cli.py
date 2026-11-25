@@ -345,6 +345,81 @@ def cmd_document_save(args):
         return 1
 
 
+def cmd_url_analyze(args):
+    """Probe public/unlisted YouTube metadata without downloading media."""
+    from .url_ingest import analyze, IngestError
+    try:
+        _emit(sys.stdout, analyze(args.url))
+        return 0
+    except IngestError as exc:
+        _emit(sys.stdout, {"type": "error", "message": str(exc)})
+        return 1
+
+
+def cmd_url_captions(args):
+    """Import an accessible caption track into RAW/CLEAN and the Library."""
+    from .url_ingest import fetch_captions, IngestError
+    started = time.monotonic()
+    def progress(message):
+        _emit(sys.stdout, {"type": "progress", "message": str(message)})
+    try:
+        raw, clean, info = fetch_captions(args.url, args.lang, args.kind)
+        if getattr(args, "dest", None):
+            destination = Path(args.dest).expanduser()
+            destination.mkdir(parents=True, exist_ok=True)
+            paths.set_dest_override(destination)
+        # A unique local name keeps imported RAW immutable across re-imports.
+        source = f"youtube_{info['id']}_{uuid.uuid4().hex[:8]}.vtt"
+        raw_path = paths.transcript_path("youtube_captions", source, "raw")
+        clean_path = paths.transcript_path("youtube_captions", source, "clean")
+        raw_path.write_text(raw, encoding="utf-8")
+        clean_path.write_text(clean, encoding="utf-8")
+        _emit(sys.stdout, {"type": "result", "ok": True, "clean_text": clean,
+                           "raw_path": str(raw_path), "clean_path": str(clean_path),
+                           "cost": 0, "duration_s": info.get("duration_s"),
+                           "problems": [], "language": args.lang})
+        transcription_id = None
+        try:
+            from . import db
+            transcription_id = db.insert_transcription({
+                "engine": "youtube_captions", "user_id": args.user,
+                "source_filename": info["title"], "source_path": info["url"],
+                "language": args.lang, "duration_s": info.get("duration_s"),
+                "cost_usd": 0, "processing_s": round(time.monotonic() - started, 1),
+                "validation_ok": None, "problems": [],
+                "clean_text": clean, "raw_text": raw, "clean_path": str(clean_path),
+            }, log=progress)
+        except Exception as exc:
+            progress(f"Biblioteca: não foi possível guardar o registo ({exc}). O ficheiro local permanece seguro.")
+        _emit(sys.stdout, {"type": "transcription_saved", "saved": transcription_id is not None,
+                           "transcription_id": transcription_id})
+        return 0
+    except (IngestError, OSError) as exc:
+        _emit(sys.stdout, {"type": "error", "message": str(exc)})
+        return 1
+
+
+def cmd_url_transcribe(args):
+    """Download local temporary audio, reuse cmd_transcribe, then remove the audio."""
+    import shutil
+    from .url_ingest import fetch_audio, IngestError
+    directory = None
+    try:
+        def progress(message):
+            _emit(sys.stdout, {"type": "progress", "message": message})
+        audio, directory, info = fetch_audio(args.url, progress=progress)
+        args.file = str(audio)
+        args.source_url = info["url"]
+        args.source_title = info["title"]
+        return cmd_transcribe(args)
+    except (IngestError, OSError) as exc:
+        _emit(sys.stdout, {"type": "error", "message": str(exc)})
+        return 1
+    finally:
+        if directory:
+            shutil.rmtree(directory, ignore_errors=True)
+
+
 def cmd_transcribe(args):
     real_stdout = sys.stdout
 
@@ -426,8 +501,8 @@ def cmd_transcribe(args):
         new_transcription_id = db.insert_transcription({
             "engine": args.engine,
             "user_id": getattr(args, "user", None),
-            "source_filename": Path(file_path).name,
-            "source_path": file_path,
+            "source_filename": getattr(args, "source_title", None) or Path(file_path).name,
+            "source_path": getattr(args, "source_url", None) or file_path,
             "language": language,
             "duration_s": result.get("duration_s"),
             "cost_usd": result.get("cost"),
@@ -1848,6 +1923,22 @@ def build_parser():
     p_tr.add_argument("--format-profile", dest="format_profile", choices=["detalhado", "resumo_tecnico", "estudo"],
                        help="Perfil de transformacao (so aplica com --format-engine).")
 
+    p_ua = sub.add_parser("url-analyze", help="Analisa vídeo YouTube e legendas sem descarregar.")
+    p_ua.add_argument("--url", required=True)
+    p_uc = sub.add_parser("url-captions", help="Importa legenda existente para Biblioteca.")
+    p_uc.add_argument("--url", required=True)
+    p_uc.add_argument("--lang", required=True)
+    p_uc.add_argument("--kind", required=True, choices=["manual", "automatic"])
+    p_uc.add_argument("--dest")
+    p_uc.add_argument("--user", type=int)
+    p_ut = sub.add_parser("url-transcribe", help="Extrai áudio e usa o motor atual.")
+    p_ut.add_argument("--url", required=True)
+    p_ut.add_argument("--engine", required=True)
+    p_ut.add_argument("--dest")
+    p_ut.add_argument("--user", type=int)
+    p_ut.add_argument("--format-engine")
+    p_ut.add_argument("--format-profile")
+
     sub.add_parser("format-engines", help="Lista os motores de formatacao disponiveis (JSON).")
 
     p_fmt = sub.add_parser("format", help="Formata um transcript clean em documento estruturado (texto por stdin JSON, eventos NDJSON).")
@@ -2152,6 +2243,9 @@ def _build_handlers():
     return {
         "engines": cmd_engines,
         "transcribe": cmd_transcribe,
+        "url-analyze": cmd_url_analyze,
+        "url-captions": cmd_url_captions,
+        "url-transcribe": cmd_url_transcribe,
         "format-engines": cmd_format_engines,
         "format": cmd_format,
         "document-generate": cmd_document_generate,

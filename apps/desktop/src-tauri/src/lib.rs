@@ -47,17 +47,33 @@ fn bundled_worker() -> Option<PathBuf> {
 /// PYTHONUNBUFFERED garante que os eventos NDJSON chegam linha a linha
 /// (equivalente ao antigo `-u`, mas funciona também no exe congelado).
 fn worker_command(cli_args: &[&str]) -> Command {
-    let mut cmd = match bundled_worker() {
-        Some(exe) => {
-            let dir = exe.parent().expect("exe tem pasta").to_path_buf();
-            let mut c = Command::new(exe);
-            c.current_dir(dir);
-            c
-        }
-        None => {
-            let mut c = Command::new("python");
-            c.arg("-m").arg("transcription.cli").current_dir(worker_dir());
-            c
+    // Em desenvolvimento, usar Python do repositório. Um sidecar antigo
+    // pode não conhecer os comandos recentemente adicionados.
+    // Em release, conservar a preferência pelo executável empacotado.
+    let mut cmd = if cfg!(debug_assertions) {
+        let workdir = worker_dir();
+        let venv_python = workdir.join(".venv").join("Scripts").join("python.exe");
+        let python = if venv_python.is_file() {
+            venv_python.into_os_string()
+        } else {
+            "python".into()
+        };
+        let mut c = Command::new(python);
+        c.arg("-m").arg("transcription.cli").current_dir(workdir);
+        c
+    } else {
+        match bundled_worker() {
+            Some(exe) => {
+                let dir = exe.parent().expect("exe tem pasta").to_path_buf();
+                let mut c = Command::new(exe);
+                c.current_dir(dir);
+                c
+            }
+            None => {
+                let mut c = Command::new("python");
+                c.arg("-m").arg("transcription.cli").current_dir(worker_dir());
+                c
+            }
         }
     };
     // Registro — 2026-08-12 ("encoding quebrado no Caderno"): no Windows, o
@@ -237,7 +253,58 @@ async fn list_engines() -> Result<String, String> {
     run_cli_async(vec!["engines".into()]).await
 }
 
-/// Diz se uma chave está configurada (JSON), sem revelar o valor.
+/// Analisa URL do YouTube sem transferir o áudio.
+#[tauri::command]
+async fn url_analyze(url: String) -> Result<String, String> {
+    run_cli_async(vec!["url-analyze".into(), "--url".into(), url]).await
+}
+
+/// Emite os mesmos eventos NDJSON do pipeline de transcrição.
+fn stream_url_worker(app: AppHandle, args: Vec<String>) -> Result<(), String> {
+    std::thread::spawn(move || {
+        let parts: Vec<&str> = args.iter().map(String::as_str).collect();
+        let mut cmd = worker_command(&parts);
+        cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+        with_no_window(&mut cmd);
+        match cmd.spawn() {
+            Ok(mut child) => {
+                if let Some(stdout) = child.stdout.take() {
+                    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                        if !line.trim().is_empty() { let _ = app.emit("worker://event", line); }
+                    }
+                }
+                let _ = child.wait();
+            }
+            Err(e) => {
+                let _ = app.emit("worker://event",
+                    serde_json::json!({"type":"error","message":format!("Falha ao iniciar worker: {e}")}).to_string());
+            }
+        }
+        let _ = app.emit("worker://done", ());
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn url_captions(app: AppHandle, url: String, lang: String, kind: String,
+                dest: Option<String>, user: Option<i64>) -> Result<(), String> {
+    let mut args = vec!["url-captions".into(), "--url".into(), url,
+                        "--lang".into(), lang, "--kind".into(), kind];
+    if let Some(d) = dest.filter(|s| !s.trim().is_empty()) { args.extend(["--dest".into(), d]); }
+    push_user(&mut args, user);
+    stream_url_worker(app, args)
+}
+
+#[tauri::command]
+fn url_transcribe(app: AppHandle, url: String, engine: String,
+                  dest: Option<String>, user: Option<i64>) -> Result<(), String> {
+    let mut args = vec!["url-transcribe".into(), "--url".into(), url,
+                        "--engine".into(), engine];
+    if let Some(d) = dest.filter(|s| !s.trim().is_empty()) { args.extend(["--dest".into(), d]); }
+    push_user(&mut args, user);
+    stream_url_worker(app, args)
+}
+
 #[tauri::command]
 async fn check_key(name: String) -> Result<String, String> {
     run_cli_async(vec!["check-key".into(), "--name".into(), name]).await
@@ -1315,7 +1382,8 @@ pub fn run() {
             notebook_export, notebook_context_package_create, notebook_context_packages, notebook_context_package_item,
             write_text_file, write_binary_file,
             list_system_fonts, db_check, db_check_secret, account, api_reset, api_admin_factor,
-            account_suggest, admin, oauth_start, oauth_google, telemetry_event, telemetry_overview, support, transcribe
+            account_suggest, admin, oauth_start, oauth_google, telemetry_event, telemetry_overview, support, transcribe,
+            url_analyze, url_captions, url_transcribe
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

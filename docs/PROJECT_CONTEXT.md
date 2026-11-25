@@ -4,7 +4,7 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 14 de agosto de 2026 (v0.44.0 — exportação do Caderno segue o idioma da reunião/transcrição de origem)
+**Última atualização:** 24 de novembro de 2026 (v0.45.0 — candidata de lançamento: importação YouTube por URL; consultar `docs/URL_INGESTION.md` e o estado de validação do instalador)
 **Estado mais recente:** 14 de agosto de 2026 (v0.44.0; Caderno com árvore/coleções, worker persistente, anotações, referências, links, glossário e exportação real em `.zip` (.md/.docx/prompt IA) entregues e majoritariamente confirmados por Leonardo na máquina real; ver secção 12, Registro de atualizações, para o detalhamento por versão)
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  

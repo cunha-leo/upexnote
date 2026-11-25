@@ -806,10 +806,10 @@ def storage_mode() -> str:
 
 
 def _sqlite_path() -> Path:
-    if getattr(sys, "frozen", False):
-        base = Path(os.environ.get("APPDATA", str(Path.home()))) / "UpexNote"
-    else:
-        base = Path(__file__).resolve().parent
+    # Mesma base de dados SQLite para o app empacotado e tauri dev.
+    # A antiga ramificação não-congelada criava um banco órfão dentro
+    # de services/worker/transcription e quebrava o vínculo com os usuários.
+    base = Path(os.environ.get("APPDATA", str(Path.home()))) / "UpexNote"
     return base / "upexnote.db"
 
 

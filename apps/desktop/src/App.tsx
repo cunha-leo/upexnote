@@ -6410,6 +6410,140 @@ function SupportView({ active }: { active: boolean }) {
   return <section className="card support-view"><h2>{t("supportTitle")}</h2><p className="engine-info">{t("supportLead")}</p>{notice && <div className="engine-info">{notice}</div>}<div className="support-layout"><div><h3>{t("supportNew")}</h3><div className="field"><label>{t("supportSubject")}</label><input value={subject} onChange={(e) => setSubject(e.currentTarget.value)} maxLength={240} /></div><div className="field"><label>{t("supportCategory")}</label><select value={category} onChange={(e) => setCategory(e.currentTarget.value)}><option value="general">General</option><option value="account">Account</option><option value="transcription">Transcription</option><option value="billing">Billing</option><option value="bug">Bug</option></select></div><div className="field"><label>{t("supportMessage")}</label><textarea rows={7} value={body} onChange={(e) => setBody(e.currentTarget.value)} /></div><p className="muted">{t("supportEvidence")}</p><button disabled={busy || subject.trim().length < 4 || body.trim().length < 8} onClick={create}>{busy ? t("supportSending") : t("supportSend")}</button></div><div><div className="row"><h3 style={{ flex: 1 }}>{t("supportMyTickets")}</h3><button className="secondary" disabled={busy} onClick={load}>{t("libRefresh")}</button></div>{!tickets.length && <p className="muted">{t("supportNoTickets")}</p>}<div className="support-ticket-list">{tickets.map((item) => <button key={item.id} className={"support-ticket" + (selected?.id === item.id ? " active" : "")} onClick={() => openTicket(item.id)}><b>{item.ticket_number}</b><span>{item.subject}</span><small>{statusLabel(item.status)} · {fmtDate(item.updated_at, locale)}</small></button>)}</div></div></div>{selected && <section className="support-detail"><div className="row"><h3 style={{ flex: 1 }}>{selected.ticket_number} · {selected.subject}</h3><span className="badge">{statusLabel(selected.status)}</span></div><p className="support-description">{selected.description}</p><div className="row"><strong>{selected.attachments?.length || 0} evidence</strong><button className="secondary" disabled={busy} onClick={addEvidence}>{busy ? t("supportEvidenceUploading") : t("supportAddEvidence")}</button></div>{(selected.attachments || []).map((a) => <p className="muted" key={a.id}>{a.original_filename} · {a.archive_state}</p>)}<div className="support-comments">{selected.comments.map((c) => <article key={c.id}><strong>{c.author_label || c.author_kind}</strong><small>{fmtDate(c.created_at, locale)}</small><p>{c.body}</p></article>)}</div><div className="field"><label>{t("supportReply")}</label><textarea rows={3} value={reply} onChange={(e) => setReply(e.currentTarget.value)} /></div><button disabled={busy || !reply.trim()} onClick={sendReply}>{t("supportReplySend")}</button></section>}</section>;
 }
 
+type UrlAnalysis = {
+  type: "url_analysis"; ok: boolean; url: string; id: string; title: string;
+  channel: string; duration_s: number | null;
+  manual_languages: string[]; automatic_languages: string[]; has_captions: boolean;
+};
+type UrlChoice = "captions" | "new";
+type UrlTrackKind = "manual" | "automatic";
+
+function UrlIngestSection({ running, engineReady, savedPath, onStart }: {
+  running: boolean; engineReady: boolean; savedPath?: string;
+  onStart: (url: string, choice: UrlChoice, kind: UrlTrackKind, lang: string) => Promise<void>;
+}) {
+  const { lang } = useLang();
+  const copy = {
+    pt: { title:"Importar por URL", helper:"YouTube: vídeos, lives e links não listados acessíveis.",
+      placeholder:"Cole o endereço do vídeo YouTube...", analyze:"Analisar link", analyzing:"A analisar...",
+      found:"Conteúdo identificado", captions:"Legendas disponíveis", none:"Não foram encontradas legendas acessíveis. Pode gerar uma transcrição a partir do áudio.",
+      choose:"Como deseja transcrever?", existing:"Usar transcrição existente",
+      existingHelp:"Mais rápido, sem custo do motor. Pode utilizar legendas automáticas geradas por IA do YouTube ou fornecidas pelo autor.",
+      fresh:"Gerar nova transcrição com UpexNote",
+      freshHelp:"Processa o áudio com o motor selecionado, com potencialmente maior fidelidade e recursos compatíveis, como diarização.",
+      runCaptions:"Importar legendas", runNew:"Extrair áudio e transcrever", reanalyze:"Analisar novamente",
+      manual:"Legenda do autor", automatic:"Legenda automática", duration:"Duração", notReady:"Selecione um motor configurado abaixo.",
+      note:"O áudio é descarregado temporariamente no seu computador; motores cloud só serão chamados após a sua escolha." },
+    en: { title:"Import from URL", helper:"YouTube: videos, livestreams and accessible unlisted links.",
+      placeholder:"Paste a YouTube video URL...", analyze:"Analyze URL", analyzing:"Analyzing...",
+      found:"Content identified", captions:"Available captions", none:"No accessible captions were found. You can generate a transcript from audio.",
+      choose:"How would you like to transcribe?", existing:"Use existing captions",
+      existingHelp:"Faster, no transcription-engine cost. Captions may be AI-generated by YouTube or provided by the creator.",
+      fresh:"Generate a new transcript with UpexNote",
+      freshHelp:"Processes audio with the selected engine, potentially improving fidelity and supporting features such as diarization.",
+      runCaptions:"Import captions", runNew:"Extract audio and transcribe", reanalyze:"Analyze again",
+      manual:"Creator captions", automatic:"Automatic captions", duration:"Duration", notReady:"Select a configured transcription engine below.",
+      note:"Audio is downloaded temporarily to your computer. Cloud engines run only after your choice." },
+    es: { title:"Importar desde URL", helper:"YouTube: vídeos, directos y enlaces no listados accesibles.",
+      placeholder:"Pega la URL de YouTube...", analyze:"Analizar enlace", analyzing:"Analizando...",
+      found:"Contenido identificado", captions:"Subtítulos disponibles", none:"No hay subtítulos accesibles. Puedes generar una transcripción del audio.",
+      choose:"¿Cómo deseas transcribir?", existing:"Usar transcripción existente",
+      existingHelp:"Más rápido y sin coste del motor. Los subtítulos pueden ser generados por IA de YouTube o proporcionados por el autor.",
+      fresh:"Generar nueva transcripción con UpexNote",
+      freshHelp:"Procesa el audio con el motor seleccionado, con potencialmente mayor fidelidad y recursos como diarización.",
+      runCaptions:"Importar subtítulos", runNew:"Extraer audio y transcribir", reanalyze:"Analizar de nuevo",
+      manual:"Subtítulos del autor", automatic:"Subtítulos automáticos", duration:"Duración", notReady:"Selecciona un motor configurado abajo.",
+      note:"El audio se descarga temporalmente en el ordenador. Los motores cloud solo se usan después de elegir." }
+  }[lang];
+  const [url, setUrl] = useState("");
+  const [analysis, setAnalysis] = useState<UrlAnalysis | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState("");
+  const [choice, setChoice] = useState<UrlChoice>("captions");
+  const [track, setTrack] = useState("");
+
+  async function analyze() {
+    if (!url.trim() || checking || running) return;
+    setChecking(true); setError(""); setAnalysis(null);
+    try {
+      const output = await invoke<string>("url_analyze", { url: url.trim() });
+      const lines = output.split(/\r?\n/).filter(Boolean);
+      const line = lines[lines.length - 1] || "";
+      const response = JSON.parse(line);
+      if (response.type === "error" || !response.ok) throw new Error(response.message || "URL inválida.");
+      const data = response as UrlAnalysis;
+      setAnalysis(data);
+      const manual = data.manual_languages.map((l) => "manual:" + l);
+      const automatic = data.automatic_languages.map((l) => "automatic:" + l);
+      const options = [...manual, ...automatic];
+      setTrack(options.find((l) => l.endsWith(":pt-orig")) ||
+        options.find((l) => l.endsWith(":pt") || l.endsWith(":pt-BR")) || options[0] || "");
+      setChoice(options.length ? "captions" : "new");
+    } catch (exc) {
+      setError(String(exc instanceof Error ? exc.message : exc));
+    } finally { setChecking(false); }
+  }
+  const hasCaptions = !!analysis?.has_captions;
+  const [kind, language] = track.split(":") as [UrlTrackKind, string];
+  const tracks = analysis ? [
+    ...analysis.manual_languages.map((l) => ({value:"manual:" + l,label:l + " · " + copy.manual})),
+    ...analysis.automatic_languages.map((l) => ({value:"automatic:" + l,label:l + " · " + copy.automatic}))
+  ] : [];
+  return <section className="url-ingest" aria-label={copy.title}>
+    <div className="url-ingest-heading"><Link2 size={16} strokeWidth={1.75}/><strong>{copy.title}</strong><span className="url-ingest-pill">YouTube</span></div>
+    <p className="engine-info">{copy.helper}</p>
+    <div className="field">
+      <div className="row url-ingest-row">
+        <input type="text" value={url} disabled={checking || running} placeholder={copy.placeholder}
+          onChange={(event) => {setUrl(event.currentTarget.value); setAnalysis(null); setError("");}}
+          onKeyDown={(event) => {if (event.key === "Enter") void analyze();}} />
+        <button className="secondary" disabled={!url.trim() || checking || running} onClick={() => void analyze()}>
+          {checking ? copy.analyzing : analysis ? copy.reanalyze : copy.analyze}
+        </button>
+      </div>
+    </div>
+    {error && <div className="key-warn" role="alert">{error}</div>}
+    {analysis && <div className="url-ingest-result">
+      <div className="url-ingest-meta"><CircleCheck size={17}/><div><strong>{copy.found}: {analysis.title}</strong>
+      <div className="engine-info">{analysis.channel}{analysis.duration_s != null ? " · " + copy.duration + ": " +
+        Math.floor(analysis.duration_s / 60) + " min" : ""}</div></div></div>
+      {hasCaptions ? <div className="engine-info">{copy.captions}: {tracks.length} opções · {analysis.manual_languages.length} do autor, {analysis.automatic_languages.length} automáticas</div> :
+        <p className="engine-info">{copy.none}</p>}
+      <div className="url-ingest-choices" role="group" aria-label={copy.choose}>
+        <strong className="url-ingest-choose-title">{copy.choose}</strong>
+        {hasCaptions && <label className={"url-ingest-choice" + (choice==="captions"?" chosen":"")}>
+          <input type="radio" name="url-method" checked={choice==="captions"} onChange={() => setChoice("captions")}/>
+          <span><b>{copy.existing}</b><small>{copy.existingHelp}</small></span>
+        </label>}
+        <label className={"url-ingest-choice" + (choice==="new"?" chosen":"")}>
+          <input type="radio" name="url-method" checked={choice==="new"} onChange={() => setChoice("new")}/>
+          <span><b>{copy.fresh}</b><small>{copy.freshHelp}</small></span>
+        </label>
+      </div>
+      {choice === "captions" && hasCaptions && <div className="field">
+        <label htmlFor="url-caption-track">{copy.captions}</label>
+        <select id="url-caption-track" value={track} onChange={(e) => setTrack(e.currentTarget.value)}>
+          {tracks.map((t) => <option value={t.value} key={t.value}>{t.label}</option>)}
+        </select>
+      </div>}
+      {choice === "new" && !engineReady && <div className="key-warn">{copy.notReady}</div>}
+      <div className="row wrap">
+        <button disabled={running || checking || (choice === "captions" ? !track : !engineReady)}
+          onClick={() => void onStart(analysis.url, choice, kind, language)}>
+          {choice === "captions" ? copy.runCaptions : copy.runNew}
+        </button>
+        <span className="engine-info">{choice === "captions" ?
+          (lang === "pt" ? "Importa apenas texto e legendas, sem baixar áudio e sem chamar o motor de transcrição." :
+           lang === "es" ? "Importa solo texto y subtítulos, sin descargar audio ni llamar al motor." :
+           "Imports only captions and text, without downloading audio or invoking a transcription engine.") : copy.note}</span>
+      </div>
+    </div>}
+    {savedPath && <div className="engine-info url-ingest-saved" role="status">
+      {lang === "pt" ? "Guardado em: " : lang === "es" ? "Guardado en: " : "Saved at: "}{savedPath}
+    </div>}
+  </section>;
+}
+
 function App() {
   const { t } = useLang();
   const appearance = useAppearance();
@@ -6525,6 +6659,7 @@ function App() {
   const [file, setFile] = useState<string>("");
   const [dest, setDest] = useState<string>("");
   const [running, setRunning] = useState(false);
+  const [processingSource, setProcessingSource] = useState<"file" | "url-captions" | "url-transcribe">("file");
   const [status, setStatus] = useState<string>("");
   const [stage, setStage] = useState<number>(0);
   const [elapsed, setElapsed] = useState<number>(0);
@@ -6635,6 +6770,7 @@ function App() {
   }, [running]);
 
   function reset() {
+    setProcessingSource("file");
     setFile("");
     setDest("");
     setResult(null);
@@ -6646,6 +6782,7 @@ function App() {
 
   async function startTranscription() {
     if (!file || !selected || running) return;
+    setProcessingSource("file");
     setRunning(true);
     setResult(null);
     setResultTranscriptionId(undefined);
@@ -6657,6 +6794,30 @@ function App() {
       setStatus(t("errPrefix") + String(e));
       setRunning(false);
       void telemetry("transcription_failed", { engine: selected.id, errorCode: "TRANSCRIPTION_START_FAILED" });
+    }
+  }
+
+  async function startUrlProcessing(url: string, choice: UrlChoice, kind: UrlTrackKind, language: string) {
+    if (running || (choice === "new" && (!selected || !selected.key_set))) return;
+    setProcessingSource(choice === "captions" ? "url-captions" : "url-transcribe");
+    setRunning(true);
+    setResult(null);
+    setResultTranscriptionId(undefined);
+    setStage(1);
+    setStatus(choice === "captions" ? "A importar as legendas do YouTube..." : "A preparar o áudio do YouTube...");
+    try {
+      if (choice === "captions") {
+        await invoke("url_captions", {
+          url, lang: language, kind, dest: dest.trim() || null, user: getSession()?.id ?? null
+        });
+      } else {
+        await invoke("url_transcribe", {
+          url, engine: selected!.id, dest: dest.trim() || null, user: getSession()?.id ?? null
+        });
+      }
+    } catch (e) {
+      setStatus(t("errPrefix") + String(e));
+      setRunning(false);
     }
   }
 
@@ -6845,6 +7006,10 @@ function App() {
                   </div>
                 </div>
 
+                <UrlIngestSection running={running} engineReady={!!selected?.key_set}
+                  savedPath={processingSource !== "file" ? result?.clean_path : undefined}
+                  onStart={startUrlProcessing} />
+
                 <div className="field">
                   <label>{t("trDestLabel")}</label>
                   <div className="row">
@@ -6888,7 +7053,7 @@ function App() {
 
                 <div className="row wrap">
                   <button onClick={startTranscription} disabled={!file || running || !selected}>
-                    {running ? t("trRunning") : t("trStart")}
+                    {running && processingSource === "file" ? t("trRunning") : t("trStart")}
                   </button>
                   {!running && (result || status) && (
                     <button className="secondary" onClick={reset}>{t("trNew")}</button>
@@ -6896,14 +7061,14 @@ function App() {
                   {running && (
                     <div className="status">
                       <span className="spinner" />
-                      <span>{STAGES[stage] || status}</span>
+                      <span>{processingSource === "url-captions" ? status : STAGES[stage] || status}</span>
                       <span className="elapsed">{t("trElapsed", { t: fmtElapsed(elapsed) })}</span>
                     </div>
                   )}
                   {!running && status && <div className="status"><span>{status}</span></div>}
                 </div>
 
-                {running && (
+                {running && processingSource !== "url-captions" && (
                   <div className="stepper">
                     {[1, 2, 3, 4].map((n) => (
                       <div key={n} className={"step" + (stage >= n ? " done" : "") + (stage === n ? " active" : "")}>

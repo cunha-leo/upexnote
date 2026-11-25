@@ -1031,3 +1031,12 @@ Na criação desta submatriz:
 - suporte operacional, telemetria, scheduler, webhooks e integrações foram reclassificados como backlog posterior ou possibilidades exploratórias;
 - `PROJECT_CONTEXT.md` permanece como matriz principal e deverá apontar para este documento como fonte operacional das frentes não entregues;
 - documentos especializados continuam com autoridade sobre seus domínios e devem ser consultados e atualizados conforme as regras acima.
+
+
+## 2026-11-24 — UpexNote v0.45.0 (importação por URL YouTube)
+
+- **Escopo:** adicionar URL YouTube à tela Transcrever sem criar pipeline, storage ou Biblioteca paralelos.
+- **Fluxo:** analisar URL; detectar legendas; importar VTT original (RAW) e texto visível sem IA/deduplicação (CLEAN), ou extrair áudio temporário e transcrever via motor selecionado; persistir no SQLite oficial do utilizador; prévia/Caderno sob ação posterior.
+- **Validação:** teste end-to-end durante desenvolvimento confirmou metadados e legendas; um problema inicial de banco foi corrigido; importação órfã anterior foi recuperada como item #80 com backup prévio. Testes automatizados de URL e VTT passaram. Ver `docs/URL_INGESTION.md`.
+- **Release:** v0.45.0 planejada, gerar/revalidar worker e instalador antes de promover a `Validated`; `yt-dlp` distribuído com worker, FFmpeg externo necessário para extração de áudio.
+- **Segurança:** sem envio automático de transcrições/áudio à VPS; sem credenciais e sem processamento IA adicional nas legendas.

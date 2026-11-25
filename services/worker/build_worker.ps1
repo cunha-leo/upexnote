@@ -59,6 +59,16 @@ if (Test-Path $apiCfg) {
 & ".\dist\upexnote-worker\upexnote-worker.exe" engines | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "O worker empacotado nao respondeu a 'engines' (exit $LASTEXITCODE)" }
 
+# Distribuir yt-dlp standalone com o worker para que importar legendas
+# funcione mesmo em computadores sem yt-dlp no PATH.
+# FFmpeg continua pré-requisito externo para a opção de extrair áudio.
+$ytDlp = Get-Command yt-dlp.exe -ErrorAction SilentlyContinue
+if (-not $ytDlp) { throw "yt-dlp.exe nao encontrado: nao gerar release sem suporte a URL." }
+Copy-Item -LiteralPath $ytDlp.Source -Destination ".\dist\upexnote-worker\yt-dlp.exe" -Force
+& ".\dist\upexnote-worker\yt-dlp.exe" --version
+if ($LASTEXITCODE -ne 0) { throw "yt-dlp empacotado falhou no teste de versao." }
+Write-Host "yt-dlp empacotado e verificado."
+
 # Copia para dois destinos:
 # 1. target\release\worker — junto do exe "solto" (atalho/zip portatil);
 # 2. src-tauri\worker — fonte dos "resources" do bundler Tauri, que os
