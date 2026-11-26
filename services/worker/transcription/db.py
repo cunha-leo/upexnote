@@ -763,6 +763,9 @@ def _iso(v):
 
 
 def load_config():
+    from .edition import INTERNAL
+    if not INTERNAL:
+        return None
     if not CONFIG_PATH.exists():
         return None
     try:
@@ -791,11 +794,17 @@ _mode_override = None
 def set_mode_override(mode):
     """Força um modo SÓ neste processo (ex.: login de administrador feito a
     partir de uma sessão local — as contas admin vivem na VPS). Não grava."""
+    from .edition import INTERNAL
     global _mode_override
+    if not INTERNAL and mode == "vps":
+        raise PermissionError("internal_only")
     _mode_override = mode if mode in ("local", "vps") else None
 
 
 def storage_mode() -> str:
+    from .edition import INTERNAL
+    if not INTERNAL:
+        return "local"
     if _mode_override:
         return _mode_override
     from . import paths
@@ -2217,16 +2226,47 @@ def notebook_note_delete(note_id, user_id=None, admin_verified=False):
 # --------------------------------------------------------------------------
 
 def _render_blocks_as_text(blocks):
-    """Serialização simples (título + corpo) dos blocos do documento —
-    conteúdo inicial da nota nesta fatia. blocks: lista de (heading, content)
-    já na ordem de leitura (document_blocks.position)."""
-    parts = []
+    """Convert preview content to native editable notebook blocks.
+    Source document and lineage are not modified.
+    """
+    from html import escape
+    from uuid import uuid4
+
+    result = []
+
+    def add(tag, markup):
+        result.append({"id": str(uuid4()), "tag": tag, "html": markup})
+
+    def safe(value):
+        return escape(str(value), quote=False).replace("\n", "<br/>")
+
+    def render(value):
+        if isinstance(value, list):
+            if all(isinstance(item, (str, int, float, bool)) for item in value):
+                if value:
+                    add("UL", "".join("<li>" + safe(item) + "</li>" for item in value))
+            else:
+                for item in value:
+                    render(item)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                add("P", "<strong>" + safe(key.replace("_", " ").replace("-", " ")) + ":</strong>")
+                render(item)
+        elif value is not None:
+            for para in str(value).split("\n\n"):
+                if para.strip():
+                    add("P", safe(para))
+
     for heading, content in blocks:
         if heading:
-            parts.append(f"## {heading}")
-        if content:
-            parts.append(content)
-    return "\n\n".join(parts)
+            add("H2", safe(heading))
+        if isinstance(content, str) and content.lstrip().startswith(("[", "{")):
+            try:
+                content = json.loads(content)
+            except ValueError:
+                pass
+        render(content)
+    return json.dumps(result, ensure_ascii=False)
 
 
 def notebook_note_for_document(document_id, user_id=None, admin_verified=False):

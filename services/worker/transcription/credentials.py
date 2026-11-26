@@ -5,14 +5,19 @@ Wi-Fi/contas. As chaves nunca sao escritas em texto simples num ficheiro do
 projeto - ficam encriptadas pelo Windows, associadas a esta conta de utilizador.
 """
 import keyring
+from .edition import INTERNAL
 
 SERVICE_NAME = "UpexNote"
 
 KNOWN_KEYS = [
     "ASSEMBLYAI_API_KEY", "OPENAI_API_KEY", "DEEPGRAM_API_KEY",
     "DEEPSEEK_API_KEY", "GROK_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+    "ELEVENLABS_API_KEY", "GROQ_API_KEY",
     "UPEXNOTE_PG_PASSWORD", "UPEXNOTE_SUPPORT_CLIENT_SECRET",
 ]
+
+if not INTERNAL:
+    KNOWN_KEYS.remove("UPEXNOTE_PG_PASSWORD")
 
 # Categorizacao por finalidade (decisao de arquitetura 06/08/2026,
 # FEATURE_VALIDATION_AND_ROADMAP.md, ADF-01): a tela de chaves deve mostrar
@@ -24,9 +29,11 @@ KEY_PURPOSES = {
     "DEEPGRAM_API_KEY": ["transcription"],
     "OPENAI_API_KEY": ["transcription", "formatting"],
     "DEEPSEEK_API_KEY": ["formatting"],
-    "GROK_API_KEY": ["formatting"],
+    "GROK_API_KEY": ["transcription", "formatting"],
     "ANTHROPIC_API_KEY": ["formatting"],
-    "GEMINI_API_KEY": ["formatting"],
+    "GEMINI_API_KEY": ["transcription", "formatting"],
+    "ELEVENLABS_API_KEY": ["planned:voice", "planned:vsl"],
+    "GROQ_API_KEY": ["transcription"],
 }
 
 
@@ -35,10 +42,14 @@ def key_purposes(name: str) -> list:
 
 
 def get_key(name: str) -> str:
+    if not INTERNAL and name == "UPEXNOTE_PG_PASSWORD":
+        return ""
     return keyring.get_password(SERVICE_NAME, name) or ""
 
 
 def set_key(name: str, value: str) -> None:
+    if not INTERNAL and name == "UPEXNOTE_PG_PASSWORD":
+        raise PermissionError("internal_only")
     if value:
         keyring.set_password(SERVICE_NAME, name, value)
     else:
@@ -46,6 +57,8 @@ def set_key(name: str, value: str) -> None:
 
 
 def clear_key(name: str) -> None:
+    if not INTERNAL and name == "UPEXNOTE_PG_PASSWORD":
+        raise PermissionError("internal_only")
     try:
         keyring.delete_password(SERVICE_NAME, name)
     except keyring.errors.PasswordDeleteError:

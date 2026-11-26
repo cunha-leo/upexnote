@@ -1,4 +1,4 @@
-﻿# Empacota o worker Python como pasta autonoma (PyInstaller onedir) e
+# Empacota o worker Python como pasta autonoma (PyInstaller onedir) e
 # copia-a para junto do executavel da app desktop.
 #
 # Onedir (e nao onefile): a app lanca o worker muitas vezes em chamadas
@@ -10,27 +10,46 @@
 # Resultado: dist\upexnote-worker\  ->  copiado para
 #            ..\..\apps\desktop\src-tauri\target\release\worker\
 
+param([ValidateSet("personal", "internal")][string]$Edition = "personal")
 $ErrorActionPreference = "Stop"
+$env:UPEXNOTE_EDITION = $Edition
 Set-Location $PSScriptRoot
 
-# `python -m PyInstaller` (e nao `pyinstaller`): o Python da MS Store nao
-# poe a pasta Scripts no PATH, mas o modulo esta sempre acessivel.
-python -m PyInstaller --noconfirm --clean --onedir --console `
-    --name upexnote-worker `
-    --hidden-import keyring.backends.Windows `
-    worker_entry.py
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller falhou (exit $LASTEXITCODE)" }
+$editionFile = Join-Path $PSScriptRoot "transcription\_build_edition.py"
+$originalEdition = [IO.File]::ReadAllBytes($editionFile)
+try {
+    $flag = if ($Edition -eq "internal") { "True" } else { "False" }
+    [IO.File]::WriteAllText($editionFile, "INTERNAL = $flag`n", [Text.Encoding]::ASCII)
+    $extra = @()
+    # The current Python runtime can carry a patched ssl.py that loads an
+    # extra CA distrust list. Bundle the adjacent file rather than disabling
+    # TLS verification; the frozen SSLContext needs the same resource.
+    $tlsCompanion = python -c "import ssl,pathlib;print(pathlib.Path(ssl.__file__).with_name('codex-rejected-cas.pem'))"
+    if ($LASTEXITCODE -ne 0) { throw "Cannot resolve Python SSL runtime" }
+    if (Test-Path -LiteralPath $tlsCompanion) {
+        $extra += @("--add-data", "$tlsCompanion;.")
+        Write-Host "SSL companion bundled for patched Python runtime."
+    }
+    if ($Edition -eq "personal") { $extra += @("--exclude-module", "transcription.data_studio") }
+    python -m PyInstaller --noconfirm --clean --onedir --console `
+        --name upexnote-worker `
+        --hidden-import keyring.backends.Windows `
+        @extra worker_entry.py
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed: $LASTEXITCODE" }
+} finally {
+    [IO.File]::WriteAllBytes($editionFile, $originalEdition)
+}
 
 # Inclui a config da base de dados (host/porta/base/user — SEM password)
 # no pacote, para o zip portatil funcionar sem copiar nada para o AppData.
 # Se o ficheiro nao existir (ex.: build para distribuir a terceiros), segue
 # sem ele — a app funciona na mesma, so nao grava historico na VPS.
 $cfg = Join-Path $PSScriptRoot "transcription\db_config.json"
-if (Test-Path $cfg) {
+if ($Edition -eq "internal" -and (Test-Path $cfg)) {
     Copy-Item $cfg ".\dist\upexnote-worker\db_config.json" -Force
     Write-Host "db_config.json incluido no pacote."
 } else {
-    Write-Host "db_config.json ausente — pacote sem ligacao a VPS (so ficheiro local)."
+    Write-Host "No database configuration bundled for this edition."
 }
 
 # Inclui o registo OAuth da aplicacao (client IDs Google/GitHub) no pacote:

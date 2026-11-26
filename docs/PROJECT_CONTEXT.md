@@ -4,8 +4,8 @@
 
 > **Objetivo deste documento:** manter uma fonte de verdade legível por pessoas e IAs. Deve ser atualizado a cada decisão, teste relevante, alteração estrutural ou mudança de estado. Não contém chaves, vídeos, áudios privados nem transcrições sensíveis.
 
-**Última atualização:** 24 de novembro de 2026 (v0.45.0 — candidata de lançamento: importação YouTube por URL; consultar `docs/URL_INGESTION.md` e o estado de validação do instalador)
-**Estado mais recente:** 14 de agosto de 2026 (v0.44.0; Caderno com árvore/coleções, worker persistente, anotações, referências, links, glossário e exportação real em `.zip` (.md/.docx/prompt IA) entregues e majoritariamente confirmados por Leonardo na máquina real; ver secção 12, Registro de atualizações, para o detalhamento por versão)
+**Última atualização:** 26 de novembro de 2026 — Personal v0.45.0 e Internal v0.45.0-internal, catálogo multimodelos, correção visual aprovada e checkpoint R03.1 FULL. Ver `docs/RELEASE_R03_1_FULL_2026-11-26.md`.
+**Estado atual:** 26/11/2026 — edições Personal e Internal compiladas e verificadas, UX da Prévia estruturada aprovada nas duas edições, 13 modelos de transcrição e 13 de formatação. Benchmarks extensivos e alguns bugs históricos permanecem documentados no relatório R03.1 FULL.
 **Produto:** UpexNote  
 **Ecossistema:** UpexFlow  
 **Repositório:** `https://github.com/cunha-leo/upexnote` (privado) — **fonte de verdade e sincronização**  
@@ -2030,3 +2030,12 @@ No mesmo dia, a allowlist de IP foi substituída por túnel SSH e a porta fechad
 
 ### Próximo passo
 - Construir o ponto de entrada (CLI/IPC) que liga `apps/desktop` a `services/worker`.
+
+
+### Registro — 2026-11-26 (R03.1 FULL: duas edições e BYOK multimodelos)
+- **Escopo encerrado:** builds Personal v0.45.0 e Internal v0.45.0-internal separados e verificados; UI de Provedor → Modelo e alinhamento Perfil na Prévia estruturada aprovados pelo proprietário em execução real (26/11/2026). Preservados temas, RAW/CLEAN, documentos e Caderno.
+- **Motores:** 13 STT em seis provedores e 13 de formatação em cinco provedores. Seleção dependente por provedor, modelos recomendados primeiro e descrições dinâmicas. BYOK usa o cofre de credenciais do Windows; modelos exclusivamente de texto não recebem áudio diretamente.
+- **Evidência:** 44 testes automatizados aprovados; TypeScript/Vite, Tauri/NSIS e verificadores de privilégios executados. Workers empacotados em ambas as edições retornam os catálogos e passaram em smokes GPT-Transcribe e Nova-2. O Nova-2 recebeu correção de detecção de idioma predominante.
+- **Segurança:** Personal bloqueia comandos administrativos/VPS em CLI direta e persistente, sem configuração privada PostgreSQL; Internal preserva o seu modelo de autorização. Nenhum RAW, chave ou banco foi modificado automaticamente.
+- **Limitações não encerradas:** BUG-03 de mensagem histórica com encoding corrompido; verificação visual direcionada do título Suporte no tema Nord; benchmarks longos PT/EN/ES, modelos Groq sem chave, e alguns modelos de formatação apenas com testes curtos. Não anunciar essas partes como homologadas.
+- **Fonte de continuidade:** `docs/RELEASE_R03_1_FULL_2026-11-26.md` e o Recovery privado cumulativo. Sem ingestão LIFE.

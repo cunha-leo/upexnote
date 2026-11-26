@@ -1040,3 +1040,34 @@ Na criação desta submatriz:
 - **Validação:** teste end-to-end durante desenvolvimento confirmou metadados e legendas; um problema inicial de banco foi corrigido; importação órfã anterior foi recuperada como item #80 com backup prévio. Testes automatizados de URL e VTT passaram. Ver `docs/URL_INGESTION.md`.
 - **Release:** v0.45.0 planejada, gerar/revalidar worker e instalador antes de promover a `Validated`; `yt-dlp` distribuído com worker, FFmpeg externo necessário para extração de áudio.
 - **Segurança:** sem envio automático de transcrições/áudio à VPS; sem credenciais e sem processamento IA adicional nas legendas.
+
+
+## 26/11/2026 — Expansão multimodelos e credenciais (implementada em branch, não homologada integralmente)
+
+Escopo autorizado: manter UX/UI, estilo e navegação aprovados; expandir os campos de credenciais e selecionar provedores/modelos por capacidade, sem recomeçar o produto. Na branch `feat/desktop-editions` foram acrescentados campos DeepSeek, Grok/xAI, Anthropic, Gemini, ElevenLabs e OrcaRouter ao painel existente, utilizando `UpexNote` no Windows Credential Manager. Os quatro primeiros já possuíam adaptadores históricos de formatação. Os dois últimos aceitam armazenar chaves, mas **não possuem execução homologada**. Não divulgar como conectores funcionais.
+
+O catálogo de STT cresceu de quatro para seis modelos, mantendo IDs anteriores, com AssemblyAI STT-3.7 e `gpt-4o-mini-transcribe` (cada um com registro e destinos RAW/CLEAN independentes). Os metadados `provider`/`model` suportam seletores dependentes na transcrição e na prévia estruturada; as informações de desempenho/custo continuam dentro dos controles atuais. Nenhum benchmark histórico foi descartado. Não trocar o modelo principal sem benchmark.
+
+Evidências: TypeScript/Vite aprovados; 33 testes `unittest` aprovados; dois smokes reais de áudio de aproximadamente 23 segundos com novos modelos retornaram `ok=true`, saída 0 e 0 problemas. Compilação de edições e inspeção funcional visual serão registradas no relatório local `releases/R03.1/MULTIMODEL-STATUS-2026-11-26.md`. Pendências: integração real de provedores adicionais onde não existe adaptador, múltiplos modelos por provedor além das variantes iniciais, benchmark longo PT/ES/EN e custos, homologação visual final, pendências R03.1 herdadas, confirmação documental no docs.upexflow.com (push/deploy não autorizados).
+
+
+## 26/11/2026 — checkpoint incremental multimodelos (branch feat/desktop-editions)
+
+Contrato aprovado pelo proprietário: **Provedor → Modelo**, dentro da interface existente, modelos recomendados primeiro por provedor, alternativas funcionais depois, texto explicativo dinâmico e BYOK. Não restringir por marketing de modelo; incluir LLM multimodal que receba áudio diretamente, mas nunca usar modelo somente texto como transcritor direto sem pipeline explícito. Bibliotecas, Caderno e futuras funções TTS/VSL têm catálogos por capacidade, não obrigatoriamente idênticos. Sem novos painéis ou redesign.
+
+Catálogo de transcrição no worker: **13 modelos e seis provedores** (AssemblyAI 3, OpenAI 4, Deepgram 2, Groq 2, Gemini 1, xAI/Grok 1). Os novos GPT-Transcribe, Gemini Flash multimodal com áudio e Grok Voice STT 2.0 passaram em chamadas reais de ~23 s (HTTP 200, saída 0, validação ok), mas com nível de precisão de timestamps diferente; custos monetários ainda não mensurados são `null`, não zero. AssemblyAI STT-3.7 e GPT4o Mini antigos passaram smokes; Universal-2 e Deepgram Nova-2 passaram após correção do idioma: Nova-2 `language=multi` cobre só inglês+espanhol, usar `detect_language=true` para PT e outros idiomas; não substitui o Nova-3 no code-switching. Groq V3/Turbo têm adaptadores mas `GROQ_API_KEY` não está configurada; falta smoke com chave própria.
+
+Catálogo de formatação da Biblioteca: **13 modelos e cinco provedores** (DeepSeek 2, xAI/Grok 2, OpenAI 3, Anthropic 4, Gemini 2). DeepSeek Flash, Grok4.20, Gemini3 Flash e Claude Haiku4.5 funcionaram em teste curto anterior; os novos GPT5.4 Nano, Grok4.3, Claude Haiku5.5, Gemini3.1 Flash Lite produziram documento estruturado válido no worker. DeepSeek V4 Pro, GPT5.4 Mini, Claude Sonnet5.5 passaram apenas JSON curto; o ensaio de documento longo do DeepSeek Pro foi interrompido por latência/cautela de custos. Gemini 3.1 Pro Preview retornou 429 quota, não publicado. Novos modelos são experimentais até benchmarks longos.
+
+Todas as sete credenciais históricas de provedores foram testadas com APIs reais nesta missão/turnos anteriores; Anthropic e Gemini foram substituídas pelo proprietário e reconfirmadas HTTP 200. Campo `Guardada` da interface indica chave armazenada, **não** saúde da API. Gemini usa `x-goog-api-key` no cabeçalho para não incluir segredo na URL. Google Pro não equivale a cotas pagas da Gemini API. OrcaRouter saiu da UI; ElevenLabs reservado para futuro TTS/VSL, sem adaptador ainda. OpenAI Whisper/gpt-4o legados encerram em 26/02/2027 segundo documentação oficial, sem remover IDs históricos. Sem alteração da main, bancos ou experiência visual; builds e aceitação visual posteriores precisam ser verificados; Recovery R03.1 DOCUMENTAL preservado.
+
+
+## 26/11/2026 — R03.1 FULL: entrega desktop e backlog transparente
+
+**Estado:** `Validated` para as edições Personal v0.45.0 e Internal v0.45.0-internal, a UI do catálogo BYOK e o componente de Prévia estruturada aprovado visualmente. Recovery cumulativo identificado como FULL, sem inferir homologação de todos os modelos.
+
+**Comprovações:** compilação e empacotamento separados, verificação de privilégios e hashes, 44 testes automatizados, 13 STT em 6 provedores e 13 modelos de formatação em 5 provedores, testes API e smokes curtos. Sem alterações de banco ou dos RAW históricos.
+
+**Status herdado:** SEC-01 (Personal bloqueia VPS/admin em CLI direta e `serve`) testado; BUG-01 (listas/Unicode na prévia→nota) com regressões; BUG-02 (título do Suporte Nord) corrigido em CSS, ainda sem aceite visual direcionado; BUG-03 (mojibake de mensagem antiga) pendente, sem reescrita da base; BUG-04 (duração subminuto) corrigido para apresentar segundos.
+
+**Próximas etapas:** benchmarks longos PT/EN/ES, preços e quotas por modelo, Groq com chave própria, inspeção específica Nord/Suporte, BUG-03 e outras capacidades futuras (voz/VSL, tradução, IA no Caderno). Consultar `docs/RELEASE_R03_1_FULL_2026-11-26.md`.

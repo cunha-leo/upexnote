@@ -253,7 +253,7 @@ def run_deepseek(clean_text, api_key, profile="detalhado", log=print):
     # "deepseek-chat" (alias antigo, V4-Flash) foi descontinuado; usar o
     # identificador atual "deepseek-v4-flash". Confirmar na conta antes de
     # depender disto em producao (ver nota de manutencao no topo do modulo).
-    return _run_openai_compatible(clean_text, api_key, "deepseek", "deepseek-v4-flash",
+    return _run_openai_compatible(clean_text, api_key, "deepseek", "deepseek-flash",
                                    "https://api.deepseek.com", profile, log)
 
 
@@ -261,7 +261,7 @@ def run_grok(clean_text, api_key, profile="detalhado", log=print):
     # https://docs.x.ai — API compativel com OpenAI. "grok-4-fast" confirmado
     # ativo com chamada real em 07/08/2026 (a preocupacao de descontinuacao
     # levantada pela pesquisa de 06/08 nao se confirmou na pratica).
-    return _run_openai_compatible(clean_text, api_key, "grok", "grok-4-fast",
+    return _run_openai_compatible(clean_text, api_key, "grok", "grok-4.20-0309-non-reasoning",
                                    "https://api.x.ai/v1", profile, log)
 
 
@@ -347,8 +347,8 @@ def run_claude_sonnet(clean_text, api_key, profile="detalhado", log=print):
 # Google Gemini — REST generateContent, tambem via requests (sem SDK extra).
 # ---------------------------------------------------------------------------
 
-def run_gemini(clean_text, api_key, profile="detalhado", log=print):
-    model = "gemini-3.6-flash"
+def run_gemini(clean_text, api_key, profile="detalhado", log=print, *, model_id="gemini-3-flash-preview", engine_id="gemini"):
+    model = model_id
     log(f"Enviando transcript para gemini ({model})...")
     started = time.time()
     messages = _build_messages(clean_text, profile)
@@ -357,7 +357,7 @@ def run_gemini(clean_text, api_key, profile="detalhado", log=print):
     try:
         resp = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-            params={"key": api_key},
+            headers={"x-goog-api-key": api_key},
             json={
                 "system_instruction": {"parts": [{"text": system_msg}]},
                 "contents": [{"role": "user", "parts": [{"text": user_msg}]}],
@@ -367,15 +367,16 @@ def run_gemini(clean_text, api_key, profile="detalhado", log=print):
         )
         resp.raise_for_status()
     except requests.RequestException as e:
-        detail = getattr(e.response, "text", "") if getattr(e, "response", None) is not None else ""
-        return _fail(f"Falha ao chamar gemini: {e} {detail}".strip())
+        response = getattr(e, "response", None)
+        http_status = getattr(response, "status_code", None)
+        return _fail(f"Gemini: falha de rede ou API (HTTP {http_status})" if http_status else f"Gemini: falha de rede ({type(e).__name__})")
     elapsed = time.time() - started
     payload = resp.json()
     try:
         candidate = payload["candidates"][0]
         raw_text = "".join(p.get("text", "") for p in candidate["content"]["parts"])
     except (KeyError, IndexError) as e:
-        return _fail(f"Resposta do gemini sem conteudo utilizavel: {e} — payload: {payload}")
+        return _fail(f"Gemini: resposta sem conteúdo utilizável ({type(e).__name__})")
     try:
         document = _parse_document(raw_text)
     except ValueError as e:
@@ -383,4 +384,4 @@ def run_gemini(clean_text, api_key, profile="detalhado", log=print):
     usage_raw = payload.get("usageMetadata", {}) or {}
     usage = {"input_tokens": usage_raw.get("promptTokenCount"), "output_tokens": usage_raw.get("candidatesTokenCount")}
     log(f"Recebido em {elapsed:.1f}s ({len(document.get('blocks', []))} blocos).")
-    return _finish(document, "gemini", model, profile, elapsed, usage)
+    return _finish(document, engine_id, model, profile, elapsed, usage)

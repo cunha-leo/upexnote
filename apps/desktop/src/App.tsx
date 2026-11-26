@@ -30,6 +30,8 @@ import { LANGS, LOCALES, makeT, type Key as I18nKey, type Lang, type TFn } from 
 import ErDiagram, { type ErScope } from "./ErDiagram";
 import DocumentReader, { type DocDetail, type DocRef } from "./DocumentReader";
 import FONTS from "./fonts.json";
+
+const INTERNAL = import.meta.env.VITE_UPEXNOTE_EDITION === "internal";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./App.css";
 
@@ -154,6 +156,9 @@ function SecretInput({
 }
 
 type Engine = {
+  recommended?: boolean;
+  provider: string;
+  model: string;
   id: string;
   label: string;
   info: string;
@@ -163,6 +168,9 @@ type Engine = {
 };
 
 type FormatEngine = {
+  recommended?: boolean;
+  provider: string;
+  model: string;
   id: string;
   label: string;
   info: string;
@@ -191,7 +199,7 @@ type ResultData = {
   ok: boolean;
   clean_text: string;
   clean_path: string;
-  cost: number;
+  cost: number | null;
   duration_s: number;
   problems: string[];
   language: string | null;
@@ -418,7 +426,13 @@ const CREDENTIALS: { name: string; label?: string; labelKey?: I18nKey; hintKey: 
   { name: "ASSEMBLYAI_API_KEY", label: "AssemblyAI API Key", hintKey: "hintAssembly" },
   { name: "OPENAI_API_KEY", label: "OpenAI API Key", hintKey: "hintOpenai" },
   { name: "DEEPGRAM_API_KEY", label: "Deepgram API Key", hintKey: "hintDeepgram" },
-  { name: "UPEXNOTE_PG_PASSWORD", labelKey: "credPgLabel", hintKey: "hintPg" },
+  { name: "DEEPSEEK_API_KEY", label: "DeepSeek API Key", hintKey: "hintDeepSeek" },
+  { name: "GROK_API_KEY", label: "Grok / xAI API Key", hintKey: "hintGrok" },
+  { name: "ANTHROPIC_API_KEY", label: "Anthropic / Claude API Key", hintKey: "hintAnthropic" },
+  { name: "GEMINI_API_KEY", label: "Google Gemini API Key", hintKey: "hintGemini" },
+  { name: "ELEVENLABS_API_KEY", label: "ElevenLabs API Key", hintKey: "hintElevenLabs" },
+  { name: "GROQ_API_KEY", label: "Groq API Key", hintKey: "hintGroq" },
+  ...(INTERNAL ? [{ name: "UPEXNOTE_PG_PASSWORD", labelKey: "credPgLabel" as I18nKey, hintKey: "hintPg" as I18nKey }] : []),
 ];
 
 // ---------------------------------------------------------------------------
@@ -459,11 +473,18 @@ type LibDetail = LibItem & {
 };
 
 const ENGINE_LABELS: Record<string, string> = {
-  assemblyai: "AssemblyAI",
+  assemblyai: "AssemblyAI Universal-3.5 Pro",
+  assemblyai_stt37: "AssemblyAI STT-3.7",
   whisper_openai: "whisper-1",
-  deepgram: "Deepgram",
-  gpt4o_openai: "gpt-4o",
+  deepgram: "Deepgram Nova-3",
+  gpt4o_openai: "gpt-4o-transcribe",
+  gpt4o_mini: "gpt-4o-mini-transcribe",
 };
+const providerDisplay = (provider: string): string => ({
+  assemblyai: "AssemblyAI", openai: "OpenAI", deepgram: "Deepgram",
+  groq: "Groq", elevenlabs: "ElevenLabs", deepseek: "DeepSeek",
+  grok: "xAI / Grok", anthropic: "Anthropic / Claude", gemini: "Google Gemini",
+}[provider] || provider);
 const engLabel = (id: string) => ENGINE_LABELS[id] || id;
 
 // label/info dos motores vêm do worker em PT — sobrepomos com traduções por
@@ -486,8 +507,9 @@ function fmtCost(v: number | null): string {
   return "$" + v.toFixed(v < 1 ? 4 : 2);
 }
 function fmtDur(sec: number | null): string {
-  if (sec == null) return "—";
-  const m = Math.round(sec / 60);
+  if (sec == null || !Number.isFinite(sec) || sec < 0) return "—";
+  if (sec < 60) return `${Math.round(sec)} s`;
+  const m = Math.floor(sec / 60);
   if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60);
   return `${h}h ${m % 60}min`;
@@ -525,6 +547,10 @@ type Session = {
 function getSession(): Session | null {
   try {
     const s = JSON.parse(localStorage.getItem("upexnote-session") || "null");
+    if (!INTERNAL && (s?.profile === "admin" || s?.role === "admin" || s?.mode === "vps")) {
+      localStorage.removeItem("upexnote-session");
+      return null;
+    }
     if (s?.profile === "admin" && (!s.admin_token || !s.admin_expires_at
       || Date.parse(s.admin_expires_at) <= Date.now())) {
       localStorage.removeItem("upexnote-session");
@@ -1107,7 +1133,7 @@ function LibraryView({
       }
       const list = (obj.engines || []) as FormatEngine[];
       setFormatEngines(list);
-      setFormatEngineId((current) => current || list.find((engine) => engine.key_set)?.id || list[0]?.id || "");
+      setFormatEngineId((current) => list.some((engine) => engine.id === current) ? current : (list.find((engine) => engine.key_set)?.id || list[0]?.id || ""));
     } catch (e) {
       setFormatEnginesError(String(e));
     } finally {
@@ -1330,6 +1356,7 @@ function LibraryView({
   }
 
   const selectedFormatEngine = formatEngines.find((engine) => engine.id === formatEngineId) || null;
+  const formatProviderId = selectedFormatEngine?.provider || formatEngines[0]?.provider || "";
 
   // Vista do documento estruturado (so leitura) — tem precedencia sobre o
   // detalhe do transcript, e o "voltar" dela devolve ao transcript de origem.
@@ -1561,20 +1588,42 @@ function LibraryView({
                 <div className="preview-composer-grid">
                   <label>
                     <span>{t("previewEngineLabel")}</span>
-                    <select value={formatEngineId} onChange={(event) => setFormatEngineId(event.currentTarget.value)} disabled={previewGenerating}>
-                      {formatEngines.map((engine) => (
-                        <option key={engine.id} value={engine.id}>{engine.label}</option>
+                    <span>{t("providerLabel")}</span>
+                    <select value={formatProviderId} onChange={(event) => {
+                      const provider = event.currentTarget.value;
+                      const choices = formatEngines.filter((item) => item.provider === provider);
+                      setFormatEngineId((choices.find((item) => item.recommended) || choices[0])?.id || "");
+                    }} disabled={previewGenerating} aria-label={t("providerLabel")}>
+                      {[...new Set(formatEngines.map((item) => item.provider))].map((provider) => (
+                        <option key={provider} value={provider}>{providerDisplay(provider)} ({formatEngines.filter((item) => item.provider === provider).length})</option>
                       ))}
                     </select>
+                    <span>{t("modelLabel")}</span>
+                    <select value={formatEngineId} onChange={(event) => setFormatEngineId(event.currentTarget.value)} disabled={previewGenerating} aria-label={t("modelLabel")}>
+                      {formatEngines.some((item) => item.provider === formatProviderId && item.recommended) && (
+                        <optgroup label={t("trFeatured")}>
+                          {formatEngines.filter((item) => item.provider === formatProviderId && item.recommended).map((item) => (
+                            <option key={item.id} value={item.id}>{item.label}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label={t("trMoreModels")}>
+                        {formatEngines.filter((item) => item.provider === formatProviderId && !item.recommended).map((item) => (
+                          <option key={item.id} value={item.id}>{item.label}</option>
+                        ))}
+                      </optgroup>
+                    </select>
                   </label>
-                  <label>
+                  <div className="preview-composer-profile">
                     <span>{t("previewProfileLabel")}</span>
-                    <select value={previewProfile} onChange={(event) => setPreviewProfile(event.currentTarget.value as PreviewProfile)} disabled={previewGenerating}>
+                    <label htmlFor="preview-profile-select">{t("previewProfileFieldLabel")}</label>
+                    <select id="preview-profile-select" value={previewProfile} onChange={(event) => setPreviewProfile(event.currentTarget.value as PreviewProfile)} disabled={previewGenerating}>
                       {(Object.keys(PREVIEW_PROFILE_I18N) as PreviewProfile[]).map((profile) => (
                         <option key={profile} value={profile}>{t(PREVIEW_PROFILE_I18N[profile])}</option>
                       ))}
                     </select>
-                  </label>
+                    <p className="preview-profile-tip" role="note">{t("previewProfileScrollHint")}</p>
+                  </div>
                 </div>
               )}
               {selectedFormatEngine && (
@@ -4024,7 +4073,8 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
 
   // Alvo da entrada: utilizador (conta pessoal, base local) ou administrador
   // (conta na base central + prova da credencial). Mesmos 3 métodos nos dois.
-  const [target, setTarget] = useState<"user" | "admin">("user");
+  const [selectedTarget, setTarget] = useState<"user" | "admin">("user");
+  const target = INTERNAL ? selectedTarget : "user";
   const [adminPw, setAdminPw] = useState("");
   // Refs para os handlers assíncronos (o listener de OAuth vive fora do render)
   const targetRef = useRef(target);
@@ -4037,6 +4087,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
     profile: "user" | "admin", user?: AccountUser | null,
     elevationToken?: string, expiresIn?: number,
   ) {
+    if (!INTERNAL && profile !== "user") return;
     clearLibCaches(); // cache é por conta/modo — nunca herdar de outra sessão
     localStorage.setItem(
       "upexnote-session",
@@ -4046,7 +4097,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         id: user?.id ?? null,
         email: user?.email || email,
         user_id: user?.user_id || null,
-        role: user?.role || (profile === "admin" ? "admin" : "user"),
+        role: INTERNAL ? (user?.role || (profile === "admin" ? "admin" : "user")) : "user",
         first_name: user?.first_name || null,
         last_name: user?.last_name || null,
         auth_provider: user?.auth_provider || null,
@@ -4064,11 +4115,13 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
   // e o worker eleva no MESMO processo (identidade + prova numa só ida à base
   // — dois spawns sequenciais duplicavam a latência; 2026-07-19).
   async function finishAdmin(user: AccountUser, token: string, expiresIn: number) {
+    if (!INTERNAL) return;
     try { await invoke("set_settings", { storageMode: "vps" }); } catch { /* best-effort */ }
     finish("admin", user, token, expiresIn);
   }
 
   async function beginAdminMfa(user: AccountUser, preferEmail = false) {
+    if (!INTERNAL) return;
     setBusy("admin"); setErr(""); setNotice("");
     setEmail(user.email);
     try {
@@ -4658,7 +4711,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
         </div>
       </div>
       )}
-      {screen !== "welcome" && screen !== "adminMfa" && screen !== "adminTotpEnroll" && (
+      {INTERNAL && screen !== "welcome" && screen !== "adminMfa" && screen !== "adminTotpEnroll" && (
         <button
           className="link-btn login-admin"
           onClick={() => {
@@ -4670,6 +4723,7 @@ function LoginGate({ onDone }: { onDone: (session: string) => void }) {
           {target === "admin" ? t("loginUserLink") : t("loginAdminLink")}
         </button>
       )}
+      {!INTERNAL && screen !== "welcome" && <p className="login-value-message">{t("loginValueMessage")}</p>}
     </div>
   );
 }
@@ -6050,7 +6104,7 @@ function AdminView({ active, section }: { active: boolean; section: AdminSection
             <div className="telemetry-kpis">
               <div><span>Consented installations</span><strong>{telemetry.installations}</strong></div><div><span>Events</span><strong>{telemetry.events}</strong></div><div><span>Completed</span><strong>{telemetry.completed}</strong></div><div><span>Failed</span><strong>{telemetry.failed}</strong></div>
             </div>
-            <div className="telemetry-grid"><section><h3>Errors and outcomes</h3>{(telemetry.errors || []).map((x: any, i: number) => <div className="telemetry-row" key={i}><span>{x.error_code || x.event}</span><b>{x.count}</b></div>) || "No events yet"}</section><section><h3>Engines</h3>{(telemetry.engines || []).map((x: any) => <div className="telemetry-row" key={x.engine}><span>{x.engine} · {Math.round(x.avg_duration_seconds / 60)} min avg</span><b>{x.count}</b></div>) || "No engine activity yet"}</section></div>
+            <div className="telemetry-grid"><section><h3>Errors and outcomes</h3>{(telemetry.errors || []).map((x: any, i: number) => <div className="telemetry-row" key={i}><span>{x.error_code || x.event}</span><b>{x.count}</b></div>) || "No events yet"}</section><section><h3>Engines</h3>{(telemetry.engines || []).map((x: any) => <div className="telemetry-row" key={x.engine}><span>{x.engine} · {fmtDur(x.avg_duration_seconds)} avg</span><b>{x.count}</b></div>) || "No engine activity yet"}</section></div>
           </>}
         </div>
       )}
@@ -6506,7 +6560,7 @@ function UrlIngestSection({ running, engineReady, savedPath, onStart }: {
     {analysis && <div className="url-ingest-result">
       <div className="url-ingest-meta"><CircleCheck size={17}/><div><strong>{copy.found}: {analysis.title}</strong>
       <div className="engine-info">{analysis.channel}{analysis.duration_s != null ? " · " + copy.duration + ": " +
-        Math.floor(analysis.duration_s / 60) + " min" : ""}</div></div></div>
+        fmtDur(analysis.duration_s) : ""}</div></div></div>
       {hasCaptions ? <div className="engine-info">{copy.captions}: {tracks.length} opções · {analysis.manual_languages.length} do autor, {analysis.automatic_languages.length} automáticas</div> :
         <p className="engine-info">{copy.none}</p>}
       <div className="url-ingest-choices" role="group" aria-label={copy.choose}>
@@ -6617,12 +6671,14 @@ function App() {
   const [histBack, setHistBack] = useState<View[]>([]);
   const [histFwd, setHistFwd] = useState<View[]>([]);
   function navTo(v: View) {
+    if (!INTERNAL && v === "admin") return;
     if (v === view) return;
     setHistBack((h) => [...h, view]);
     setHistFwd([]);
     setView(v);
   }
   function openAdmin(section?: AdminSection) {
+    if (!INTERNAL) return;
     if (section) setAdminSection(section);
     if (view !== "admin") navTo("admin");
   }
@@ -6674,6 +6730,7 @@ function App() {
   const transcriptRef = useRef<HTMLPreElement>(null);
 
   const selected = useMemo(() => engines.find((e) => e.id === engineId), [engines, engineId]);
+  const transcribeProviderId = selected?.provider || engines[0]?.provider || "";
 
   const STAGES = [t("stage0"), t("stage1"), t("stage2"), t("stage3"), t("stage4")];
 
@@ -6698,7 +6755,7 @@ function App() {
       const parsed = JSON.parse(raw);
       const list: Engine[] = parsed.engines || [];
       setEngines(list);
-      setEngineId((cur) => cur || list.find((e) => e.primary)?.id || list[0]?.id || "");
+      setEngineId((cur) => list.some((e) => e.id === cur) ? cur : (list.find((e) => e.primary)?.id || list[0]?.id || ""));
       setLoadError("");
       try { localStorage.setItem("upexnote-engines", raw); } catch { /* cache é best-effort */ }
     } catch (e) {
@@ -6715,7 +6772,7 @@ function App() {
       const list: Engine[] = cached?.engines || [];
       if (list.length) {
         setEngines(list);
-        setEngineId((cur) => cur || list.find((e) => e.primary)?.id || list[0]?.id || "");
+        setEngineId((cur) => list.some((e) => e.id === cur) ? cur : (list.find((e) => e.primary)?.id || list[0]?.id || ""));
       }
     } catch { /* sem cache */ }
     loadEngines();
@@ -6945,7 +7002,7 @@ function App() {
               {!collapsed && <span>{it.label}</span>}
             </button>
           ))}
-          {getSession()?.role === "admin" && <>
+          {INTERNAL && getSession()?.role === "admin" && <>
             <button className={"nav-item admin-parent" + (view === "admin" ? " active" : "")} onClick={() => { setAdminExpanded((expanded) => !expanded); openAdmin(); }} title={t("navAdmin")} aria-expanded={adminExpanded}>
               <span className="nav-ico"><ShieldCheck size={16} strokeWidth={1.75} /></span>
               {!collapsed && <><span>{t("navAdmin")}</span><span className="nav-expand">{adminExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</span></>}
@@ -7033,12 +7090,31 @@ function App() {
 
                 <div className="field">
                   <label>{t("trEngineLabel")}</label>
-                  <select value={engineId} onChange={(e) => setEngineId(e.currentTarget.value)}>
-                    {engines.map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {ENGINE_I18N[e.id] ? t(ENGINE_I18N[e.id].label) : e.label}
-                      </option>
+                  <label htmlFor="stt-provider">{t("providerLabel")}</label>
+                  <select id="stt-provider" value={transcribeProviderId} onChange={(event) => {
+                    const provider = event.currentTarget.value;
+                    const choices = engines.filter((item) => item.provider === provider);
+                    const next = choices.find((item) => item.recommended || item.primary) || choices[0];
+                    setEngineId(next?.id || "");
+                  }} disabled={running}>
+                    {[...new Set(engines.map((item) => item.provider))].map((provider) => (
+                      <option key={provider} value={provider}>{providerDisplay(provider)} ({engines.filter((item) => item.provider === provider).length})</option>
                     ))}
+                  </select>
+                  <label htmlFor="stt-model">{t("modelLabel")}</label>
+                  <select id="stt-model" value={engineId} onChange={(event) => setEngineId(event.currentTarget.value)} disabled={running}>
+                    {engines.some((item) => item.provider === transcribeProviderId && (item.recommended || item.primary)) && (
+                      <optgroup label={t("trFeatured")}>
+                        {engines.filter((item) => item.provider === transcribeProviderId && (item.recommended || item.primary)).map((item) => (
+                          <option key={item.id} value={item.id}>{ENGINE_I18N[item.id] ? t(ENGINE_I18N[item.id].label) : item.label}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label={t("trMoreModels")}>
+                      {engines.filter((item) => item.provider === transcribeProviderId && !(item.recommended || item.primary)).map((item) => (
+                        <option key={item.id} value={item.id}>{ENGINE_I18N[item.id] ? t(ENGINE_I18N[item.id].label) : item.label}</option>
+                      ))}
+                    </optgroup>
                   </select>
                   {selected && (
                     <div className="engine-info">
@@ -7052,7 +7128,7 @@ function App() {
                 </div>
 
                 <div className="row wrap">
-                  <button onClick={startTranscription} disabled={!file || running || !selected}>
+                  <button onClick={startTranscription} disabled={!file || running || !selected || !selected.key_set}>
                     {running && processingSource === "file" ? t("trRunning") : t("trStart")}
                   </button>
                   {!running && (result || status) && (
@@ -7139,8 +7215,8 @@ function App() {
                       {result.ok ? t("valOk") : t("valWarn")}
                     </span>
                     {result.language && <span className="badge">{t("langBadge", { lang: result.language })}</span>}
-                    <span className="badge">~${result.cost.toFixed(4)}</span>
-                    <span className="badge">{Math.round(result.duration_s / 60)} min</span>
+                    {typeof result.cost === "number" && <span className="badge">~${result.cost.toFixed(4)}</span>}
+                    <span className="badge">{fmtDur(result.duration_s)}</span>
                     <div className="spacer" style={{ flex: 1 }} />
                     <button className="secondary" onClick={copyTranscript}>{t("copyAll")}</button>
                   </div>
@@ -7173,7 +7249,7 @@ function App() {
             <SupportView active={view === "support"} />
           </div>}
 
-          {getSession()?.role === "admin" && (
+          {INTERNAL && getSession()?.role === "admin" && (
             <div className={"view-pane" + (view === "admin" ? "" : " hidden")}>
               <AdminView active={view === "admin"} section={adminSection} />
             </div>
@@ -7182,7 +7258,7 @@ function App() {
           <div className={"view-pane" + (view === "settings" ? "" : " hidden")}>
             <AppearanceCard {...appearance} />
             <TypographyCard prefs={font.prefs} setPrefs={font.setPrefs} />
-            <MfaSettingsCard />
+            {INTERNAL && <MfaSettingsCard />}
             <SettingsView onChanged={loadEngines} />
             <StorageSettingsCard />
           </div>

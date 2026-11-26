@@ -105,6 +105,9 @@ def cmd_engines(args):
     for engine_id, cfg in ENGINES.items():
         out.append({
             "id": engine_id,
+            "provider": cfg.get("provider", engine_id),
+            "model": cfg.get("model", engine_id),
+            "recommended": cfg.get("recommended", cfg.get("primary", False)),
             "label": cfg["label"],
             "info": cfg["info"],
             "primary": cfg.get("primary", False),
@@ -123,6 +126,9 @@ def cmd_format_engines(args):
     for engine_id, cfg in FORMAT_ENGINES.items():
         out.append({
             "id": engine_id,
+            "provider": cfg.get("provider", engine_id),
+            "model": cfg.get("model", engine_id),
+            "recommended": cfg.get("recommended", cfg.get("primary", False)),
             "label": cfg["label"],
             "info": cfg["info"],
             "key_name": cfg["key_name"],
@@ -652,6 +658,10 @@ def cmd_account(args):
         data = _stdin_json()
         if data is None:
             _emit(sys.stdout, {"type": "error", "message": "JSON invalido no stdin."})
+            return 1
+        from .edition import INTERNAL
+        if not INTERNAL and "admin_secret" in data:
+            _emit(sys.stdout, {"type": "error", "message": "internal_only"})
             return 1
         if op == "account-register":
             res = accounts.register(data)
@@ -1887,7 +1897,8 @@ def cmd_set_settings(args):
         s["storage_dir"] = str(d)
     if getattr(args, "organize", None) in ("on", "off"):
         s["organize_by_day_engine"] = args.organize == "on"
-    if getattr(args, "storage_mode", None) in ("local", "vps"):
+    from .edition import INTERNAL
+    if INTERNAL and getattr(args, "storage_mode", None) in ("local", "vps"):
         s["storage_mode"] = args.storage_mode
     if getattr(args, "telemetry_consent", None) in ("on", "off"):
         s["telemetry_consent"] = args.telemetry_consent == "on"
@@ -2347,6 +2358,19 @@ def _build_handlers():
     }
 
 
+def _dispatch_edition(args, handlers):
+    from .edition import INTERNAL
+    command = args.command
+    if not INTERNAL and (command.startswith(("admin-", "api-admin-", "support-admin-"))
+            or command in {"account-elevate", "telemetry-overview", "tunnel-keep", "db-adopt-orphans"}
+            or getattr(args, "mode", None) == "vps"
+            or getattr(args, "storage_mode", None) == "vps"
+            or getattr(args, "stdin_password", False)):
+        _emit(sys.stdout, {"type": "error", "message": "internal_only"})
+        return 1
+    return handlers[command](args)
+
+
 def cmd_serve(args):
     """Fase A da analise arquitetural (2026-08-13): worker persistente.
 
@@ -2398,7 +2422,7 @@ def cmd_serve(args):
             if handler is None:
                 _emit(out_buf, {"type": "error", "message": f"comando desconhecido: {ns.command}"})
             else:
-                handler(ns)
+                _dispatch_edition(ns, handlers)
         except SystemExit:
             # argparse chama sys.exit em erro de parsing dos argumentos —
             # apanha-se aqui para o loop nao morrer por causa de UM pedido mal formado.
@@ -2423,7 +2447,7 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
     handlers = _build_handlers()
-    return handlers[args.command](args)
+    return _dispatch_edition(args, handlers)
 
 
 if __name__ == "__main__":

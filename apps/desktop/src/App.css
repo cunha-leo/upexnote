@@ -1804,9 +1804,13 @@ input[type="range"] {
 .preview-composer { padding: 14px 16px; border-top: 1px solid var(--border); background: var(--panel); }
 .preview-composer-intro { display: grid; gap: 3px; margin-bottom: 12px; }
 .preview-composer-intro span, .preview-composer-actions > span { color: var(--text-dim); font-size: var(--fs-sm); }
-.preview-composer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.preview-composer-grid label { display: grid; gap: 5px; color: var(--text-dim); font-size: var(--fs-sm); }
-.preview-composer-grid select { width: 100%; }
+.preview-composer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+/* Mantém Perfil alinhado ao Provedor; não estica o seletor pela altura da coluna de modelos. */
+.preview-composer-grid > label,
+.preview-composer-profile { display: grid; grid-auto-rows: max-content; align-content: start; align-self: start; gap: 5px; min-width: 0; color: var(--text-dim); font-size: var(--fs-sm); }
+.preview-composer-grid select { width: 100%; min-width: 0; align-self: start; }
+.preview-composer-profile > label { display: block; color: var(--text-dim); font-size: var(--fs-sm); }
+.preview-profile-tip { margin: 9px 0 0; color: var(--text-dim); font-size: var(--fs-sm); line-height: 1.5; }
 .preview-engine-info {
   display: flex; justify-content: space-between; gap: 14px; margin-top: 10px;
   padding: 9px 11px; border-radius: var(--radius-ctl); background: var(--panel-2);
@@ -2415,3 +2419,8 @@ input[type="range"] {
   .url-ingest-row { flex-wrap:wrap; }
   .url-ingest-row button { width:100%; }
 }
+
+.login-value-message { width: min(380px, 92vw); margin: 4px 0 0; padding: 0 6px; text-align: center; color: var(--text-dim); font-size: calc(var(--fs-sm) - 2px); font-weight: 500; line-height: 1.2; white-space: pre-line; opacity: 0.85; }
+
+/* R03.1: support heading follows the active palette. */
+.support-view > h2 { background: transparent; color: var(--text-dim); }

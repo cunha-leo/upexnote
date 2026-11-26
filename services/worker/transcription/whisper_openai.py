@@ -41,14 +41,14 @@ from .transcript_utils import enforce_monotonic_segments, validate_segments, mar
 PRICE_PER_MINUTE = 0.006  # whisper-1, USD
 
 
-def run(audio_path, api_key, log=print, chunk_seconds=300):
+def run(audio_path, api_key, log=print, chunk_seconds=300, *, model_id='whisper-1', engine_id='whisper_openai', base_url=None, price_per_hour=None):
     """
     Transcreve audio_path com o whisper-1. Devolve um dict:
       {ok, raw_path, clean_path, clean_text, cost, duration_s, problems}
     log(msg) e chamado com linhas de progresso.
     chunk_seconds=300 (5 min) e o ponto otimo validado empiricamente.
     """
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
 
     all_segments = []  # (start, end, text) em tempo do audio ORIGINAL
     total_covered_compact = 0.0
@@ -70,17 +70,28 @@ def run(audio_path, api_key, log=print, chunk_seconds=300):
 
         try:
             result = client.audio.transcriptions.create(
-                model="whisper-1",
+                model=model_id,
                 file=buf,
                 response_format="verbose_json",
-                timestamp_granularities=["segment"],
+                **({"timestamp_granularities": ["segment"]} if not base_url else {}),
                 temperature=0,
                 prompt=prev_tail_prompt or "Reuniao de trabalho em portugues, com alguns trechos e termos tecnicos em ingles (ex: middleware, backlog, release, deploy).",
             )
-        except Exception as e:
-            log(f"  ERRO no bloco {i}: {e}")
-            warnings.append(f"bloco {i}: excecao {e}")
-            continue
+        except Exception as exc:
+            # Provider or authentication failures are not empty transcriptions.
+            # Do not leak any API-key fragments from SDK exception messages.
+            status = getattr(exc, "status_code", None)
+            if status == 401:
+                detail = "credencial do provedor rejeitada (HTTP 401)"
+            elif status == 403:
+                detail = "acesso ao modelo negado (HTTP 403)"
+            elif status == 429:
+                detail = "limite de uso, quota ou saldo da API (HTTP 429)"
+            elif isinstance(status, int):
+                detail = f"erro HTTP {status}"
+            else:
+                detail = f"falha de rede ou do SDK ({type(exc).__name__})"
+            raise RuntimeError(f"{engine_id}: {detail}. Bloco {i} nao processado.") from exc
 
         if detected_language is None:
             detected_language = getattr(result, "language", None)
@@ -118,11 +129,11 @@ def run(audio_path, api_key, log=print, chunk_seconds=300):
     all_segments, monotonic_corrections = enforce_monotonic_segments(all_segments)
     annotated, loop_events = mark_repetition_loops(all_segments)
 
-    raw_path = transcript_path("whisper_openai", audio_path, "raw")
+    raw_path = transcript_path(engine_id, audio_path, "raw")
     raw_lines = [f"[{s:6.1f}s -> {e:6.1f}s]  {t}" for s, e, t, _ in annotated]
     raw_path.write_text("\n".join(raw_lines), encoding="utf-8")
 
-    clean_path = transcript_path("whisper_openai", audio_path, "clean")
+    clean_path = transcript_path(engine_id, audio_path, "clean")
     clean_lines = []
     seen_loop_ids = set()
     for s, e, t, loop_id in annotated:
@@ -139,12 +150,13 @@ def run(audio_path, api_key, log=print, chunk_seconds=300):
     clean_path.write_text(clean_text, encoding="utf-8")
 
     minutes_processed = total_covered_compact / 60
-    cost = minutes_processed * PRICE_PER_MINUTE
+    unit_price = price_per_hour / 60 if price_per_hour is not None else PRICE_PER_MINUTE
+    cost = minutes_processed * unit_price
 
     log("-" * 70)
     log(f"Tempo total de processamento: {elapsed:.1f}s")
     log(f"Duracao original do audio: {original_duration:.1f}s")
-    log(f"Custo estimado: ~${cost:.4f} (${PRICE_PER_MINUTE}/min, whisper-1)")
+    log(f"Custo estimado: ~${cost:.4f} (${unit_price:.5f}/min, {model_id})")
     if loop_events:
         log(f"Alucinacoes detetadas: {len(loop_events)}")
     if warnings:

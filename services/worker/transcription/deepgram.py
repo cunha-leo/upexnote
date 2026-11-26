@@ -52,7 +52,7 @@ BASE_PARAMS = [
 ] + [("keyterm", term) for term in KEYTERMS]
 
 
-def run(audio_path, api_key, log=print, chunk_seconds=1800):
+def run(audio_path, api_key, log=print, chunk_seconds=1800, *, model_id='nova-3', engine_id='deepgram'):
     """
     Transcreve audio_path com o Deepgram Nova-3. Devolve um dict:
       {ok, raw_path, clean_path, clean_text, cost, duration_s, problems}
@@ -74,7 +74,12 @@ def run(audio_path, api_key, log=print, chunk_seconds=1800):
         log(f"Bloco {i}: {chunk_start:.1f}s -> {chunk_end:.1f}s ({duration:.1f}s)...")
 
         try:
-            resp = requests.post(URL, params=BASE_PARAMS, headers=headers, data=wav_bytes, timeout=600)
+            params = [(k, model_id if k == "model" else v) for k, v in BASE_PARAMS if model_id == "nova-3" or k not in ("keyterm", "language")]
+            if model_id == "nova-2":
+                # No Nova-2, multi cobre apenas espanhol+inglês. Para português
+                # e outros idiomas, deteta o idioma predominante automaticamente.
+                params.append(("detect_language", "true"))
+            resp = requests.post(URL, params=params, headers=headers, data=wav_bytes, timeout=600)
         except Exception as e:
             raise RuntimeError(f"Deepgram: falha de rede ao contactar a API ({e})")
         if not resp.ok:
@@ -136,11 +141,11 @@ def run(audio_path, api_key, log=print, chunk_seconds=1800):
     all_segments, monotonic_corrections = enforce_monotonic_segments(all_segments)
     annotated, loop_events = mark_repetition_loops(all_segments)
 
-    raw_path = transcript_path("deepgram", audio_path, "raw")
+    raw_path = transcript_path(engine_id, audio_path, "raw")
     raw_lines = [f"[{s:6.1f}s -> {e:6.1f}s]  {t}" for s, e, t, _ in annotated]
     raw_path.write_text("\n".join(raw_lines), encoding="utf-8")
 
-    clean_path = transcript_path("deepgram", audio_path, "clean")
+    clean_path = transcript_path(engine_id, audio_path, "clean")
     clean_lines = []
     seen_loop_ids = set()
     for s, e, t, loop_id in annotated:
@@ -157,12 +162,13 @@ def run(audio_path, api_key, log=print, chunk_seconds=1800):
     clean_path.write_text(clean_text, encoding="utf-8")
 
     minutes_processed = total_covered / 60
-    cost = minutes_processed * PRICE_PER_MINUTE
+    price_per_minute = 0.0043 if model_id == 'nova-2' else PRICE_PER_MINUTE
+    cost = minutes_processed * price_per_minute
 
     log("-" * 70)
     log(f"Tempo total de processamento: {elapsed:.1f}s")
     log(f"Duracao total coberta: {total_covered:.1f}s (~{minutes_processed:.1f} min)")
-    log(f"Custo estimado: ~${cost:.4f} (${PRICE_PER_MINUTE}/min, nova-3)")
+    log(f"Custo estimado: ~${cost:.4f} (${price_per_minute}/min, {model_id})")
     if loop_events:
         log(f"Alucinacoes detetadas: {len(loop_events)}")
     if warnings:

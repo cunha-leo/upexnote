@@ -54,7 +54,7 @@ KEYTERMS = [
 ]
 
 
-def run(audio_path, api_key, log=print):
+def run(audio_path, api_key, log=print, *, speech_models=None, engine_id='assemblyai'):
     """
     Transcreve audio_path com a AssemblyAI. Devolve um dict:
       {ok, raw_path, clean_path, clean_text, cost, duration_s, language, problems}
@@ -76,11 +76,10 @@ def run(audio_path, api_key, log=print):
         headers=headers,
         json={
             "audio_url": audio_url,
-            "speech_models": ["universal-3-5-pro", "universal-2"],
+            "speech_models": speech_models or ["universal-3-5-pro", "universal-2"],
             "language_detection": True,
             "speaker_labels": True,
-            "prompt": PROMPT,
-            "keyterms_prompt": KEYTERMS,
+            **({} if speech_models == ["universal-2"] else {"prompt": PROMPT, "keyterms_prompt": KEYTERMS}),
         },
     )
     if not submit_resp.ok:
@@ -141,11 +140,11 @@ def run(audio_path, api_key, log=print):
     all_segments, monotonic_corrections = enforce_monotonic_segments(all_segments)
     annotated, loop_events = mark_repetition_loops(all_segments)
 
-    raw_path = transcript_path("assemblyai", audio_path, "raw")
+    raw_path = transcript_path(engine_id, audio_path, "raw")
     raw_lines = [f"[{s:6.1f}s -> {e:6.1f}s]  {t}" for s, e, t, _ in annotated]
     raw_path.write_text("\n".join(raw_lines), encoding="utf-8")
 
-    clean_path = transcript_path("assemblyai", audio_path, "clean")
+    clean_path = transcript_path(engine_id, audio_path, "clean")
     clean_lines = []
     seen_loop_ids = set()
     for s, e, t, loop_id in annotated:

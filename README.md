@@ -63,6 +63,8 @@ Os arquivos permanecem acessíveis na pasta escolhida e podem ser abertos fora d
 
 ## Estado atual
 
+**Marco de 26/11/2026:** edições Personal v0.45.0 e Internal v0.45.0-internal; catálogo BYOK de 13 modelos de transcrição (6 provedores) e 13 de formatação (5 provedores). Seleção Provedor → Modelo, opções recomendadas e alternativas com descrições dinâmicas. O alinhamento da Prévia estruturada foi aprovado visualmente nas duas edições. Ver [relatório de release R03.1 FULL](docs/RELEASE_R03_1_FULL_2026-11-26.md). Testes curtos não substituem benchmarks extensivos.
+
 O produto já possui uma aplicação Windows instalada e validada, não apenas uma fundação ou protótipo. Estão entregues:
 
 - transcrição de ficheiros de áudio e vídeo com múltiplos motores;

@@ -8,6 +8,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
+const INTERNAL: bool = cfg!(feature = "internal");
+fn require_internal() -> Result<(), String> {
+    if INTERNAL { Ok(()) } else { Err("internal_only".into()) }
+}
+
 /// Lança o Python SEM janela de consola. Sendo esta uma app gráfica, cada
 /// chamada ao worker faria piscar um terminal preto (e roubava o foco à
 /// janela, causando ecrãs em branco ao interagir). CREATE_NO_WINDOW evita isso.
@@ -84,6 +89,7 @@ fn worker_command(cli_args: &[&str]) -> Command {
     // stdin (corpo da nota, anotações, etc.). PYTHONUTF8 força UTF-8 em todo
     // o runtime; PYTHONIOENCODING cobre explicitamente stdin/stdout/stderr.
     cmd.args(cli_args)
+        .env("UPEXNOTE_EDITION", if INTERNAL { "internal" } else { "personal" })
         .env("PYTHONUNBUFFERED", "1")
         .env("PYTHONUTF8", "1")
         .env("PYTHONIOENCODING", "utf-8");
@@ -446,6 +452,11 @@ async fn library_item(
 /// visível na lista de processos). `op` é validado contra a whitelist.
 #[tauri::command]
 async fn account(op: String, payload: String, mode: Option<String>) -> Result<String, String> {
+    if !INTERNAL {
+        if mode.as_deref() == Some("vps") { return Err("internal_only".into()); }
+        let data: serde_json::Value = serde_json::from_str(&payload).map_err(|_| "invalid_payload")?;
+        if data.get("admin_secret").is_some() { return Err("internal_only".into()); }
+    }
     const OPS: [&str; 5] = ["register", "login", "oauth-login", "update", "profile"];
     if !OPS.contains(&op.as_str()) {
         return Err(format!("operação desconhecida: {op}"));
@@ -523,6 +534,7 @@ async fn api_reset(op: String, payload: String) -> Result<String, String> {
 /// ticket fields through stdin.
 #[tauri::command]
 async fn support(op: String, payload: String) -> Result<String, String> {
+    if op.starts_with("admin-") { require_internal()?; }
     const OPS: [&str; 11] = ["identity", "create", "list", "detail", "comment", "attachment", "admin-list", "admin-detail", "admin-comment", "admin-status", "admin-assignment"];
     if !OPS.contains(&op.as_str()) {
         return Err(format!("operaÃ§Ã£o de suporte desconhecida: {op}"));
@@ -534,6 +546,7 @@ async fn support(op: String, payload: String) -> Result<String, String> {
 /// one-time codes and session tokens stay in the stdin JSON pipe.
 #[tauri::command]
 async fn api_admin_factor(op: String, payload: String) -> Result<String, String> {
+    require_internal()?;
     const OPS: [&str; 6] = ["challenge", "verify", "validate", "revoke", "totp-enroll", "totp-confirm"];
     if !OPS.contains(&op.as_str()) {
         return Err(format!("operação desconhecida: {op}"));
@@ -567,6 +580,7 @@ async fn api_admin_factor(op: String, payload: String) -> Result<String, String>
 /// que o worker REVALIDA na base — o cliente não consegue afirmar-se admin).
 #[tauri::command]
 async fn admin(op: String, payload: String, mode: Option<String>) -> Result<String, String> {
+    require_internal()?;
     const OPS: [&str; 12] = ["overview", "users", "create-user", "update-user", "delete-user", "events", "audit", "data-catalog", "data-table", "data-query", "data-sql", "data-saved-queries"];
     if !OPS.contains(&op.as_str()) {
         return Err(format!("operação desconhecida: {op}"));
@@ -608,6 +622,7 @@ async fn admin(op: String, payload: String, mode: Option<String>) -> Result<Stri
 
 #[tauri::command]
 async fn account_suggest(user_id: String, mode: Option<String>) -> Result<String, String> {
+    if !INTERNAL && mode.as_deref() == Some("vps") { return Err("internal_only".into()); }
     let mut args: Vec<String> = vec!["account-suggest".into(), "--user-id".into(), user_id];
     if let Some(m) = mode {
         if m == "local" || m == "vps" {
@@ -622,6 +637,7 @@ async fn account_suggest(user_id: String, mode: Option<String>) -> Result<String
 /// argv) com uma ligação real à base — prova de conhecimento, não de posse.
 #[tauri::command]
 async fn db_check_secret(secret: String) -> Result<String, String> {
+    require_internal()?;
     tauri::async_runtime::spawn_blocking(move || {
         use std::io::Write;
         let mut cmd = worker_command(&["db-check", "--mode", "vps", "--stdin-password"]);
@@ -714,6 +730,7 @@ async fn telemetry_event(
 
 #[tauri::command]
 async fn telemetry_overview(payload: String) -> Result<String, String> {
+    require_internal()?;
     run_cli_stdin_async(vec!["telemetry-overview".into()], payload).await
 }
 
@@ -722,6 +739,7 @@ async fn telemetry_overview(payload: String) -> Result<String, String> {
 /// com isto antes de trocar o modo.
 #[tauri::command]
 async fn db_check(mode: Option<String>) -> Result<String, String> {
+    if !INTERNAL && mode.as_deref() == Some("vps") { return Err("internal_only".into()); }
     let mut args: Vec<String> = vec!["db-check".into()];
     if let Some(m) = mode {
         args.push("--mode".into());
@@ -1278,6 +1296,7 @@ async fn set_settings(
         args.push(if org { "on".into() } else { "off".into() });
     }
     if let Some(mode) = storage_mode {
+        if !INTERNAL && mode != "local" { return Err("internal_only".into()); }
         args.push("--storage-mode".into());
         args.push(mode);
     }
@@ -1363,7 +1382,7 @@ pub fn run() {
         .setup(|_app| {
             // Em thread própria: o spawn é barato, mas não queremos NADA a
             // competir com a inicialização da janela (lição da v0.4.5).
-            std::thread::spawn(spawn_tunnel_keeper);
+            if INTERNAL { std::thread::spawn(spawn_tunnel_keeper); }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

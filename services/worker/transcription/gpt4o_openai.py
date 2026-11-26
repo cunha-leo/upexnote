@@ -48,7 +48,7 @@ DIRECTIVE_PROMPT = (
 )
 
 
-def run(audio_path, api_key, log=print, chunk_seconds=150):
+def run(audio_path, api_key, log=print, chunk_seconds=150, *, model_id='gpt-4o-transcribe', engine_id='gpt4o_openai'):
     """
     Transcreve audio_path com o gpt-4o-transcribe. Devolve um dict:
       {ok, raw_path, clean_path, clean_text, cost, duration_s, problems}
@@ -75,16 +75,27 @@ def run(audio_path, api_key, log=print, chunk_seconds=150):
 
         try:
             result = client.audio.transcriptions.create(
-                model="gpt-4o-transcribe",
+                model=model_id,
                 file=buf,
                 response_format="json",
                 temperature=0.2,
                 prompt=DIRECTIVE_PROMPT,
             )
-        except Exception as e:
-            log(f"  ERRO no bloco {i}: {e}")
-            warnings.append(f"bloco {i}: excecao {e}")
-            continue
+        except Exception as exc:
+            # Provider or authentication failures are not empty transcriptions.
+            # Do not leak any API-key fragments from SDK exception messages.
+            status = getattr(exc, "status_code", None)
+            if status == 401:
+                detail = "credencial OPENAI_API_KEY rejeitada (HTTP 401)"
+            elif status == 403:
+                detail = "acesso ao modelo negado (HTTP 403)"
+            elif status == 429:
+                detail = "limite de uso, quota ou saldo da API (HTTP 429)"
+            elif isinstance(status, int):
+                detail = f"erro HTTP {status}"
+            else:
+                detail = f"falha de rede ou do SDK ({type(exc).__name__})"
+            raise RuntimeError(f"OpenAI: {detail}. Bloco {i} nao processado.") from exc
 
         chunk_text = (result.text or "").strip()
         if not chunk_text:
@@ -103,11 +114,11 @@ def run(audio_path, api_key, log=print, chunk_seconds=150):
     all_segments, monotonic_corrections = enforce_monotonic_segments(all_segments)
     annotated, loop_events = mark_repetition_loops(all_segments)
 
-    raw_path = transcript_path("gpt4o_openai", audio_path, "raw")
+    raw_path = transcript_path(engine_id, audio_path, "raw")
     raw_lines = [f"[{s:6.1f}s -> {e:6.1f}s]  {t}" for s, e, t, _ in annotated]
     raw_path.write_text("\n".join(raw_lines), encoding="utf-8")
 
-    clean_path = transcript_path("gpt4o_openai", audio_path, "clean")
+    clean_path = transcript_path(engine_id, audio_path, "clean")
     clean_lines = []
     seen_loop_ids = set()
     for s, e, t, loop_id in annotated:
@@ -124,12 +135,13 @@ def run(audio_path, api_key, log=print, chunk_seconds=150):
     clean_path.write_text(clean_text, encoding="utf-8")
 
     minutes_processed = total_covered_compact / 60
-    cost = minutes_processed * PRICE_PER_MINUTE
+    price_per_minute = 0.003 if model_id == "gpt-4o-mini-transcribe" else PRICE_PER_MINUTE
+    cost = minutes_processed * price_per_minute
 
     log("-" * 70)
     log(f"Tempo total de processamento: {elapsed:.1f}s")
     log(f"Duracao original do audio: {original_duration:.1f}s")
-    log(f"Custo estimado: ~${cost:.4f} (${PRICE_PER_MINUTE}/min, gpt-4o-transcribe)")
+    log(f"Custo estimado: ~${cost:.4f} (${price_per_minute}/min, {model_id})")
     log("NOTA: timestamps sao APROXIMADOS (gpt-4o-transcribe nao devolve timestamps internos ao bloco).")
     if loop_events:
         log(f"Alucinacoes detetadas: {len(loop_events)}")
