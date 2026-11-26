@@ -7,9 +7,10 @@ $worker=Join-Path $target "worker\upexnote-worker.exe"
 if (-not(Test-Path -LiteralPath $worker)){throw "Worker missing"}
 $exe=Join-Path $target "upexnote.exe"
 if (-not(Test-Path -LiteralPath $exe)){throw "Application binary missing"}
-$expectedName=if($Edition -eq "personal"){"UpexNote_0.45.0_x64-setup.exe"}else{"UpexNote Internal_0.45.0-internal_x64-setup.exe"}
-$installer=Join-Path $release $expectedName
-if (-not(Test-Path -LiteralPath $installer)){throw "Installer missing"}
+. (Join-Path $PSScriptRoot 'resolve_release_installer.ps1')
+$installerInfo=Get-UpexNoteInstaller -Root $root -Edition $Edition -Location release
+$installer=$installerInfo.FullName
+if (-not(Test-Path -LiteralPath $installer -PathType Leaf)){throw "Installer missing"}
 if((Get-Item $exe).LastWriteTime -lt (Get-Item $worker).LastWriteTime.AddSeconds(-5)){throw "Application executable predates current worker"}
 # Frozen worker privilege checks use Python byte-safe subprocess I/O.
 # The previous PowerShell stdin path fed malformed JSON to frozen Python.

@@ -15,12 +15,10 @@ try {
     if($Edition -eq "internal"){$argsList+=@("--features","internal")}
     & npm.cmd @argsList
     if($LASTEXITCODE -ne 0){throw "Tauri build failed"}
-    $name=if($Edition -eq "internal"){"UpexNote Internal_0.45.0-internal_x64-setup.exe"}else{"UpexNote_0.45.0_x64-setup.exe"}
-    $bundle=Join-Path $desktop "src-tauri\target\release\bundle\nsis"
-    $installer=Join-Path $bundle $name
-    if(-not(Test-Path -LiteralPath $installer)){throw "Expected installer missing: $name"}
-    Copy-Item -LiteralPath $installer -Destination $release -Force
-    Get-FileHash -LiteralPath (Join-Path $release $name) -Algorithm SHA256
+    . (Join-Path $PSScriptRoot 'resolve_release_installer.ps1')
+    $installerInfo=Get-UpexNoteInstaller -Root $root -Edition $Edition -Location bundle
+    Copy-Item -LiteralPath $installerInfo.FullName -Destination $release -Force
+    Get-FileHash -LiteralPath (Join-Path $release $installerInfo.Name) -Algorithm SHA256
     Write-Host "EDITION_BUILD_OK $Edition"
 } finally {
     Remove-Item Env:VITE_UPEXNOTE_EDITION -ErrorAction SilentlyContinue
