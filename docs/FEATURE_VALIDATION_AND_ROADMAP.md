@@ -1068,6 +1068,6 @@ Todas as sete credenciais históricas de provedores foram testadas com APIs reai
 
 **Comprovações:** compilação e empacotamento separados, verificação de privilégios e hashes, 44 testes automatizados, 13 STT em 6 provedores e 13 modelos de formatação em 5 provedores, testes API e smokes curtos. Sem alterações de banco ou dos RAW históricos.
 
-**Status herdado:** SEC-01 (Personal bloqueia VPS/admin em CLI direta e `serve`) testado; BUG-01 (listas/Unicode na prévia→nota) com regressões; BUG-02 (título do Suporte Nord) corrigido em CSS, ainda sem aceite visual direcionado; BUG-03 (mojibake de mensagem antiga) pendente, sem reescrita da base; BUG-04 (duração subminuto) corrigido para apresentar segundos.
+**Status herdado:** SEC-01 (Personal bloqueia VPS/admin em CLI direta e `serve`) testado; BUG-01 (listas/Unicode na prévia→nota) com regressões; BUG-02 (título do Suporte Nord) corrigido em CSS, ainda sem aceite visual direcionado; BUG-03 (mojibake da descrição histórica do suporte) diagnosticado e corrigido em produção após backup e auditoria atômica, com testes de UTF-8; BUG-04 (duração subminuto) corrigido para apresentar segundos.
 
-**Próximas etapas:** benchmarks longos PT/EN/ES, preços e quotas por modelo, Groq com chave própria, inspeção específica Nord/Suporte, BUG-03 e outras capacidades futuras (voz/VSL, tradução, IA no Caderno). Consultar `docs/RELEASE_R03_1_FULL_2026-11-26.md`.
+**Próximas etapas:** benchmarks longos PT/EN/ES, preços e quotas por modelo, Groq com chave própria, inspeção específica Nord/Suporte e outras capacidades futuras (voz/VSL, tradução, IA no Caderno). Consultar `docs/RELEASE_R03_1_FULL_2026-11-26.md`.

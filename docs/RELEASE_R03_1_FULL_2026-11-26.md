@@ -15,7 +15,7 @@
 ## Evidências disponíveis
 
 - Compilação React/TypeScript/Vite e Tauri/Rust/NSIS nas duas edições; hashes SHA-256 arquivados com os artefactos.
-- **44 testes `unittest` aprovados**; verificadores de edição nos workers empacotados aplicaram testes negativos do Personal (comandos administrativos, VPS, modo persistente) e preservaram o Internal.
+- **46 testes `unittest` do worker aprovados** e **2 testes novos da API FastAPI para UTF-8 aprovados**; verificadores de edição nos workers empacotados aplicaram testes negativos do Personal (comandos administrativos, VPS, modo persistente) e preservaram o Internal.
 - Workers empacotados de ambas as edições enumeraram 13 motores STT e 13 de formatação.
 - Smokes de áudio curtos com AssemblyAI, OpenAI, Deepgram, Gemini e xAI/Grok; OpenAI GPT-Transcribe e Deepgram Nova-2 também passaram nos workers empacotados de ambas as edições. Nova-2 requer deteção automática do idioma dominante e não substitui Nova-3 para code-switching PT/EN.
 - Chaves OpenAI, Deepgram, Anthropic e Gemini renovadas pelo proprietário; verificações HTTP 200; DeepSeek e Grok também com geração API válida. Não registrar valores de chaves no código ou documentação.
@@ -28,7 +28,7 @@
 | SEC-01 isolamento Personal | Testes negativos no worker empacotado, incluindo execução `serve`; flag Internal preservada; sem configuração privada de PostgreSQL no bundle Personal |
 | BUG-01 arrays/Markdown na prévia → nota | Conversão de blocos nativos e exportação com testes de listas, Unicode e escapes; não reescreveu notas existentes |
 | BUG-02 título do Suporte no tema Nord | CSS ajustado para seguir tema; validação visual específica desse cenário não documentada |
-| BUG-03 caracteres corrompidos em mensagem histórica | Pendente de diagnóstico/normalização apenas na apresentação; não reescrever base automaticamente |
+| BUG-03 caracteres corrompidos em mensagem histórica | **Resolvido em produção, 26/11/2026**: um único registro de `support.ticket_descriptions`, confirmado corrompido na origem; corrigido após snapshot privado, com `support.ticket_audit` transacional e leitura de verificação. API e worker passaram testes UTF-8 de regressão. |
 | BUG-04 duração inferior a minuto | `fmtDur` mostra segundos para valores abaixo de 60 |
 | UX da Biblioteca: seletor Perfil | Aprovada visualmente nas duas edições |
 
@@ -37,7 +37,7 @@
 - Benchmark de áudios longos, PT-BR/PT-PT/EN/ES mistos, diarização, custo real por token, timestamps, latência e alucinação.
 - Modelos Groq ainda sem credencial e sem smoke de produção. Alguns modelos de formatação têm apenas teste JSON curto, não teste completo do documento.
 - Dica/campo Perfil aprovados, mas outros temas e a central de suporte específica Nord requerem inspeção direcionada.
-- BUG-03 permanece em backlog; manter a origem no banco e corrigir somente mediante evidência.
+- BUG-03 **fechado com evidências**: valor antigo preservado em Recovery privado e auditoria do PostgreSQL; alteração atômica limitada ao chamado histórico `UN-000001`, sem migração em massa. Os novos textos atravessam o cliente worker e a API FastAPI em UTF-8, com testes de regressão. Não aplicar correções globais de codificação.
 - Voz/VSL, IA do Caderno, tradução, orquestração e outros provedores são evoluções futuras, não entregas desta versão.
 - O modo `Personal` não é atalho para serviços administrativos; a edição `Internal` preserva verificações reais de autorização. Não publicar configs privadas nem reinstalar banco.
 
